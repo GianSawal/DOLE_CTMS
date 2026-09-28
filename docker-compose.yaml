@@ -52,6 +52,8 @@ services:
       db:
         condition: service_healthy
         required: false
+    volumes:
+      - ctms_media_data:/app/media
     networks:
       - ctms-network
 
@@ -86,6 +88,7 @@ services:
 
 volumes:
   ctms_mysql_data:
+  ctms_media_data:
 
 networks:
   ctms-network:

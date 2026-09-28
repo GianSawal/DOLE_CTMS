@@ -13,10 +13,23 @@ export async function apiRequest(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    if (err.name === 'TypeError' && (err.message === 'Failed to fetch' || err.message.includes('fetch'))) {
+      throw new Error('Connection failed or file upload exceeded server limit (HTTP 413). Please ensure server is running and file is within size limits.');
+    }
+    throw err;
+  }
+
+  // Handle 413 Payload Too Large explicitly
+  if (response.status === 413) {
+    throw new Error('The video file is too large for the server. Maximum allowed size is 300MB.');
+  }
 
   // Handle 401 token refresh if needed
   if (response.status === 401 && localStorage.getItem('ctms_refresh_token')) {
