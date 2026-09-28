@@ -58,5 +58,21 @@ export const staffApi = {
     method: 'POST',
     body: JSON.stringify({ office: officeId, arta_video_url: artaVideoUrl, is_active: isActive }),
   }),
+
+  uploadDisplayVideoFile: (officeId, file, isActive = true) => {
+    const formData = new FormData();
+    formData.append('office', officeId);
+    formData.append('video_file', file);
+    formData.append('is_active', isActive);
+    return apiRequest('/staff/display-video/', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  clearDisplayVideo: (officeId) => apiRequest('/staff/display-video/', {
+    method: 'POST',
+    body: JSON.stringify({ office: officeId, arta_video_url: '', clear_file: true, is_active: false }),
+  }),
 };
 

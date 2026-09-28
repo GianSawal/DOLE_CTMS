@@ -10,6 +10,7 @@ from django.utils import timezone
 from rest_framework import status, viewsets, permissions, exceptions
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .models import (
@@ -245,7 +246,12 @@ class PublicDisplayBoardView(APIView):
         latest_called_at = first_serving.called_at.isoformat() if first_serving and first_serving.called_at else None
 
         display_config = CtmsDisplayConfig.objects.filter(office=office).first()
-        arta_video_url = display_config.arta_video_url if (display_config and display_config.is_active) else ""
+        arta_video_url = ""
+        if display_config and display_config.is_active:
+            if display_config.video_file:
+                arta_video_url = display_config.video_file.url
+            else:
+                arta_video_url = display_config.arta_video_url or ""
 
         return Response({
             "office": CsmOfficeSerializer(office).data,
@@ -572,6 +578,7 @@ class StaffQrCodeView(APIView):
 
 class StaffDisplayVideoView(APIView):
     permission_classes = [IsStaffUser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
         office_id = request.GET.get('office')
@@ -580,10 +587,17 @@ class StaffDisplayVideoView(APIView):
         allowed_offices = get_staff_offices(request.user)
         office = get_object_or_404(allowed_offices, pk=office_id)
         config, _ = CtmsDisplayConfig.objects.get_or_create(office=office)
+        
+        video_url = config.video_file.url if config.video_file else config.arta_video_url
+        file_name = config.video_file.name.split('/')[-1] if config.video_file else ''
+
         return Response({
             "office_id": office.id,
             "office_name": office.name,
-            "arta_video_url": config.arta_video_url,
+            "arta_video_url": video_url,
+            "raw_video_url": config.arta_video_url,
+            "video_file_name": file_name,
+            "has_file": bool(config.video_file),
             "is_active": config.is_active,
         })
 
@@ -593,19 +607,57 @@ class StaffDisplayVideoView(APIView):
             return Response({"detail": "Office ID required."}, status=status.HTTP_400_BAD_REQUEST)
         allowed_offices = get_staff_offices(request.user)
         office = get_object_or_404(allowed_offices, pk=office_id)
-        video_url = request.data.get('arta_video_url', '').strip()
-        is_active = request.data.get('is_active', True)
-
         config, _ = CtmsDisplayConfig.objects.get_or_create(office=office)
-        config.arta_video_url = video_url
-        config.is_active = bool(is_active)
+
+        # Handle uploaded video file
+        if 'video_file' in request.FILES:
+            if config.video_file:
+                try:
+                    config.video_file.delete(save=False)
+                except Exception:
+                    pass
+            config.video_file = request.FILES['video_file']
+            config.arta_video_url = ''
+        elif 'arta_video_url' in request.data:
+            url_val = request.data.get('arta_video_url', '').strip()
+            config.arta_video_url = url_val
+            clear_file = request.data.get('clear_file')
+            if not url_val or clear_file:
+                if config.video_file:
+                    try:
+                        config.video_file.delete(save=False)
+                    except Exception:
+                        pass
+                config.video_file = None
+        elif request.data.get('clear_file'):
+            if config.video_file:
+                try:
+                    config.video_file.delete(save=False)
+                except Exception:
+                    pass
+            config.video_file = None
+            config.arta_video_url = ''
+
+        if 'is_active' in request.data:
+            val = request.data.get('is_active')
+            if isinstance(val, str):
+                config.is_active = val.lower() in ('true', '1')
+            else:
+                config.is_active = bool(val)
+
         config.save()
+
+        video_url = config.video_file.url if config.video_file else config.arta_video_url
+        file_name = config.video_file.name.split('/')[-1] if config.video_file else ''
 
         return Response({
             "status": "success",
             "office_id": office.id,
             "office_name": office.name,
-            "arta_video_url": config.arta_video_url,
+            "arta_video_url": video_url,
+            "raw_video_url": config.arta_video_url,
+            "video_file_name": file_name,
+            "has_file": bool(config.video_file),
             "is_active": config.is_active,
         })
 

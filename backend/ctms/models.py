@@ -112,6 +112,7 @@ class CtmsDisplayConfig(models.Model):
     id = models.BigAutoField(primary_key=True)
     office = models.OneToOneField(CsmOffice, on_delete=models.CASCADE, related_name='display_config')
     arta_video_url = models.TextField(blank=True, default='', help_text="YouTube or direct MP4 video URL for TV display")
+    video_file = models.FileField(upload_to='arta_videos/', null=True, blank=True, help_text="Uploaded video file for TV display")
     is_active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
 
