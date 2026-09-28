@@ -330,10 +330,49 @@ export default function ArtaVideoModal({ isOpen, onClose, defaultOfficeId }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="🎥 Configure ARTA Video for TV Display">
       <div style={{ maxHeight: '82vh', overflowY: 'auto', paddingRight: '0.25rem' }}>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '0 0 1.15rem 0', lineHeight: 1.45 }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '0 0 0.85rem 0', lineHeight: 1.45 }}>
           Add an Anti-Red Tape Authority (ARTA) or Citizen's Charter awareness video under <strong>Republic Act No. 11032</strong>.
           The video loops continuously on the office TV display directly below the upcoming queue list.
         </p>
+
+        {/* Tip for Zero-Storage Local Folder Playlist on TV Display */}
+        <div style={{
+          backgroundColor: 'rgba(59, 130, 246, 0.06)',
+          border: '1px solid rgba(59, 130, 246, 0.22)',
+          borderRadius: '10px',
+          padding: '0.65rem 0.85rem',
+          marginBottom: '1rem',
+          fontSize: '0.8rem',
+          color: '#1e40af',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+        }}>
+          <div>
+            <strong>💡 Zero-Storage Folder Playlist:</strong> To play an entire local folder of videos with 0 server storage, open the TV display and click <strong>"📁 Load Local Folder"</strong>. Videos loop continuously and automatically tone down volume during queue calls!
+          </div>
+          {displayUrl && (
+            <a
+              href={displayUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                flexShrink: 0,
+                fontSize: '0.75rem',
+                padding: '0.3rem 0.65rem',
+                backgroundColor: '#ffffff',
+                border: '1px solid #93c5fd',
+                borderRadius: '6px',
+                color: '#1d4ed8',
+                fontWeight: 700,
+                textDecoration: 'none',
+              }}
+            >
+              ↗ Open TV Display
+            </a>
+          )}
+        </div>
 
         {message && (
           <div style={{
