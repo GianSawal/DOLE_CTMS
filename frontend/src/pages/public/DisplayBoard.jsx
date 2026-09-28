@@ -9,8 +9,15 @@ import {
   unlockAudioContext,
   isAudioUnlocked,
   CHIME_BROADCAST_CHANNEL,
+  ANNOUNCEMENT_START_EVENT,
+  ANNOUNCEMENT_END_EVENT,
 } from '../../utils/airportChime';
 import { parseVideoEmbedUrl } from '../../components/ArtaVideoModal';
+import {
+  savePlaylistToIndexedDB,
+  loadPlaylistFromIndexedDB,
+  parseFolderLink,
+} from '../../utils/localVideoPlaylist';
 
 const fallbackServiceDescriptions = {
   sena: 'Conciliation-mediation of labor issues, disputes, and worker grievances.',
@@ -52,22 +59,104 @@ export default function DisplayBoard() {
     return saved !== null ? saved === 'true' : true;
   });
   const [audioUnlocked, setAudioUnlocked] = useState(() => isAudioUnlocked());
+  
+  // ARTA video URL or folder link from server / cache
   const [artaVideoUrl, setArtaVideoUrl] = useState(() => {
     try {
       const cached = localStorage.getItem(`ctms_arta_video_${officeId}`);
       if (cached) {
         const parsed = JSON.parse(cached);
-        return parsed.isActive !== false ? (parsed.videoUrl || '') : '';
+        return parsed.isActive !== false ? (parsed.videoUrl || parsed.url || '') : '';
       }
     } catch {}
     return '';
   });
 
-  const artaEmbed = parseVideoEmbedUrl(artaVideoUrl);
+  // Playlist management (supports folder link, multiple videos, or local folder)
+  const [playlist, setPlaylist] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const folderInputRef = useRef(null);
+
+  // Video element and audio ducking state
+  const videoRef = useRef(null);
+  const iframeRef = useRef(null);
+  const defaultVideoVolumeRef = useRef(0.75);
+  const [isDucking, setIsDucking] = useState(false);
+  const duckIntervalRef = useRef(null);
 
   const prevServingRef = useRef([]);
   const lastCalledRef = useRef(null);
   const isInitialLoadRef = useRef(true);
+
+  // Audio ducking: Tone down video volume temporarily when client is called
+  const handleDuckStart = () => {
+    setIsDucking(true);
+
+    if (videoRef.current) {
+      if (duckIntervalRef.current) clearInterval(duckIntervalRef.current);
+      const target = 0.08; // Faint background murmur
+      const current = videoRef.current.volume;
+      const step = Math.max(0.02, (current - target) / 4);
+      let count = 0;
+      duckIntervalRef.current = setInterval(() => {
+        count++;
+        if (!videoRef.current) {
+          clearInterval(duckIntervalRef.current);
+          return;
+        }
+        if (count >= 5 || videoRef.current.volume <= target + 0.03) {
+          videoRef.current.volume = target;
+          clearInterval(duckIntervalRef.current);
+        } else {
+          videoRef.current.volume = Math.max(target, videoRef.current.volume - step);
+        }
+      }, 20);
+    }
+
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      try {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'setVolume', args: [8] }),
+          '*'
+        );
+      } catch {}
+    }
+  };
+
+  // Restore video volume after announcement concludes
+  const handleDuckEnd = () => {
+    setIsDucking(false);
+
+    if (videoRef.current) {
+      if (duckIntervalRef.current) clearInterval(duckIntervalRef.current);
+      const target = defaultVideoVolumeRef.current;
+      const current = videoRef.current.volume;
+      const step = Math.max(0.02, (target - current) / 6);
+      let count = 0;
+      duckIntervalRef.current = setInterval(() => {
+        count++;
+        if (!videoRef.current) {
+          clearInterval(duckIntervalRef.current);
+          return;
+        }
+        if (count >= 7 || videoRef.current.volume >= target - 0.03) {
+          videoRef.current.volume = target;
+          clearInterval(duckIntervalRef.current);
+        } else {
+          videoRef.current.volume = Math.min(target, videoRef.current.volume + step);
+        }
+      }, 25);
+    }
+
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      try {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'setVolume', args: [Math.round(defaultVideoVolumeRef.current * 100)] }),
+          '*'
+        );
+      } catch {}
+    }
+  };
 
   // Global listener for first user interaction (touch, click, key) to unlock Web Audio API & TTS
   useEffect(() => {
@@ -75,6 +164,11 @@ export default function DisplayBoard() {
       unlockAudioContext().then(unlocked => {
         if (unlocked) {
           setAudioUnlocked(true);
+          if (videoRef.current) {
+            videoRef.current.muted = false;
+            videoRef.current.volume = isDucking ? 0.08 : defaultVideoVolumeRef.current;
+            videoRef.current.play().catch(() => {});
+          }
         }
       });
     };
@@ -88,7 +182,85 @@ export default function DisplayBoard() {
       window.removeEventListener('touchstart', handleUnlock);
       window.removeEventListener('keydown', handleUnlock);
     };
+  }, [isDucking]);
+
+  // Listen for queue announcement start & end to duck sound
+  useEffect(() => {
+    window.addEventListener(ANNOUNCEMENT_START_EVENT, handleDuckStart);
+    window.addEventListener(ANNOUNCEMENT_END_EVENT, handleDuckEnd);
+
+    // Check if local folder playlist was saved in IndexedDB
+    loadPlaylistFromIndexedDB().then((savedItems) => {
+      if (savedItems && savedItems.length > 0) {
+        setPlaylist(savedItems);
+        setCurrentIndex(0);
+      }
+    });
+
+    return () => {
+      window.removeEventListener(ANNOUNCEMENT_START_EVENT, handleDuckStart);
+      window.removeEventListener(ANNOUNCEMENT_END_EVENT, handleDuckEnd);
+      if (duckIntervalRef.current) clearInterval(duckIntervalRef.current);
+    };
   }, []);
+
+  // Parse folder link or video URL whenever artaVideoUrl updates (if no local folder loaded)
+  useEffect(() => {
+    if (!artaVideoUrl) return;
+
+    let isMounted = true;
+    async function loadLink() {
+      // Check if user has an active local folder playlist; if so, local playlist takes priority
+      const savedItems = await loadPlaylistFromIndexedDB();
+      if (!isMounted) return;
+      if (savedItems && savedItems.length > 0) {
+        setPlaylist(savedItems);
+        return;
+      }
+
+      // Check if YouTube link
+      const ytEmbed = parseVideoEmbedUrl(artaVideoUrl);
+      if (ytEmbed && ytEmbed.type === 'youtube') {
+        setPlaylist([{
+          id: 0,
+          name: "ARTA Citizen's Charter",
+          url: ytEmbed.url,
+          isYouTube: true,
+        }]);
+        setCurrentIndex(0);
+        return;
+      }
+
+      // Parse folder link / directory or video URLs
+      const parsedItems = await parseFolderLink(artaVideoUrl);
+      if (!isMounted) return;
+      if (parsedItems.length > 0) {
+        setPlaylist(parsedItems);
+        setCurrentIndex(0);
+      }
+    }
+
+    loadLink();
+    return () => { isMounted = false; };
+  }, [artaVideoUrl]);
+
+  // Auto-advance to next video in folder when current video finishes
+  const handleVideoEnded = () => {
+    if (playlist && playlist.length > 0) {
+      setCurrentIndex((prev) => (prev + 1) % playlist.length);
+    }
+  };
+
+  // Handle local folder selection on TV display
+  const handleFolderSelect = async (e) => {
+    const files = e.target.files;
+    if (!files || !files.length) return;
+    const items = await savePlaylistToIndexedDB(files);
+    if (items && items.length > 0) {
+      setPlaylist(items);
+      setCurrentIndex(0);
+    }
+  };
 
   const handleToggleSound = async () => {
     const nextState = !soundEnabled;
@@ -107,6 +279,7 @@ export default function DisplayBoard() {
     }
   };
 
+  // Polling for queue data & cross-tab calling bus
   useEffect(() => {
     let isMounted = true;
 
@@ -118,19 +291,15 @@ export default function DisplayBoard() {
         const currentLatestCall = data.latest_called_at || (data.serving?.[0]?.called_at) || null;
 
         if (isInitialLoadRef.current) {
-          // Record baseline timestamp on initial mount without chiming
           lastCalledRef.current = currentLatestCall;
           prevServingRef.current = data.serving || [];
           isInitialLoadRef.current = false;
         } else {
-          // Detect call, recall, or call-next:
-          // 1. latest_called_at changed (new timestamp from call, recall, or call next)
           const callTimestampChanged = Boolean(
             currentLatestCall &&
             currentLatestCall !== lastCalledRef.current
           );
 
-          // 2. New queue number appeared in serving (e.g. from empty queue or status change)
           const prevNumbers = (prevServingRef.current || []).map(s => s.queue_no);
           const hasNewQueueNumber = data.serving?.some(s => !prevNumbers.includes(s.queue_no));
 
@@ -168,10 +337,8 @@ export default function DisplayBoard() {
     }
 
     fetchDisplay();
-    // Fast polling: 2500ms
     const interval = setInterval(fetchDisplay, 2500);
 
-    // Cross-tab broadcast listener for instant 0ms chime and voice announcement
     let bc = null;
     let videoBc = null;
     try {
@@ -189,7 +356,6 @@ export default function DisplayBoard() {
                   lang: langRef.current,
                 });
               }
-              // Immediately fetch updated display data
               fetchDisplay();
             }
           }
@@ -200,7 +366,7 @@ export default function DisplayBoard() {
           if (!isMounted) return;
           if (event.data?.type === 'ARTA_VIDEO_UPDATED') {
             if (!event.data.officeId || String(event.data.officeId) === String(officeId)) {
-              const newUrl = event.data.isActive !== false ? (event.data.videoUrl || '') : '';
+              const newUrl = event.data.is_active !== false ? (event.data.url || '') : '';
               setArtaVideoUrl(newUrl);
               fetchDisplay();
             }
@@ -209,7 +375,6 @@ export default function DisplayBoard() {
       }
     } catch {}
 
-    // Storage fallback for cross-tab sync
     const handleStorage = (e) => {
       if (!isMounted) return;
       if (e.key === 'dole_last_queue_call' && e.newValue) {
@@ -230,7 +395,7 @@ export default function DisplayBoard() {
       } else if (e.key === `ctms_arta_video_${officeId}` && e.newValue) {
         try {
           const item = JSON.parse(e.newValue);
-          setArtaVideoUrl(item.isActive !== false ? (item.videoUrl || '') : '');
+          setArtaVideoUrl(item.is_active !== false ? (item.url || '') : '');
           fetchDisplay();
         } catch {}
       }
@@ -250,253 +415,251 @@ export default function DisplayBoard() {
     };
   }, [officeId, soundEnabled]);
 
-  const toggleFullScreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen().catch(() => {});
-    }
-  };
-
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <h1 style={{ fontSize: '2rem' }}>Loading Display Board...</h1>
-      </div>
-    );
-  }
+  // Current active video from playlist or fallback
+  const currentVideo = playlist[currentIndex] || (artaVideoUrl ? {
+    id: 0,
+    name: "ARTA Citizen's Charter",
+    url: artaVideoUrl,
+    isYouTube: Boolean(parseVideoEmbedUrl(artaVideoUrl)?.type === 'youtube'),
+  } : null);
 
   return (
     <div style={{
       minHeight: '100vh',
       backgroundColor: '#0a0f1d',
       color: '#ffffff',
+      fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+      padding: '1.25rem 2rem',
       display: 'flex',
       flexDirection: 'column',
-      fontFamily: 'var(--font-ui)',
-      padding: '1.5rem 2rem',
+      justifyContent: 'space-between',
+      boxSizing: 'border-box',
     }}>
-      {/* Autoplay Audio Unlock Notice */}
-      {soundEnabled && !audioUnlocked && (
-        <div
-          onClick={async () => {
-            await unlockAudioContext();
-            setAudioUnlocked(true);
-            const firstServing = displayData?.serving?.[0];
-            announceNowServing({
-              queueNo: firstServing?.queue_no || displayData?.next?.[0] || '042',
-              counter: firstServing?.counter || 'Window 1',
-              personnel: firstServing?.assigned_personnel || 'Officer on Duty',
-              lang: langRef.current,
-            });
-          }}
-          style={{
-            backgroundColor: 'rgba(217, 119, 6, 0.95)',
-            color: '#ffffff',
-            padding: '0.65rem 1.5rem',
-            borderRadius: '8px',
-            marginBottom: '1.25rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            boxShadow: '0 4px 15px rgba(217, 119, 6, 0.35)',
-            border: '1px solid rgba(255,255,255,0.2)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 600 }}>
-            <span style={{ fontSize: '1.25rem' }}>🔔</span>
-            <span>Airport Chime & Voice Announcer is ON: Tap or click anywhere on this screen to activate audio playback for this display.</span>
-          </div>
-          <button
-            className="btn btn-sm"
-            style={{ backgroundColor: '#ffffff', color: '#b45309', fontWeight: 800, border: 'none', minWidth: '120px' }}
-          >
-            Activate Sound
-          </button>
-        </div>
-      )}
+      {/* Hidden local folder input */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        webkitdirectory="true"
+        directory="true"
+        multiple
+        onChange={handleFolderSelect}
+        style={{ display: 'none' }}
+      />
 
-      {/* Top Banner */}
+      {/* Top Header */}
       <header style={{
         display: 'flex',
-        alignItems: 'center',
         justifyContent: 'space-between',
-        borderBottom: '2px solid rgba(255,255,255,0.1)',
-        paddingBottom: '1.25rem',
-        marginBottom: '2rem',
+        alignItems: 'center',
+        borderBottom: '2px solid rgba(255, 255, 255, 0.1)',
+        paddingBottom: '1rem',
+        marginBottom: '1.5rem',
+        flexWrap: 'wrap',
+        gap: '1rem',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-          <img
-            src="/dolelogo.png"
-            alt="DOLE Official Seal"
-            style={{ width: '76px', height: '76px', objectFit: 'contain', filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.5))' }}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+          <div style={{
+            width: '60px',
+            height: '60px',
+            backgroundColor: '#ffffff',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 900,
+            color: 'var(--dole-blue)',
+            fontSize: '1.5rem',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          }}>
+            DOLE
+          </div>
           <div>
-            <div style={{
-              fontSize: '1rem',
-              fontWeight: 800,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--dole-gold)',
-            }}>
-              Republic of the Philippines · DOLE
-            </div>
-            <h1 style={{ fontSize: '2.25rem', fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>
-              {displayData?.office?.name}
+            <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em' }}>
+              {displayData?.office?.name || 'Department of Labor and Employment'}
             </h1>
+            <div style={{ color: '#94a3b8', fontSize: '0.95rem', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <span>Client Transaction Monitoring & Public Queue Display</span>
+              <span style={{ color: '#38bdf8' }}>&bull;</span>
+              <span>{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+            </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* Audio Chime & Speech Announcer Status Toggle */}
           <button
             onClick={handleToggleSound}
-            className="btn btn-outline btn-sm"
+            className="btn btn-outline"
+            title={soundEnabled ? 'Queue chime and voice calling is active' : 'Audio calling is muted'}
             style={{
-              color: '#ffffff',
-              borderColor: soundEnabled ? 'var(--dole-gold)' : 'rgba(255,255,255,0.2)',
-              backgroundColor: soundEnabled ? 'rgba(217, 119, 6, 0.25)' : 'transparent',
-              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              backgroundColor: soundEnabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              borderColor: soundEnabled ? '#10b981' : '#ef4444',
+              color: soundEnabled ? '#34d399' : '#f87171',
+              padding: '0.5rem 1rem',
+              fontSize: '0.9rem',
+              borderRadius: '9999px',
+              minHeight: '40px',
             }}
-            title={soundEnabled ? 'Click to mute airport chime & voice' : 'Click to enable airport announcement chime & voice'}
           >
-            {soundEnabled ? '🔔 Chime & Voice ON' : '🔕 Sound OFF'}
+            <span>{soundEnabled ? '🔔' : '🔕'}</span>
+            <span style={{ fontWeight: 600 }}>{soundEnabled ? 'Chime Active' : 'Chime Off'}</span>
           </button>
-          {soundEnabled && (
+
+          {/* Language Switcher */}
+          <div style={{ display: 'flex', backgroundColor: '#1e293b', borderRadius: '8px', padding: '3px' }}>
             <button
-              onClick={async () => {
-                await unlockAudioContext();
-                setAudioUnlocked(true);
-                const firstServing = displayData?.serving?.[0];
-                announceNowServing({
-                  queueNo: firstServing?.queue_no || displayData?.next?.[0] || '042',
-                  counter: firstServing?.counter || 'Window 1',
-                  personnel: firstServing?.assigned_personnel || 'Officer on Duty',
-                  lang: langRef.current,
-                });
-              }}
-              className="btn btn-outline btn-sm"
+              onClick={() => setLang('en')}
               style={{
-                color: 'var(--dole-gold)',
-                borderColor: 'rgba(217, 119, 6, 0.5)',
-                backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                padding: '0.25rem 0.6rem',
-                fontSize: '0.75rem',
+                background: lang === 'en' ? 'var(--dole-blue)' : 'transparent',
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.35rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: lang === 'en' ? 700 : 500,
+                cursor: 'pointer',
               }}
-              title="Test airport chime and voice announcement on speakers"
             >
-              ▶ Test Chime & Voice
+              EN
             </button>
-          )}
-          <button
-            onClick={() => setLang(lang === 'en' ? 'fil' : 'en')}
-            className="btn btn-outline btn-sm"
-            style={{ color: '#ffffff', borderColor: 'rgba(255,255,255,0.2)' }}
-          >
-            🌐 {lang === 'en' ? 'Filipino' : 'English'}
-          </button>
-          <button
-            onClick={toggleFullScreen}
-            className="btn btn-outline btn-sm"
-            style={{ color: '#ffffff', borderColor: 'rgba(255,255,255,0.2)' }}
-          >
-            ⛶ Fullscreen
-          </button>
+            <button
+              onClick={() => setLang('fil')}
+              style={{
+                background: lang === 'fil' ? 'var(--dole-blue)' : 'transparent',
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.35rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: lang === 'fil' ? 700 : 500,
+                cursor: 'pointer',
+              }}
+            >
+              FIL
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Grid: Serving Counters & Next Queue */}
+      {/* Main Grid: NOW SERVING (Left 65%) vs UPCOMING QUEUE & ARTA VIDEO (Right 35%) */}
       <div style={{
-        flex: 1,
         display: 'grid',
-        gridTemplateColumns: '2.2fr 1fr',
-        gap: '2rem',
+        gridTemplateColumns: 'minmax(0, 1.85fr) minmax(360px, 1.15fr)',
+        gap: '1.5rem',
+        flex: 1,
+        minHeight: 0,
       }}>
-        {/* Left Side: NOW SERVING */}
-        <section style={{ display: 'flex', flexDirection: 'column' }}>
+        {/* Left Side: NOW SERVING COUNTERS */}
+        <section style={{
+          backgroundColor: '#111827',
+          borderRadius: '16px',
+          border: '1px solid rgba(255,255,255,0.1)',
+          padding: '1.25rem 1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+          overflow: 'hidden',
+        }}>
           <div style={{
-            fontSize: '1.25rem',
-            fontWeight: 800,
+            fontSize: '1.4rem',
+            fontWeight: 900,
             textTransform: 'uppercase',
             letterSpacing: '0.08em',
             color: 'var(--dole-gold)',
             marginBottom: '1rem',
+            borderBottom: '2px solid rgba(255, 198, 3, 0.3)',
+            paddingBottom: '0.5rem',
             display: 'flex',
+            justifyContent: 'space-between',
             alignItems: 'center',
-            gap: '0.5rem',
           }}>
-            <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#10b981', animation: 'pulse 1.5s infinite' }} />
-            {t.display_title}
+            <span>{t.now_serving}</span>
+            <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 600 }}>
+              {displayData?.serving?.length || 0} active counters
+            </span>
           </div>
 
           <div style={{
-            flex: 1,
             display: 'grid',
             gridTemplateColumns: displayData?.serving?.length > 2 ? 'repeat(2, 1fr)' : '1fr',
-            gap: '1.25rem',
+            gap: '1rem',
+            flex: 1,
+            overflowY: 'auto',
           }}>
             {displayData?.serving?.length > 0 ? (
               displayData.serving.map((item, idx) => (
                 <div key={idx} style={{
-                  backgroundColor: '#161e31',
-                  borderRadius: '16px',
-                  border: '2px solid rgba(3, 5, 186, 0.6)',
-                  padding: '1.75rem 1.5rem',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '14px',
+                  border: '2px solid #3b82f6',
+                  padding: '1.25rem',
                   display: 'flex',
                   flexDirection: 'column',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  justifyContent: 'space-between',
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.4)',
                 }}>
-                  <div style={{
-                    fontSize: '1.35rem',
-                    fontWeight: 800,
-                    color: '#94a3b8',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                  }}>
-                    {item.counter}
-                  </div>
-                  <div className="mono" style={{
-                    fontSize: displayData?.serving?.length > 2 ? '4.25rem' : '5.25rem',
-                    fontWeight: 900,
-                    color: 'var(--dole-gold)',
-                    letterSpacing: '-0.02em',
-                    lineHeight: 1.1,
-                    margin: '0.35rem 0',
-                    textShadow: '0 0 30px rgba(255, 198, 3, 0.35)',
-                  }}>
-                    {item.queue_no}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{
+                      fontSize: '1.3rem',
+                      fontWeight: 800,
+                      color: '#60a5fa',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      {item.counter}
+                    </span>
+                    {item.is_priority && (
+                      <span style={{
+                        backgroundColor: 'var(--dole-gold)',
+                        color: '#000000',
+                        fontSize: '0.8rem',
+                        fontWeight: 900,
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '9999px',
+                        letterSpacing: '0.05em',
+                      }}>
+                        PRIORITY
+                      </span>
+                    )}
                   </div>
 
-                  {item.assigned_personnel ? (
+                  <div style={{ textAlign: 'center', margin: '0.75rem 0' }}>
+                    <div className="mono" style={{
+                      fontSize: '4.2rem',
+                      fontWeight: 900,
+                      color: item.is_priority ? 'var(--dole-gold)' : '#ffffff',
+                      lineHeight: 1,
+                      letterSpacing: '0.04em',
+                      textShadow: item.is_priority ? '0 0 20px rgba(255, 198, 3, 0.4)' : '0 0 20px rgba(59, 130, 246, 0.4)',
+                    }}>
+                      {item.queue_no}
+                    </div>
+                  </div>
+
+                  {item.assigned_personnel && (
                     <div style={{
-                      marginTop: '0.4rem',
+                      backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                      border: '1px solid rgba(59, 130, 246, 0.25)',
+                      borderRadius: '8px',
+                      padding: '0.5rem 0.75rem',
                       marginBottom: '0.65rem',
-                      padding: '0.5rem 1.4rem',
-                      backgroundColor: 'rgba(217, 119, 6, 0.22)',
-                      border: '2px solid rgba(255, 198, 3, 0.75)',
-                      borderRadius: '9999px',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '0.6rem',
-                      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
                     }}>
-                      <span style={{ fontSize: '1.25rem' }}>👤</span>
-                      <span style={{ fontSize: '1.15rem', color: '#fef08a', fontWeight: 600 }}>
-                        {t.please_look_for || (lang === 'fil' ? 'Mangyaring hanapin si' : 'Please look for')}:{' '}
-                        <strong style={{ color: '#ffffff', fontWeight: 800, fontSize: '1.25rem', textDecoration: 'underline decoration-amber-400' }}>
-                          {item.assigned_personnel}
-                        </strong>
+                      <span style={{ fontSize: '1rem' }}>👤</span>
+                      <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#93c5fd' }}>
+                        Officer: <strong>{item.assigned_personnel}</strong>
                       </span>
                     </div>
-                  ) : null}
+                  )}
 
                   {item.service_name && (
                     <div style={{
-                      marginTop: '0.65rem',
-                      textAlign: 'center',
-                      maxWidth: '92%',
                       padding: '0.6rem 1rem',
                       borderRadius: '10px',
                       backgroundColor: 'rgba(255, 255, 255, 0.04)',
@@ -569,9 +732,9 @@ export default function DisplayBoard() {
           <div style={{
             display: 'flex',
             flexDirection: 'column',
-            flex: artaEmbed ? '1 1 auto' : '1',
+            flex: '1 1 auto',
             minHeight: 0,
-            maxHeight: artaEmbed ? '320px' : 'none',
+            maxHeight: '320px',
           }}>
             <div style={{
               fontSize: '1.25rem',
@@ -623,63 +786,69 @@ export default function DisplayBoard() {
           </div>
 
           {/* Under Upcoming Queue: ARTA Citizen's Charter Video */}
-          {artaEmbed ? (
+          <div style={{
+            backgroundColor: '#0b1120',
+            borderRadius: '14px',
+            border: '1px solid rgba(217, 119, 6, 0.45)',
+            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.5)',
+            padding: '0.85rem',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0,
+          }}>
             <div style={{
-              backgroundColor: '#0b1120',
-              borderRadius: '14px',
-              border: '1px solid rgba(217, 119, 6, 0.45)',
-              boxShadow: '0 6px 20px rgba(0, 0, 0, 0.5)',
-              padding: '0.85rem',
               display: 'flex',
-              flexDirection: 'column',
-              flexShrink: 0,
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '0.5rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              paddingBottom: '0.4rem',
             }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '0.5rem',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                paddingBottom: '0.4rem',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                  <span style={{ fontSize: '1.1rem' }}>🎥</span>
-                  <span style={{
-                    fontSize: '0.85rem',
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    color: 'var(--dole-gold)',
-                  }}>
-                    ARTA · Citizen's Charter
-                  </span>
-                </div>
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}
+                onClick={() => folderInputRef.current?.click()}
+                title="Click to select a local folder of videos to loop"
+              >
+                <span style={{ fontSize: '1.1rem' }}>🎥</span>
                 <span style={{
-                  fontSize: '0.7rem',
-                  padding: '0.15rem 0.5rem',
-                  borderRadius: '9999px',
-                  backgroundColor: 'rgba(217, 119, 6, 0.25)',
-                  color: '#fef08a',
-                  fontWeight: 700,
-                  border: '1px solid rgba(255, 198, 3, 0.4)',
+                  fontSize: '0.85rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: 'var(--dole-gold)',
                 }}>
-                  R.A. 11032
+                  ARTA · Citizen's Charter
                 </span>
               </div>
-
-              {/* Video Player 16:9 */}
-              <div style={{
-                position: 'relative',
-                width: '100%',
-                paddingTop: '56.25%',
-                backgroundColor: '#000000',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                border: '1px solid rgba(255,255,255,0.1)',
+              <span style={{
+                fontSize: '0.7rem',
+                padding: '0.15rem 0.5rem',
+                borderRadius: '9999px',
+                backgroundColor: 'rgba(217, 119, 6, 0.25)',
+                color: '#fef08a',
+                fontWeight: 700,
+                border: '1px solid rgba(255, 198, 3, 0.4)',
               }}>
-                {artaEmbed.type === 'youtube' || artaEmbed.type === 'embed' ? (
+                R.A. 11032
+              </span>
+            </div>
+
+            {/* Video Player 16:9 */}
+            <div style={{
+              position: 'relative',
+              width: '100%',
+              paddingTop: '56.25%',
+              backgroundColor: '#000000',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}>
+              {currentVideo ? (
+                currentVideo.isYouTube ? (
                   <iframe
-                    src={artaEmbed.url}
+                    ref={iframeRef}
+                    key={currentVideo.url}
+                    src={currentVideo.url}
                     title="ARTA Awareness Video"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                     allowFullScreen
@@ -694,12 +863,13 @@ export default function DisplayBoard() {
                   />
                 ) : (
                   <video
-                    src={artaEmbed.url}
+                    ref={videoRef}
+                    key={currentVideo.url}
+                    src={currentVideo.url}
                     autoPlay
-                    loop
-                    muted
                     playsInline
                     controls
+                    onEnded={handleVideoEnded}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -709,25 +879,53 @@ export default function DisplayBoard() {
                       objectFit: 'contain',
                     }}
                   />
-                )}
-              </div>
-
-              <div style={{
-                marginTop: '0.4rem',
-                fontSize: '0.72rem',
-                color: '#94a3b8',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}>
-                <span>Anti-Red Tape Authority awareness video</span>
-                <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                  <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                  Playing
-                </span>
-              </div>
+                )
+              ) : (
+                <div
+                  onClick={() => folderInputRef.current?.click()}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: '#64748b',
+                    padding: '1rem',
+                    textAlign: 'center',
+                  }}
+                  title="Click to select a local folder of videos"
+                >
+                  <div style={{ fontSize: '1.8rem', marginBottom: '0.25rem' }}>📁</div>
+                  <div style={{ fontSize: '0.85rem', color: '#cbd5e1', fontWeight: 600 }}>Click to select local video folder</div>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Loops through local videos with 0 server storage</div>
+                </div>
+              )}
             </div>
-          ) : null}
+
+            <div style={{
+              marginTop: '0.4rem',
+              fontSize: '0.72rem',
+              color: '#94a3b8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
+                {playlist.length > 1
+                  ? `Video ${currentIndex + 1}/${playlist.length}: ${currentVideo?.name || 'ARTA Video'}`
+                  : (currentVideo?.name || "Anti-Red Tape Authority awareness video")}
+              </span>
+              <span style={{ color: isDucking ? '#38bdf8' : '#10b981', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600, flexShrink: 0 }}>
+                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: isDucking ? '#38bdf8' : '#10b981' }} />
+                {isDucking ? 'Sound Ducked' : 'Playing'}
+              </span>
+            </div>
+          </div>
         </section>
       </div>
 

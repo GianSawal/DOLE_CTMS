@@ -603,23 +603,23 @@ export default function ArtaVideoModal({ isOpen, onClose, defaultOfficeId }) {
             </div>
           )}
 
-          {/* Tab 2: Video URL Input */}
+          {/* Tab 2: Video URL or Folder Link Input */}
           {mode === 'url' && (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                 <label htmlFor="arta-video-url" style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-                  Video URL (YouTube or Web MP4):
+                  Video URL or Folder Link:
                 </label>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  YouTube, Shorts, or direct video link
+                  Folder link, YouTube, or direct video file
                 </span>
               </div>
               <input
                 id="arta-video-url"
-                type="url"
+                type="text"
                 value={videoUrl}
                 onChange={(e) => setVideoUrl(e.target.value)}
-                placeholder="e.g. https://www.youtube.com/watch?v=... or https://example.com/video.mp4"
+                placeholder="e.g. http://10.6.50.38/videos/ or https://www.youtube.com/watch?v=..."
                 className="form-control"
                 style={{ width: '100%', minHeight: '44px', padding: '0.5rem 0.75rem' }}
               />
