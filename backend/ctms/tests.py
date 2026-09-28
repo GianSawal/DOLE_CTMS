@@ -5,6 +5,7 @@ from rest_framework.test import APIClient
 from rest_framework import status
 
 from .models import (
+    CsmDivision,
     CsmOffice,
     CsmService,
     CsmResponse,
@@ -148,3 +149,46 @@ class CtmsCoreTestCase(TestCase):
         content = res.content.decode('utf-8')
         self.assertNotIn("Confidential Name", content)
         self.assertIn("001", content)
+
+    def test_division_queue_filtering_and_calling(self):
+        div_tssd1 = CsmDivision.objects.create(name="TSSD 1")
+        div_tssd2 = CsmDivision.objects.create(name="TSSD 2")
+
+        svc_tssd1 = CsmService.objects.create(name="Contractors Registration", division=div_tssd1, is_active=True, sort_order=2)
+        svc_tssd2 = CsmService.objects.create(name="TUPAD Assistance", division=div_tssd2, is_active=True, sort_order=3)
+
+        cnt_tssd1 = CtmsCounter.objects.create(office=self.office, name="TSSD 1", is_active=True)
+        cnt_tssd2 = CtmsCounter.objects.create(office=self.office, name="TSSD 2", is_active=True)
+
+        tx1 = create_transaction(self.office, svc_tssd1, client_name="TSSD1 Client", is_priority=False)
+        tx2 = create_transaction(self.office, svc_tssd2, client_name="TSSD2 Client", is_priority=False)
+
+        # Authenticate staff user
+        self.client.force_authenticate(user=self.staff_user)
+
+        # View queue with TSSD 1 counter -> only tx1 in waiting
+        res1 = self.client.get(f"/api/staff/queue/?office={self.office.id}&counter={cnt_tssd1.id}")
+        self.assertEqual(res1.status_code, status.HTTP_200_OK)
+        waiting_ids_1 = [item['id'] for item in res1.data['waiting']]
+        self.assertIn(tx1.id, waiting_ids_1)
+        self.assertNotIn(tx2.id, waiting_ids_1)
+
+        # View queue with TSSD 2 counter -> only tx2 in waiting
+        res2 = self.client.get(f"/api/staff/queue/?office={self.office.id}&counter={cnt_tssd2.id}")
+        self.assertEqual(res2.status_code, status.HTTP_200_OK)
+        waiting_ids_2 = [item['id'] for item in res2.data['waiting']]
+        self.assertIn(tx2.id, waiting_ids_2)
+        self.assertNotIn(tx1.id, waiting_ids_2)
+
+        # Calling next with counter TSSD 1 calls tx1, not tx2
+        called = call_next_transaction(self.office, cnt_tssd1, personnel="Officer Juan")
+        self.assertIsNotNone(called)
+        self.assertEqual(called.id, tx1.id)
+        self.assertEqual(called.counter, cnt_tssd1)
+
+        # Calling next with counter TSSD 2 calls tx2
+        called2 = call_next_transaction(self.office, cnt_tssd2, personnel="Officer Maria")
+        self.assertIsNotNone(called2)
+        self.assertEqual(called2.id, tx2.id)
+        self.assertEqual(called2.counter, cnt_tssd2)
+

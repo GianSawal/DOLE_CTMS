@@ -2,6 +2,7 @@ import secrets
 from django.db import models, transaction
 from django.utils import timezone
 from .models import (
+    CsmDivision,
     CsmOffice,
     CsmService,
     CsmResponse,
@@ -82,13 +83,21 @@ def assign_personnel_to_transaction(tx, personnel):
 def call_next_transaction(office, counter, personnel=None):
     """
     Finds the next waiting client: priority clients first, then FIFO by checked_in_at.
+    If counter corresponds to a division, only clients for that division are selected.
     Uses select_for_update(skip_locked=True) to prevent concurrency race conditions.
     """
     with transaction.atomic():
         waiting_qs = CtmsTransaction.objects.select_for_update(skip_locked=True).filter(
             office=office,
             status=CtmsTransaction.STATUS_WAITING
-        ).order_by('-is_priority', 'checked_in_at')
+        )
+
+        if counter:
+            division = CsmDivision.objects.filter(name=counter.name).first()
+            if division:
+                waiting_qs = waiting_qs.filter(service__division=division)
+
+        waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
 
         tx = waiting_qs.first()
         if not tx:

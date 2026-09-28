@@ -303,17 +303,24 @@ class StaffQueueView(APIView):
             office=office,
             status=CtmsTransaction.STATUS_WAITING,
             queue_date=today
-        ).select_related('office', 'service').order_by('-is_priority', 'checked_in_at')
+        ).select_related('office', 'service', 'service__division')
 
         # Serving list: all serving in this office or counter
         serving_qs = CtmsTransaction.objects.filter(
             office=office,
             status=CtmsTransaction.STATUS_SERVING,
             queue_date=today
-        ).select_related('office', 'service', 'counter', 'served_by').order_by('-called_at')
+        ).select_related('office', 'service', 'service__division', 'counter', 'served_by').order_by('-called_at')
 
         if counter_id:
-            serving_qs = serving_qs.filter(counter_id=counter_id)
+            counter = CtmsCounter.objects.filter(pk=counter_id, office=office, is_active=True).first()
+            if counter:
+                serving_qs = serving_qs.filter(counter=counter)
+                division = CsmDivision.objects.filter(name=counter.name).first()
+                if division:
+                    waiting_qs = waiting_qs.filter(service__division=division)
+
+        waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
 
         # Retrieve divisions directly from csm_division table
         divisions = CsmDivision.objects.all().order_by('id')

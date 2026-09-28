@@ -56,6 +56,10 @@ export default function StaffQueue() {
   // Auto-select first counter if none chosen or counter is invalid
   useEffect(() => {
     if (queueData.counters?.length > 0) {
+      const saved = localStorage.getItem('ctms_staff_counter');
+      if (saved === '') {
+        return;
+      }
       const hasValid = queueData.counters.some(c => String(c.id) === String(selectedCounter));
       if (!selectedCounter || !hasValid) {
         const firstId = String(queueData.counters[0].id);
@@ -119,6 +123,9 @@ export default function StaffQueue() {
     : null;
 
   const isNextClientAssigned = Boolean(nextWaitingClient?.assigned_personnel && nextWaitingClient.assigned_personnel.trim());
+
+  const currentCounter = queueData.counters?.find(c => String(c.id) === String(selectedCounter));
+  const currentCounterName = currentCounter ? currentCounter.name : null;
 
   const handleOpenAssignModal = (tx) => {
     setAssignTx(tx);
@@ -424,6 +431,11 @@ export default function StaffQueue() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)' }}>
                 🔔 Now Serving ({queueData.serving?.length || 0})
+                {currentCounterName && (
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--dole-blue)', marginLeft: '0.5rem' }}>
+                    · {currentCounterName}
+                  </span>
+                )}
               </h2>
             </div>
 
@@ -595,6 +607,11 @@ export default function StaffQueue() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)' }}>
                 ⏳ Waiting in Line ({queueData.waiting?.length || 0})
+                {currentCounterName && (
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--dole-blue)', marginLeft: '0.5rem' }}>
+                    · {currentCounterName}
+                  </span>
+                )}
               </h2>
             </div>
 
@@ -705,7 +722,9 @@ export default function StaffQueue() {
               ) : (
                 <div className="card text-center" style={{ padding: '2.5rem 1.5rem', color: 'var(--text-muted)' }}>
                   <p style={{ fontWeight: 600 }}>Queue is clear!</p>
-                  <p style={{ fontSize: '0.85rem' }}>No clients waiting in line right now.</p>
+                  <p style={{ fontSize: '0.85rem' }}>
+                    {currentCounterName ? `No clients waiting for ${currentCounterName} right now.` : 'No clients waiting in line right now.'}
+                  </p>
                 </div>
               )}
             </div>
