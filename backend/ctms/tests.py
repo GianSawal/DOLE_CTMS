@@ -41,7 +41,14 @@ class CtmsCoreTestCase(TestCase):
                     id integer PRIMARY KEY AUTOINCREMENT,
                     name varchar(200) NOT NULL UNIQUE,
                     is_active bool NOT NULL,
-                    sort_order smallint unsigned NOT NULL
+                    sort_order smallint unsigned NOT NULL,
+                    division_id bigint NULL
+                );
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS csm_division (
+                    id integer PRIMARY KEY AUTOINCREMENT,
+                    name varchar(100) NOT NULL UNIQUE
                 );
             """)
             cursor.execute("""
@@ -59,6 +66,7 @@ class CtmsCoreTestCase(TestCase):
             cursor.execute("DROP TABLE IF EXISTS csm_csmresponse;")
             cursor.execute("DROP TABLE IF EXISTS csm_service;")
             cursor.execute("DROP TABLE IF EXISTS csm_office;")
+            cursor.execute("DROP TABLE IF EXISTS csm_division;")
         super().tearDownClass()
 
     def setUp(self):

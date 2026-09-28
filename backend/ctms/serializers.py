@@ -2,6 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from .models import (
+    CsmDivision,
     CsmOffice,
     CsmService,
     CtmsCounter,
@@ -11,6 +12,13 @@ from .models import (
 
 User = get_user_model()
 
+
+class CsmDivisionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CsmDivision
+        fields = ['id', 'name']
+
+
 class CsmOfficeSerializer(serializers.ModelSerializer):
     class Meta:
         model = CsmOffice
@@ -18,9 +26,11 @@ class CsmOfficeSerializer(serializers.ModelSerializer):
 
 
 class CsmServiceSerializer(serializers.ModelSerializer):
+    division_name = serializers.ReadOnlyField(source='division.name')
+
     class Meta:
         model = CsmService
-        fields = ['id', 'name', 'is_active', 'sort_order']
+        fields = ['id', 'name', 'is_active', 'sort_order', 'division', 'division_name']
 
 
 class CtmsCounterSerializer(serializers.ModelSerializer):
@@ -101,6 +111,7 @@ class TicketPublicSerializer(serializers.ModelSerializer):
 class StaffTransactionSerializer(serializers.ModelSerializer):
     office_name = serializers.ReadOnlyField(source='office.name')
     service_name = serializers.ReadOnlyField(source='service.name')
+    division_name = serializers.ReadOnlyField(source='service.division.name')
     counter_name = serializers.ReadOnlyField(source='counter.name')
     served_by_username = serializers.ReadOnlyField(source='served_by.username')
     is_surveyed = serializers.ReadOnlyField()
@@ -115,6 +126,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'office_name',
             'service',
             'service_name',
+            'division_name',
             'is_priority',
             'client_name',
             'status',

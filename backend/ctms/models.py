@@ -18,6 +18,21 @@ def generate_token(nbytes=16):
 # CSM Shared Models (Read-only / Unmanaged in production)
 # =====================================================================
 
+class CsmDivision(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        managed = getattr(settings, 'TESTING', False)
+        db_table = 'csm_division'
+        verbose_name = 'CSM Division'
+        verbose_name_plural = 'CSM Divisions'
+        ordering = ['id']
+
+    def __str__(self):
+        return self.name
+
+
 class CsmOffice(models.Model):
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=200, unique=True)
@@ -41,6 +56,14 @@ class CsmService(models.Model):
     name = models.CharField(max_length=200, unique=True)
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveSmallIntegerField(default=0, help_text="DOLE CSF Form No. 3 order")
+    division = models.ForeignKey(
+        CsmDivision,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='services',
+        db_column='division_id'
+    )
 
     class Meta:
         managed = getattr(settings, 'TESTING', False)

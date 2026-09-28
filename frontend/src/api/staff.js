@@ -14,6 +14,8 @@ export const staffApi = {
     return apiRequest(`/staff/queue/?${params.toString()}`);
   },
 
+  getDivisions: () => apiRequest('/staff/divisions/'),
+
   callNext: (officeId, counterId, personnel = null) => apiRequest('/staff/call-next/', {
     method: 'POST',
     body: JSON.stringify({ office: officeId, counter: counterId, personnel }),

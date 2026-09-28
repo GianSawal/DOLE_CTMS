@@ -334,7 +334,7 @@ export default function StaffQueue() {
                   onChange={handleCounterChange}
                   style={{ minWidth: '200px', minHeight: '44px' }}
                 >
-                  <option value="">-- All Counters --</option>
+                  <option value="">-- All Counters / Divisions --</option>
                   {queueData.counters?.map(cnt => (
                     <option key={cnt.id} value={cnt.id}>{cnt.name}</option>
                   ))}
@@ -452,7 +452,21 @@ export default function StaffQueue() {
                     </div>
 
                     <div style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                      <strong>Service:</strong> {tx.service_name}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <span><strong>Service:</strong> {tx.service_name}</span>
+                        {tx.division_name && (
+                          <span style={{
+                            fontSize: '0.72rem',
+                            backgroundColor: 'rgba(3, 5, 186, 0.08)',
+                            color: 'var(--dole-blue)',
+                            fontWeight: 700,
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '3px',
+                          }}>
+                            {tx.division_name}
+                          </span>
+                        )}
+                      </div>
                       {tx.client_name && (
                         <div><strong>Client:</strong> {tx.client_name}</div>
                       )}
@@ -666,7 +680,21 @@ export default function StaffQueue() {
                     </div>
 
                     <div style={{ fontSize: '0.85rem', marginTop: '0.4rem', color: 'var(--text-secondary)' }}>
-                      <strong>{tx.service_name}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <strong>{tx.service_name}</strong>
+                        {tx.division_name && (
+                          <span style={{
+                            fontSize: '0.72rem',
+                            backgroundColor: 'rgba(3, 5, 186, 0.08)',
+                            color: 'var(--dole-blue)',
+                            fontWeight: 700,
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '3px',
+                          }}>
+                            {tx.division_name}
+                          </span>
+                        )}
+                      </div>
                       {tx.client_name && <div>Client: {tx.client_name}</div>}
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
                         Checked in: {new Date(tx.checked_in_at).toLocaleTimeString()}

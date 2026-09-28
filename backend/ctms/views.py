@@ -19,6 +19,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .models import (
+    CsmDivision,
     CsmOffice,
     CsmService,
     CsmResponse,
@@ -28,6 +29,7 @@ from .models import (
     CtmsTransaction,
 )
 from .serializers import (
+    CsmDivisionSerializer,
     CsmOfficeSerializer,
     CsmServiceSerializer,
     CtmsCounterSerializer,
@@ -313,18 +315,33 @@ class StaffQueueView(APIView):
         if counter_id:
             serving_qs = serving_qs.filter(counter_id=counter_id)
 
-        counters_qs = CtmsCounter.objects.filter(office=office, is_active=True)
-        if not counters_qs.exists():
-            counter_names = ["Window 1", "Window 2", "Window 3 (Priority)", "Helpdesk"]
-            for name in counter_names:
-                CtmsCounter.objects.get_or_create(office=office, name=name, defaults={'is_active': True})
-            counters_qs = CtmsCounter.objects.filter(office=office, is_active=True)
+        # Retrieve divisions directly from csm_division table
+        divisions = CsmDivision.objects.all().order_by('id')
+        division_names = [d.name for d in divisions]
+
+        if division_names:
+            # Ensure an active counter exists for each division in csm_division
+            for div_name in division_names:
+                cnt, created = CtmsCounter.objects.get_or_create(
+                    office=office,
+                    name=div_name,
+                    defaults={'is_active': True}
+                )
+                if not created and not cnt.is_active:
+                    cnt.is_active = True
+                    cnt.save(update_fields=['is_active'])
+
+            # Deactivate obsolete counters that do not match csm_division (e.g. Window 1, Window 2)
+            CtmsCounter.objects.filter(office=office).exclude(name__in=division_names).update(is_active=False)
+
+        counters_qs = CtmsCounter.objects.filter(office=office, is_active=True).order_by('id')
 
         return Response({
             "office": CsmOfficeSerializer(office).data,
             "waiting": StaffTransactionSerializer(waiting_qs, many=True).data,
             "serving": StaffTransactionSerializer(serving_qs, many=True).data,
             "counters": CtmsCounterSerializer(counters_qs, many=True).data,
+            "divisions": CsmDivisionSerializer(divisions, many=True).data,
         })
 
 
@@ -374,7 +391,9 @@ class StaffCallNextView(APIView):
         else:
             counter = CtmsCounter.objects.filter(office=office, is_active=True).first()
             if not counter:
-                counter, _ = CtmsCounter.objects.get_or_create(office=office, name="Window 1", defaults={'is_active': True})
+                first_div = CsmDivision.objects.first()
+                default_name = first_div.name if first_div else "General"
+                counter, _ = CtmsCounter.objects.get_or_create(office=office, name=default_name, defaults={'is_active': True})
 
         personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
         try:
@@ -410,7 +429,9 @@ class StaffTransactionActionView(APIView):
                 else:
                     counter = CtmsCounter.objects.filter(office=tx.office, is_active=True).first()
                     if not counter:
-                        counter, _ = CtmsCounter.objects.get_or_create(office=tx.office, name="Window 1", defaults={'is_active': True})
+                        first_div = CsmDivision.objects.first()
+                        default_name = first_div.name if first_div else "General"
+                        counter, _ = CtmsCounter.objects.get_or_create(office=tx.office, name=default_name, defaults={'is_active': True})
                 tx = services.call_specific_transaction(tx, counter, personnel=personnel)
 
             elif action == 'recall':
@@ -804,3 +825,15 @@ class PublicStreamLocalVideoView(APIView):
         response = FileResponse(open(file_path, 'rb'), content_type=content_type)
         response['Accept-Ranges'] = 'bytes'
         return response
+
+
+class CsmDivisionListView(APIView):
+    """
+    Returns list of all active divisions from the csm_division table.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        divisions = CsmDivision.objects.all().order_by('id')
+        return Response(CsmDivisionSerializer(divisions, many=True).data)
+

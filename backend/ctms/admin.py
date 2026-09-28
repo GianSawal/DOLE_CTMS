@@ -1,5 +1,6 @@
 from django.contrib import admin
 from .models import (
+    CsmDivision,
     CsmOffice,
     CsmService,
     CsmResponse,
@@ -8,6 +9,13 @@ from .models import (
     CtmsDisplayConfig,
     CtmsTransaction,
 )
+
+@admin.register(CsmDivision)
+class CsmDivisionAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name')
+    search_fields = ('name',)
+    ordering = ('id',)
+
 
 @admin.register(CtmsDisplayConfig)
 class CtmsDisplayConfigAdmin(admin.ModelAdmin):
