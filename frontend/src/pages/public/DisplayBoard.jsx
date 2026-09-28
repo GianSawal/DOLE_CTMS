@@ -59,6 +59,17 @@ export default function DisplayBoard() {
     const saved = localStorage.getItem('ctms_display_sound_enabled');
     return saved !== null ? saved === 'true' : true;
   });
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('ctms_display_theme') || 'dark';
+  });
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    localStorage.setItem('ctms_display_theme', nextTheme);
+  };
+
+  const isLight = theme === 'light';
   const [audioUnlocked, setAudioUnlocked] = useState(() => isAudioUnlocked());
   const [artaVideoUrl, setArtaVideoUrl] = useState(() => {
     try {
@@ -508,21 +519,60 @@ export default function DisplayBoard() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: '100vh', backgroundColor: isLight ? '#f8fafc' : '#0f172a', color: isLight ? '#0f172a' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <h1 style={{ fontSize: '2rem' }}>Loading Display Board...</h1>
       </div>
     );
   }
 
+  const themeStyles = {
+    pageBg: isLight ? '#f8fafc' : '#0a0f1d',
+    pageColor: isLight ? '#0f172a' : '#ffffff',
+    headerBorder: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)',
+    subTitleColor: isLight ? '#b45309' : 'var(--dole-gold)',
+    titleColor: isLight ? '#0305ba' : '#ffffff',
+    sectionTitleColor: isLight ? '#0305ba' : 'var(--dole-gold)',
+    cardBg: isLight ? '#ffffff' : '#161e31',
+    cardBorder: isLight ? '2px solid #2563eb' : '2px solid rgba(3, 5, 186, 0.6)',
+    cardShadow: isLight ? '0 8px 24px rgba(0, 0, 0, 0.08)' : '0 8px 24px rgba(0, 0, 0, 0.5)',
+    counterLabel: isLight ? '#475569' : '#94a3b8',
+    queueNoColor: isLight ? '#0305ba' : 'var(--dole-gold)',
+    queueNoShadow: isLight ? 'none' : '0 0 30px rgba(255, 198, 3, 0.35)',
+    personnelBadgeBg: isLight ? 'rgba(217, 119, 6, 0.12)' : 'rgba(217, 119, 6, 0.22)',
+    personnelBadgeBorder: isLight ? '2px solid rgba(217, 119, 6, 0.6)' : '2px solid rgba(255, 198, 3, 0.75)',
+    personnelText: isLight ? '#92400e' : '#fef08a',
+    personnelName: isLight ? '#0305ba' : '#ffffff',
+    serviceBoxBg: isLight ? 'rgba(3, 5, 186, 0.05)' : 'rgba(255, 255, 255, 0.04)',
+    serviceBoxBorder: isLight ? '1px solid rgba(3, 5, 186, 0.15)' : '1px solid rgba(255, 255, 255, 0.08)',
+    serviceNameColor: isLight ? '#0f172a' : '#f8fafc',
+    serviceDescColor: isLight ? '#475569' : '#94a3b8',
+    emptyServingBg: isLight ? '#f1f5f9' : '#161e31',
+    emptyServingBorder: isLight ? '1px dashed rgba(0, 0, 0, 0.2)' : '1px dashed rgba(255, 255, 255, 0.15)',
+    emptyServingColor: isLight ? '#64748b' : '#64748b',
+    rightSectionBg: isLight ? '#ffffff' : '#111827',
+    rightSectionBorder: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)',
+    rightSectionShadow: isLight ? '0 8px 24px rgba(0, 0, 0, 0.06)' : 'none',
+    nextTitleColor: isLight ? '#0305ba' : '#93c5fd',
+    nextTitleBorder: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)',
+    nextItemBg: isLight ? '#f8fafc' : '#1e293b',
+    nextItemNumber: isLight ? '#0f172a' : '#ffffff',
+    nextItemBorder: isLight ? '1px solid #e2e8f0' : 'none',
+    footerBorder: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)',
+    footerColor: '#64748b',
+    btnColor: isLight ? '#0f172a' : '#ffffff',
+    btnBorder: isLight ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.2)',
+  };
+
   return (
     <div style={{
       minHeight: '100vh',
-      backgroundColor: '#0a0f1d',
-      color: '#ffffff',
+      backgroundColor: themeStyles.pageBg,
+      color: themeStyles.pageColor,
       display: 'flex',
       flexDirection: 'column',
       fontFamily: 'var(--font-ui)',
       padding: '1.5rem 2rem',
+      transition: 'background-color 0.2s ease, color 0.2s ease',
     }}>
       {/* Autoplay Audio Unlock Notice */}
       {soundEnabled && !audioUnlocked && (
@@ -570,7 +620,7 @@ export default function DisplayBoard() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        borderBottom: '2px solid rgba(255,255,255,0.1)',
+        borderBottom: `2px solid ${themeStyles.headerBorder}`,
         paddingBottom: '1.25rem',
         marginBottom: '2rem',
       }}>
@@ -578,7 +628,7 @@ export default function DisplayBoard() {
           <img
             src="/dolelogo.png"
             alt="DOLE Official Seal"
-            style={{ width: '76px', height: '76px', objectFit: 'contain', filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.5))' }}
+            style={{ width: '76px', height: '76px', objectFit: 'contain', filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.3))' }}
           />
           <div>
             <div style={{
@@ -586,24 +636,43 @@ export default function DisplayBoard() {
               fontWeight: 800,
               letterSpacing: '0.1em',
               textTransform: 'uppercase',
-              color: 'var(--dole-gold)',
+              color: themeStyles.subTitleColor,
             }}>
               Republic of the Philippines · DOLE
             </div>
-            <h1 style={{ fontSize: '2.25rem', fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>
+            <h1 style={{ fontSize: '2.25rem', fontWeight: 900, margin: 0, letterSpacing: '-0.02em', color: themeStyles.titleColor }}>
               {displayData?.office?.name}
             </h1>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {/* Light / Dark Mode Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className="btn btn-outline btn-sm"
+            style={{
+              color: themeStyles.btnColor,
+              borderColor: themeStyles.btnBorder,
+              backgroundColor: isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+            }}
+            title={isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+          >
+            <span>{isLight ? '🌙' : '☀️'}</span>
+            <span>{isLight ? 'Dark Mode' : 'Light Mode'}</span>
+          </button>
+
           <button
             onClick={handleToggleSound}
             className="btn btn-outline btn-sm"
             style={{
-              color: '#ffffff',
-              borderColor: soundEnabled ? 'var(--dole-gold)' : 'rgba(255,255,255,0.2)',
-              backgroundColor: soundEnabled ? 'rgba(217, 119, 6, 0.25)' : 'transparent',
+              color: soundEnabled ? (isLight ? '#92400e' : '#ffffff') : themeStyles.btnColor,
+              borderColor: soundEnabled ? (isLight ? '#f59e0b' : 'var(--dole-gold)') : themeStyles.btnBorder,
+              backgroundColor: soundEnabled ? (isLight ? 'rgba(245, 158, 11, 0.15)' : 'rgba(217, 119, 6, 0.25)') : 'transparent',
               fontWeight: 600,
             }}
             title={soundEnabled ? 'Click to mute airport chime & voice' : 'Click to enable airport announcement chime & voice'}
@@ -625,9 +694,9 @@ export default function DisplayBoard() {
               }}
               className="btn btn-outline btn-sm"
               style={{
-                color: 'var(--dole-gold)',
-                borderColor: 'rgba(217, 119, 6, 0.5)',
-                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                color: isLight ? '#92400e' : 'var(--dole-gold)',
+                borderColor: isLight ? 'rgba(217, 119, 6, 0.4)' : 'rgba(217, 119, 6, 0.5)',
+                backgroundColor: isLight ? 'rgba(245, 158, 11, 0.08)' : 'rgba(0, 0, 0, 0.3)',
                 padding: '0.25rem 0.6rem',
                 fontSize: '0.75rem',
               }}
@@ -639,14 +708,14 @@ export default function DisplayBoard() {
           <button
             onClick={() => setLang(lang === 'en' ? 'fil' : 'en')}
             className="btn btn-outline btn-sm"
-            style={{ color: '#ffffff', borderColor: 'rgba(255,255,255,0.2)' }}
+            style={{ color: themeStyles.btnColor, borderColor: themeStyles.btnBorder, backgroundColor: isLight ? 'rgba(0, 0, 0, 0.04)' : 'transparent' }}
           >
             🌐 {lang === 'en' ? 'Filipino' : 'English'}
           </button>
           <button
             onClick={toggleFullScreen}
             className="btn btn-outline btn-sm"
-            style={{ color: '#ffffff', borderColor: 'rgba(255,255,255,0.2)' }}
+            style={{ color: themeStyles.btnColor, borderColor: themeStyles.btnBorder, backgroundColor: isLight ? 'rgba(0, 0, 0, 0.04)' : 'transparent' }}
           >
             ⛶ Fullscreen
           </button>
@@ -667,7 +736,7 @@ export default function DisplayBoard() {
             fontWeight: 800,
             textTransform: 'uppercase',
             letterSpacing: '0.08em',
-            color: 'var(--dole-gold)',
+            color: themeStyles.sectionTitleColor,
             marginBottom: '1rem',
             display: 'flex',
             alignItems: 'center',
@@ -686,20 +755,20 @@ export default function DisplayBoard() {
             {displayData?.serving?.length > 0 ? (
               displayData.serving.map((item, idx) => (
                 <div key={idx} style={{
-                  backgroundColor: '#161e31',
+                  backgroundColor: themeStyles.cardBg,
                   borderRadius: '16px',
-                  border: '2px solid rgba(3, 5, 186, 0.6)',
+                  border: themeStyles.cardBorder,
                   padding: '1.75rem 1.5rem',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'center',
                   alignItems: 'center',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  boxShadow: themeStyles.cardShadow,
                 }}>
                   <div style={{
                     fontSize: '1.35rem',
                     fontWeight: 800,
-                    color: '#94a3b8',
+                    color: themeStyles.counterLabel,
                     textTransform: 'uppercase',
                     letterSpacing: '0.06em',
                   }}>
@@ -708,11 +777,11 @@ export default function DisplayBoard() {
                   <div className="mono" style={{
                     fontSize: displayData?.serving?.length > 2 ? '4.25rem' : '5.25rem',
                     fontWeight: 900,
-                    color: 'var(--dole-gold)',
+                    color: item.is_priority ? 'var(--dole-gold)' : themeStyles.queueNoColor,
                     letterSpacing: '-0.02em',
                     lineHeight: 1.1,
                     margin: '0.35rem 0',
-                    textShadow: '0 0 30px rgba(255, 198, 3, 0.35)',
+                    textShadow: item.is_priority ? '0 0 30px rgba(255, 198, 3, 0.35)' : themeStyles.queueNoShadow,
                   }}>
                     {item.queue_no}
                   </div>
@@ -722,18 +791,18 @@ export default function DisplayBoard() {
                       marginTop: '0.4rem',
                       marginBottom: '0.65rem',
                       padding: '0.5rem 1.4rem',
-                      backgroundColor: 'rgba(217, 119, 6, 0.22)',
-                      border: '2px solid rgba(255, 198, 3, 0.75)',
+                      backgroundColor: themeStyles.personnelBadgeBg,
+                      border: themeStyles.personnelBadgeBorder,
                       borderRadius: '9999px',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.6rem',
-                      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+                      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
                     }}>
                       <span style={{ fontSize: '1.25rem' }}>👤</span>
-                      <span style={{ fontSize: '1.15rem', color: '#fef08a', fontWeight: 600 }}>
+                      <span style={{ fontSize: '1.15rem', color: themeStyles.personnelText, fontWeight: 600 }}>
                         {t.please_look_for || (lang === 'fil' ? 'Mangyaring hanapin si' : 'Please look for')}:{' '}
-                        <strong style={{ color: '#ffffff', fontWeight: 800, fontSize: '1.25rem', textDecoration: 'underline decoration-amber-400' }}>
+                        <strong style={{ color: themeStyles.personnelName, fontWeight: 800, fontSize: '1.25rem', textDecoration: 'underline decoration-amber-400' }}>
                           {item.assigned_personnel}
                         </strong>
                       </span>
@@ -747,13 +816,13 @@ export default function DisplayBoard() {
                       maxWidth: '92%',
                       padding: '0.6rem 1rem',
                       borderRadius: '10px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      backgroundColor: themeStyles.serviceBoxBg,
+                      border: themeStyles.serviceBoxBorder,
                     }}>
                       <div style={{
                         fontSize: '1.1rem',
                         fontWeight: 700,
-                        color: '#f8fafc',
+                        color: themeStyles.serviceNameColor,
                         letterSpacing: '-0.01em',
                         marginBottom: '0.25rem',
                         display: 'flex',
@@ -773,7 +842,7 @@ export default function DisplayBoard() {
                       </div>
                       <div style={{
                         fontSize: '0.85rem',
-                        color: '#94a3b8',
+                        color: themeStyles.serviceDescColor,
                         lineHeight: 1.35,
                         fontWeight: 400,
                       }}>
@@ -786,13 +855,13 @@ export default function DisplayBoard() {
             ) : (
               <div style={{
                 gridColumn: '1 / -1',
-                backgroundColor: '#161e31',
+                backgroundColor: themeStyles.emptyServingBg,
                 borderRadius: '16px',
-                border: '1px dashed rgba(255,255,255,0.15)',
+                border: themeStyles.emptyServingBorder,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#64748b',
+                color: themeStyles.emptyServingColor,
                 fontSize: '1.5rem',
                 fontWeight: 600,
               }}>
@@ -804,9 +873,10 @@ export default function DisplayBoard() {
 
         {/* Right Side: NEXT IN LINE & ARTA AWARENESS VIDEO */}
         <section style={{
-          backgroundColor: '#111827',
+          backgroundColor: themeStyles.rightSectionBg,
           borderRadius: '16px',
-          border: '1px solid rgba(255,255,255,0.1)',
+          border: themeStyles.rightSectionBorder,
+          boxShadow: themeStyles.rightSectionShadow,
           padding: '1.25rem 1.5rem',
           display: 'flex',
           flexDirection: 'column',
@@ -826,9 +896,9 @@ export default function DisplayBoard() {
               fontWeight: 800,
               textTransform: 'uppercase',
               letterSpacing: '0.08em',
-              color: '#93c5fd',
+              color: themeStyles.nextTitleColor,
               marginBottom: '0.75rem',
-              borderBottom: '1px solid rgba(255,255,255,0.1)',
+              borderBottom: themeStyles.nextTitleBorder,
               paddingBottom: '0.5rem',
               display: 'flex',
               alignItems: 'center',
@@ -836,7 +906,7 @@ export default function DisplayBoard() {
             }}>
               <span>{t.next_numbers}</span>
               {displayData?.next?.length > 0 && (
-                <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600 }}>
+                <span style={{ fontSize: '0.85rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
                   {displayData.next.length} in line
                 </span>
               )}
@@ -846,24 +916,25 @@ export default function DisplayBoard() {
               {displayData?.next?.length > 0 ? (
                 displayData.next.map((num, idx) => (
                   <div key={idx} style={{
-                    backgroundColor: '#1e293b',
+                    backgroundColor: themeStyles.nextItemBg,
+                    border: themeStyles.nextItemBorder,
                     borderRadius: '10px',
                     padding: '0.75rem 1.25rem',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    borderLeft: num.startsWith('P-') ? '5px solid var(--dole-gold)' : '5px solid #3b82f6',
+                    borderLeft: num.startsWith('P-') ? '5px solid var(--dole-gold)' : (isLight ? '5px solid #2563eb' : '5px solid #3b82f6'),
                   }}>
-                    <span style={{ fontSize: '1rem', color: '#94a3b8', fontWeight: 600 }}>
+                    <span style={{ fontSize: '1rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
                       #{idx + 1}
                     </span>
-                    <span className="mono" style={{ fontSize: '1.85rem', fontWeight: 800, color: num.startsWith('P-') ? 'var(--dole-gold)' : '#ffffff' }}>
+                    <span className="mono" style={{ fontSize: '1.85rem', fontWeight: 800, color: num.startsWith('P-') ? 'var(--dole-gold)' : themeStyles.nextItemNumber }}>
                       {num}
                     </span>
                   </div>
                 ))
               ) : (
-                <div style={{ textAlign: 'center', color: '#64748b', marginTop: '1.5rem', fontSize: '1.1rem' }}>
+                <div style={{ textAlign: 'center', color: themeStyles.emptyServingColor, marginTop: '1.5rem', fontSize: '1.1rem' }}>
                   {t.waiting_empty}
                 </div>
               )}
@@ -1048,11 +1119,11 @@ export default function DisplayBoard() {
       <footer style={{
         marginTop: '1.5rem',
         paddingTop: '1rem',
-        borderTop: '1px solid rgba(255,255,255,0.1)',
+        borderTop: themeStyles.footerBorder,
         display: 'flex',
         justifyContent: 'space-between',
         fontSize: '0.85rem',
-        color: '#64748b',
+        color: themeStyles.footerColor,
       }}>
         <span>DOLE Client Transaction Monitoring System (CTMS)</span>
         <span>Display updates automatically every 5 seconds</span>
