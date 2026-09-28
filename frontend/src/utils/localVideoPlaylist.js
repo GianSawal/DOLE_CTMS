@@ -54,7 +54,24 @@ export async function parseFolderLink(folderUrl) {
   const trimmed = folderUrl.trim();
   if (!trimmed) return [];
 
-  // Check if multiple URLs separated by newlines, commas, or semicolons
+  // 1. Try querying backend folder-videos endpoint (resolves server paths, CORS-free HTTP directories, etc.)
+  try {
+    const res = await fetch(`/api/public/folder-videos/?folder=${encodeURIComponent(trimmed)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.videos && data.videos.length > 0) {
+        return data.videos.map((v, i) => ({
+          id: i,
+          name: v.name || `Video ${i + 1}`,
+          url: v.url,
+        }));
+      }
+    }
+  } catch (err) {
+    console.debug('Backend folder-videos check:', err);
+  }
+
+  // 2. Client-side parsing for multiple URLs separated by newlines, commas, or semicolons
   const lines = trimmed.split(/[\r\n,;]+/).map(s => s.trim()).filter(Boolean);
   if (lines.length > 1) {
     return lines.map((url, i) => ({
@@ -64,8 +81,8 @@ export async function parseFolderLink(folderUrl) {
     }));
   }
 
-  // If URL ends with / or looks like a folder link, try fetching directory listing
-  if (trimmed.endsWith('/') || !/\.[a-zA-Z0-9]+($|\?)/.test(trimmed)) {
+  // 3. Client-side fallback for direct HTTP/HTTPS directory listing
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     try {
       const res = await fetch(trimmed);
       if (res.ok) {
@@ -86,7 +103,7 @@ export async function parseFolderLink(folderUrl) {
         } catch {}
 
         // Parse HTML directory index (e.g. Nginx autoindex, Apache directory)
-        const regex = /href=["']([^"']+\.(?:mp4|webm|ogg|mov|mkv))["']/gi;
+        const regex = /href=["']([^"']+\.(?:mp4|webm|ogg|mov|mkv|m4v))["']/gi;
         const matches = [];
         let match;
         while ((match = regex.exec(text)) !== null) {
@@ -109,7 +126,7 @@ export async function parseFolderLink(folderUrl) {
         }
       }
     } catch (err) {
-      console.debug('Could not auto-index folder link:', err);
+      console.debug('Client-side directory fetch notice:', err);
     }
   }
 

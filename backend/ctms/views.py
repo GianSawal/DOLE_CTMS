@@ -1,10 +1,15 @@
 import io
+import os
+import re
+import urllib.request
+import urllib.parse
+import mimetypes
 import qrcode
 from datetime import timedelta
 from django.conf import settings
 from django.db import models
 from django.db.models import Avg, F, ExpressionWrapper, fields
-from django.http import HttpResponse
+from django.http import HttpResponse, FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets, permissions, exceptions
@@ -686,3 +691,116 @@ class CtmsStaffOfficeViewSet(viewsets.ModelViewSet):
     serializer_class = CtmsStaffOfficeSerializer
     permission_classes = [permissions.IsAdminUser]
     queryset = CtmsStaffOffice.objects.all().select_related('user', 'office')
+
+
+# =====================================================================
+# TV Display Local Folder Video Scanner & Streamer
+# =====================================================================
+
+class PublicFolderVideosView(APIView):
+    """
+    Parses a local folder path, HTTP folder URL, or multi-line video list
+    and returns a playlist of video URLs for continuous playback on the TV display.
+    Uses 0 server storage by streaming directly or referencing external links.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        folder = request.query_params.get('folder', '').strip()
+        if not folder:
+            return Response({"status": "error", "message": "Folder link or path is required.", "videos": []})
+
+        video_extensions = ('.mp4', '.webm', '.ogg', '.mov', '.mkv', '.m4v')
+
+        # 1. Multiple URLs separated by newlines, commas, or semicolons
+        lines = [line.strip() for line in re.split(r'[\r\n,;]+', folder) if line.strip()]
+        if len(lines) > 1:
+            videos = []
+            for i, line in enumerate(lines):
+                name = os.path.basename(line.split('?')[0]) or f"Video {i + 1}"
+                videos.append({"id": i, "name": name, "url": line})
+            return Response({"status": "success", "videos": videos})
+
+        # 2. Local filesystem directory path
+        clean_folder = folder.replace('file:///', '').replace('file://', '')
+        if os.path.isdir(clean_folder):
+            try:
+                entries = os.listdir(clean_folder)
+                video_files = [f for f in entries if os.path.isfile(os.path.join(clean_folder, f)) and f.lower().endswith(video_extensions)]
+                def natural_sort_key(s):
+                    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+                video_files.sort(key=natural_sort_key)
+
+                videos = []
+                for i, filename in enumerate(video_files):
+                    file_full_path = os.path.join(clean_folder, filename)
+                    stream_url = f"/api/public/stream-video/?file={urllib.parse.quote(file_full_path)}"
+                    videos.append({
+                        "id": i,
+                        "name": filename,
+                        "url": stream_url,
+                    })
+                return Response({"status": "success", "videos": videos})
+            except Exception as e:
+                return Response({"status": "error", "message": str(e), "videos": []})
+
+        # 3. HTTP / HTTPS directory link (e.g. Apache/Nginx autoindex)
+        if folder.startswith('http://') or folder.startswith('https://'):
+            if folder.lower().endswith(video_extensions):
+                name = os.path.basename(folder.split('?')[0]) or "Video 1"
+                return Response({"status": "success", "videos": [{"id": 0, "name": name, "url": folder}]})
+
+            try:
+                req = urllib.request.Request(folder, headers={'User-Agent': 'Mozilla/5.0 DOLE-CTMS-Display/1.0'})
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    content = response.read().decode('utf-8', errors='ignore')
+                    found_links = re.findall(r'href=["\']([^"\']+\.(?:mp4|webm|ogg|mov|mkv|m4v))["\']', content, re.IGNORECASE)
+                    if found_links:
+                        def natural_sort_key(s):
+                            return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+                        found_links.sort(key=natural_sort_key)
+
+                        videos = []
+                        seen = set()
+                        for href in found_links:
+                            full_url = urllib.parse.urljoin(folder, href)
+                            if full_url not in seen:
+                                seen.add(full_url)
+                                name = os.path.basename(href.split('?')[0]) or f"Video {len(videos) + 1}"
+                                videos.append({"id": len(videos), "name": name, "url": full_url})
+                        if videos:
+                            return Response({"status": "success", "videos": videos})
+            except Exception:
+                pass
+
+        # Fallback: single video item
+        name = os.path.basename(folder.split('?')[0]) or "ARTA Video"
+        return Response({"status": "success", "videos": [{"id": 0, "name": name, "url": folder}]})
+
+
+class PublicStreamLocalVideoView(APIView):
+    """
+    Streams a local video file with HTTP 206 Partial Content / Range support for smooth seeking.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        file_param = request.query_params.get('file', '').strip()
+        if not file_param:
+            raise Http404("Video file parameter required.")
+
+        file_path = urllib.parse.unquote(file_param)
+        if not os.path.isfile(file_path):
+            raise Http404("Video file not found.")
+
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in ('.mp4', '.webm', '.ogg', '.mov', '.mkv', '.m4v'):
+            raise Http404("Unsupported video format.")
+
+        content_type, _ = mimetypes.guess_type(file_path)
+        if not content_type:
+            content_type = 'video/mp4'
+
+        response = FileResponse(open(file_path, 'rb'), content_type=content_type)
+        response['Accept-Ranges'] = 'bytes'
+        return response

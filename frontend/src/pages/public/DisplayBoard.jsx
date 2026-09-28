@@ -74,9 +74,17 @@ export default function DisplayBoard() {
   const isDuckingRef = useRef(false);
   const duckIntervalRef = useRef(null);
 
+  const isFolderLike = (url) => {
+    if (!url) return false;
+    const t = url.trim();
+    return t.includes(',') || t.includes('\n') || t.includes(';') || t.endsWith('/') || !/\.[a-zA-Z0-9]{2,5}($|\?)/.test(t);
+  };
+
   const currentVideoItem = playlist.length > 0 ? playlist[currentIndex] : null;
-  const currentVideoUrl = currentVideoItem ? currentVideoItem.url : artaVideoUrl;
-  const artaEmbed = parseVideoEmbedUrl(currentVideoUrl);
+  const currentVideoUrl = currentVideoItem
+    ? currentVideoItem.url
+    : (isFolderLike(artaVideoUrl) ? null : artaVideoUrl);
+  const artaEmbed = currentVideoUrl ? parseVideoEmbedUrl(currentVideoUrl) : null;
 
   const prevServingRef = useRef([]);
   const lastCalledRef = useRef(null);
@@ -836,7 +844,16 @@ export default function DisplayBoard() {
                   />
                 ) : (
                   <video
-                    ref={videoRef}
+                    ref={(el) => {
+                      videoRef.current = el;
+                      if (el) {
+                        el.volume = isDuckingRef.current ? 0.08 : defaultVideoVolumeRef.current;
+                        el.play().catch(() => {
+                          el.muted = true;
+                          el.play().catch(() => {});
+                        });
+                      }
+                    }}
                     key={artaEmbed.url}
                     src={artaEmbed.url}
                     autoPlay

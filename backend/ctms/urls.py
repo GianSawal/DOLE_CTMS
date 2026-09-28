@@ -18,6 +18,8 @@ from .views import (
     StaffReportsSummaryView,
     StaffQrCodeView,
     StaffDisplayVideoView,
+    PublicFolderVideosView,
+    PublicStreamLocalVideoView,
     CtmsCounterViewSet,
     CtmsStaffOfficeViewSet,
 )
@@ -33,6 +35,8 @@ urlpatterns = [
     path('public/checkin/', PublicCheckinView.as_view(), name='public-checkin'),
     path('public/tickets/<str:ticket_token>/', PublicTicketDetailView.as_view(), name='public-ticket-detail'),
     path('public/display/<int:office_id>/', PublicDisplayBoardView.as_view(), name='public-display-board'),
+    path('public/folder-videos/', PublicFolderVideosView.as_view(), name='public-folder-videos'),
+    path('public/stream-video/', PublicStreamLocalVideoView.as_view(), name='public-stream-video'),
 
     # Staff authentication
     path('staff/auth/login/', StaffLoginView.as_view(), name='staff-login'),
