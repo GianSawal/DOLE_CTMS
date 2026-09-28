@@ -18,6 +18,7 @@ from .models import (
     CsmResponse,
     CtmsCounter,
     CtmsStaffOffice,
+    CtmsDisplayConfig,
     CtmsTransaction,
 )
 from .serializers import (
@@ -243,6 +244,9 @@ class PublicDisplayBoardView(APIView):
         first_serving = serving_qs.first()
         latest_called_at = first_serving.called_at.isoformat() if first_serving and first_serving.called_at else None
 
+        display_config = CtmsDisplayConfig.objects.filter(office=office).first()
+        arta_video_url = display_config.arta_video_url if (display_config and display_config.is_active) else ""
+
         return Response({
             "office": CsmOfficeSerializer(office).data,
             "serving": serving_data,
@@ -251,6 +255,7 @@ class PublicDisplayBoardView(APIView):
             "latest_called_queue_no": first_serving.queue_no if first_serving else None,
             "latest_called_counter": (first_serving.counter.name if first_serving.counter else "Counter") if first_serving else None,
             "latest_called_personnel": (first_serving.assigned_personnel or "") if first_serving else None,
+            "arta_video_url": arta_video_url,
             "updated_at": timezone.now().isoformat(),
         })
 
@@ -550,7 +555,7 @@ class StaffQrCodeView(APIView):
         checkin_url = f"{base_url}/checkin/office/{office.id}"
 
         qr = qrcode.QRCode(
-            version=1,
+            version=None,
             error_correction=qrcode.constants.ERROR_CORRECT_H,
             box_size=10,
             border=4,
@@ -563,6 +568,46 @@ class StaffQrCodeView(APIView):
         img.save(buffer, format="PNG")
         buffer.seek(0)
         return HttpResponse(buffer.getvalue(), content_type="image/png")
+
+
+class StaffDisplayVideoView(APIView):
+    permission_classes = [IsStaffUser]
+
+    def get(self, request):
+        office_id = request.GET.get('office')
+        if not office_id:
+            return Response({"detail": "Office ID required."}, status=status.HTTP_400_BAD_REQUEST)
+        allowed_offices = get_staff_offices(request.user)
+        office = get_object_or_404(allowed_offices, pk=office_id)
+        config, _ = CtmsDisplayConfig.objects.get_or_create(office=office)
+        return Response({
+            "office_id": office.id,
+            "office_name": office.name,
+            "arta_video_url": config.arta_video_url,
+            "is_active": config.is_active,
+        })
+
+    def post(self, request):
+        office_id = request.data.get('office')
+        if not office_id:
+            return Response({"detail": "Office ID required."}, status=status.HTTP_400_BAD_REQUEST)
+        allowed_offices = get_staff_offices(request.user)
+        office = get_object_or_404(allowed_offices, pk=office_id)
+        video_url = request.data.get('arta_video_url', '').strip()
+        is_active = request.data.get('is_active', True)
+
+        config, _ = CtmsDisplayConfig.objects.get_or_create(office=office)
+        config.arta_video_url = video_url
+        config.is_active = bool(is_active)
+        config.save()
+
+        return Response({
+            "status": "success",
+            "office_id": office.id,
+            "office_name": office.name,
+            "arta_video_url": config.arta_video_url,
+            "is_active": config.is_active,
+        })
 
 
 # =====================================================================

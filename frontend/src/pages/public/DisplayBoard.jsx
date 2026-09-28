@@ -10,6 +10,7 @@ import {
   isAudioUnlocked,
   CHIME_BROADCAST_CHANNEL,
 } from '../../utils/airportChime';
+import { parseVideoEmbedUrl } from '../../components/ArtaVideoModal';
 
 const fallbackServiceDescriptions = {
   sena: 'Conciliation-mediation of labor issues, disputes, and worker grievances.',
@@ -51,6 +52,18 @@ export default function DisplayBoard() {
     return saved !== null ? saved === 'true' : true;
   });
   const [audioUnlocked, setAudioUnlocked] = useState(() => isAudioUnlocked());
+  const [artaVideoUrl, setArtaVideoUrl] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`ctms_arta_video_${officeId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        return parsed.isActive !== false ? (parsed.videoUrl || '') : '';
+      }
+    } catch {}
+    return '';
+  });
+
+  const artaEmbed = parseVideoEmbedUrl(artaVideoUrl);
 
   const prevServingRef = useRef([]);
   const lastCalledRef = useRef(null);
@@ -138,6 +151,9 @@ export default function DisplayBoard() {
           prevServingRef.current = data.serving || [];
         }
 
+        if (data.arta_video_url !== undefined) {
+          setArtaVideoUrl(data.arta_video_url || '');
+        }
         setDisplayData(data);
         setError('');
       } catch (err) {
@@ -157,6 +173,7 @@ export default function DisplayBoard() {
 
     // Cross-tab broadcast listener for instant 0ms chime and voice announcement
     let bc = null;
+    let videoBc = null;
     try {
       if (typeof BroadcastChannel !== 'undefined') {
         bc = new BroadcastChannel(CHIME_BROADCAST_CHANNEL);
@@ -173,6 +190,18 @@ export default function DisplayBoard() {
                 });
               }
               // Immediately fetch updated display data
+              fetchDisplay();
+            }
+          }
+        };
+
+        videoBc = new BroadcastChannel('ctms_arta_video_channel');
+        videoBc.onmessage = (event) => {
+          if (!isMounted) return;
+          if (event.data?.type === 'ARTA_VIDEO_UPDATED') {
+            if (!event.data.officeId || String(event.data.officeId) === String(officeId)) {
+              const newUrl = event.data.isActive !== false ? (event.data.videoUrl || '') : '';
+              setArtaVideoUrl(newUrl);
               fetchDisplay();
             }
           }
@@ -198,6 +227,12 @@ export default function DisplayBoard() {
             fetchDisplay();
           }
         } catch {}
+      } else if (e.key === `ctms_arta_video_${officeId}` && e.newValue) {
+        try {
+          const item = JSON.parse(e.newValue);
+          setArtaVideoUrl(item.isActive !== false ? (item.videoUrl || '') : '');
+          fetchDisplay();
+        } catch {}
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -207,6 +242,9 @@ export default function DisplayBoard() {
       clearInterval(interval);
       if (bc) {
         try { bc.close(); } catch {}
+      }
+      if (videoBc) {
+        try { videoBc.close(); } catch {}
       }
       window.removeEventListener('storage', handleStorage);
     };
@@ -516,54 +554,180 @@ export default function DisplayBoard() {
           </div>
         </section>
 
-        {/* Right Side: NEXT IN LINE */}
+        {/* Right Side: NEXT IN LINE & ARTA AWARENESS VIDEO */}
         <section style={{
           backgroundColor: '#111827',
           borderRadius: '16px',
           border: '1px solid rgba(255,255,255,0.1)',
-          padding: '1.5rem',
+          padding: '1.25rem 1.5rem',
           display: 'flex',
           flexDirection: 'column',
+          gap: '1.25rem',
+          overflow: 'hidden',
         }}>
+          {/* Top: Upcoming Queue (NEXT IN LINE) */}
           <div style={{
-            fontSize: '1.25rem',
-            fontWeight: 800,
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            color: '#93c5fd',
-            marginBottom: '1rem',
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
-            paddingBottom: '0.75rem',
+            display: 'flex',
+            flexDirection: 'column',
+            flex: artaEmbed ? '1 1 auto' : '1',
+            minHeight: 0,
+            maxHeight: artaEmbed ? '320px' : 'none',
           }}>
-            {t.next_numbers}
+            <div style={{
+              fontSize: '1.25rem',
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              color: '#93c5fd',
+              marginBottom: '0.75rem',
+              borderBottom: '1px solid rgba(255,255,255,0.1)',
+              paddingBottom: '0.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <span>{t.next_numbers}</span>
+              {displayData?.next?.length > 0 && (
+                <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600 }}>
+                  {displayData.next.length} in line
+                </span>
+              )}
+            </div>
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.65rem', overflowY: 'auto', paddingRight: '4px' }}>
+              {displayData?.next?.length > 0 ? (
+                displayData.next.map((num, idx) => (
+                  <div key={idx} style={{
+                    backgroundColor: '#1e293b',
+                    borderRadius: '10px',
+                    padding: '0.75rem 1.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderLeft: num.startsWith('P-') ? '5px solid var(--dole-gold)' : '5px solid #3b82f6',
+                  }}>
+                    <span style={{ fontSize: '1rem', color: '#94a3b8', fontWeight: 600 }}>
+                      #{idx + 1}
+                    </span>
+                    <span className="mono" style={{ fontSize: '1.85rem', fontWeight: 800, color: num.startsWith('P-') ? 'var(--dole-gold)' : '#ffffff' }}>
+                      {num}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div style={{ textAlign: 'center', color: '#64748b', marginTop: '1.5rem', fontSize: '1.1rem' }}>
+                  {t.waiting_empty}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto' }}>
-            {displayData?.next?.length > 0 ? (
-              displayData.next.map((num, idx) => (
-                <div key={idx} style={{
-                  backgroundColor: '#1e293b',
-                  borderRadius: '10px',
-                  padding: '1rem 1.5rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  borderLeft: num.startsWith('P-') ? '5px solid var(--dole-gold)' : '5px solid #3b82f6',
-                }}>
-                  <span style={{ fontSize: '1rem', color: '#94a3b8', fontWeight: 600 }}>
-                    #{idx + 1}
-                  </span>
-                  <span className="mono" style={{ fontSize: '2rem', fontWeight: 800, color: num.startsWith('P-') ? 'var(--dole-gold)' : '#ffffff' }}>
-                    {num}
+          {/* Under Upcoming Queue: ARTA Citizen's Charter Video */}
+          {artaEmbed ? (
+            <div style={{
+              backgroundColor: '#0b1120',
+              borderRadius: '14px',
+              border: '1px solid rgba(217, 119, 6, 0.45)',
+              boxShadow: '0 6px 20px rgba(0, 0, 0, 0.5)',
+              padding: '0.85rem',
+              display: 'flex',
+              flexDirection: 'column',
+              flexShrink: 0,
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '0.5rem',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                paddingBottom: '0.4rem',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <span style={{ fontSize: '1.1rem' }}>🎥</span>
+                  <span style={{
+                    fontSize: '0.85rem',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    color: 'var(--dole-gold)',
+                  }}>
+                    ARTA · Citizen's Charter
                   </span>
                 </div>
-              ))
-            ) : (
-              <div style={{ textAlign: 'center', color: '#64748b', marginTop: '2rem', fontSize: '1.1rem' }}>
-                {t.waiting_empty}
+                <span style={{
+                  fontSize: '0.7rem',
+                  padding: '0.15rem 0.5rem',
+                  borderRadius: '9999px',
+                  backgroundColor: 'rgba(217, 119, 6, 0.25)',
+                  color: '#fef08a',
+                  fontWeight: 700,
+                  border: '1px solid rgba(255, 198, 3, 0.4)',
+                }}>
+                  R.A. 11032
+                </span>
               </div>
-            )}
-          </div>
+
+              {/* Video Player 16:9 */}
+              <div style={{
+                position: 'relative',
+                width: '100%',
+                paddingTop: '56.25%',
+                backgroundColor: '#000000',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}>
+                {artaEmbed.type === 'youtube' || artaEmbed.type === 'embed' ? (
+                  <iframe
+                    src={artaEmbed.url}
+                    title="ARTA Awareness Video"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                    }}
+                  />
+                ) : (
+                  <video
+                    src={artaEmbed.url}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    controls
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                    }}
+                  />
+                )}
+              </div>
+
+              <div style={{
+                marginTop: '0.4rem',
+                fontSize: '0.72rem',
+                color: '#94a3b8',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <span>Anti-Red Tape Authority awareness video</span>
+                <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                  <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                  Playing
+                </span>
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
 

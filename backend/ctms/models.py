@@ -108,6 +108,23 @@ class CtmsStaffOffice(models.Model):
         return f"{self.user.username} -> {self.office.name}"
 
 
+class CtmsDisplayConfig(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    office = models.OneToOneField(CsmOffice, on_delete=models.CASCADE, related_name='display_config')
+    arta_video_url = models.TextField(blank=True, default='', help_text="YouTube or direct MP4 video URL for TV display")
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ctms_display_config'
+        verbose_name = 'CTMS Display Config'
+        verbose_name_plural = 'CTMS Display Configs'
+
+    def __str__(self):
+        return f"Display Config for {self.office.name}"
+
+
+
 class CtmsTransaction(models.Model):
     STATUS_WAITING = 'waiting'
     STATUS_SERVING = 'serving'

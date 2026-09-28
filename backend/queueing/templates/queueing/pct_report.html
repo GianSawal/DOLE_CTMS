@@ -3,30 +3,160 @@
 {% block title %}Processing Cycle Time (PCT) Compliance Report — DOLE Queueing{% endblock %}
 {% block main_class %}main-wrapper-wide{% endblock %}
 
+{% block extra_head %}
+<style>
+    .preset-btn {
+        background: transparent;
+        border: 1px solid var(--border-color, #cbd5e1);
+        color: var(--text-secondary, #475569);
+        padding: 0.25rem 0.6rem;
+        font-size: 0.75rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.15s ease;
+    }
+
+    .preset-btn:hover {
+        background: #f1f5f9;
+        color: var(--dole-blue, #0305ba);
+        border-color: var(--dole-blue, #0305ba);
+    }
+
+    @media print {
+
+        .header-navbar,
+        .footer,
+        .dole-tricolor-bar,
+        .no-print,
+        form,
+        .btn,
+        .preset-btn {
+            display: none !important;
+        }
+
+        .print-only-header {
+            display: block !important;
+        }
+
+        body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            font-size: 10pt;
+            padding: 0 !important;
+        }
+
+        .main-wrapper,
+        .main-wrapper-wide {
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+
+        .card {
+            box-shadow: none !important;
+            border: 1px solid #94a3b8 !important;
+            margin-bottom: 1rem !important;
+            page-break-inside: avoid;
+        }
+
+        .data-table {
+            font-size: 9pt;
+            width: 100% !important;
+            border-collapse: collapse !important;
+        }
+
+        .data-table th,
+        .data-table td {
+            border: 1px solid #94a3b8 !important;
+            padding: 5px 8px !important;
+            color: #000000 !important;
+        }
+
+        .data-table th {
+            background-color: #f1f5f9 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div style="margin-bottom: 1.5rem;">
-    <h2>Processing Cycle Time (PCT) Compliance Report</h2>
-    <p style="color: var(--text-muted); font-size: 0.95rem;">
-        Performance monitoring against Citizen's Charter standards under Republic Act No. 11032.
-    </p>
+<!-- Official Print Header (Visible only on print/export) -->
+<div class="print-only-header"
+    style="display: none; text-align: center; margin-bottom: 1.5rem; border-bottom: 2px solid #0f172a; padding-bottom: 0.85rem;">
+    <div style="font-size: 10pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569;">
+        Republic of the Philippines</div>
+    <div style="font-size: 14pt; font-weight: 900; color: #0305ba; letter-spacing: -0.01em;">DEPARTMENT OF LABOR AND
+        EMPLOYMENT</div>
+    <div style="font-size: 10.5pt; font-weight: 700; color: #1e293b;">Regional Office No. III — Central Luzon</div>
+    <div style="font-size: 12.5pt; font-weight: 800; margin-top: 0.5rem; color: #0f172a;">PROCESSING CYCLE TIME (PCT)
+        COMPLIANCE AUDIT REPORT</div>
+    <div style="font-size: 9pt; color: #64748b; margin-top: 0.25rem;">
+        Coverage: <strong>{{ start_date }}</strong> to <strong>{{ end_date }}</strong> &bull; Generated: {% now "F d, Y
+        h:i A" %}
+        {% if selected_office_id %}&bull; Office Filter Applied{% endif %}
+    </div>
+</div>
+
+<!-- On-Screen Page Title -->
+<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;"
+    class="no-print">
+    <div>
+        <h2 style="margin: 0; font-size: 1.5rem;">Processing Cycle Time (PCT) Compliance Report</h2>
+        <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
+            Performance monitoring against Citizen's Charter standards under Republic Act No. 11032 (Ease of Doing
+            Business).
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()"
+            style="min-height: 40px; display: inline-flex; align-items: center; gap: 0.5rem;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            <span>Print Report</span>
+        </button>
+    </div>
 </div>
 
 <!-- Filters Card -->
-<div class="card" style="padding: 1.25rem; margin-bottom: 1.5rem;">
-    <form method="GET" action="{% url 'queueing:pct_report' %}" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+<div class="card no-print" style="padding: 1.25rem; margin-bottom: 1.5rem;">
+    <div
+        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+        <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+            Report Filters &amp; Parameters
+        </span>
+        <div style="display: flex; gap: 0.35rem; align-items: center;">
+            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 0.25rem;">Quick Dates:</span>
+            <button type="button" class="preset-btn" onclick="setDateRange('today')">Today</button>
+            <button type="button" class="preset-btn" onclick="setDateRange('yesterday')">Yesterday</button>
+            <button type="button" class="preset-btn" onclick="setDateRange('week')">This Week</button>
+            <button type="button" class="preset-btn" onclick="setDateRange('month')">This Month</button>
+        </div>
+    </div>
+
+    <form method="GET" action="{% url 'queueing:pct_report' %}" id="filter-form"
+        style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
         <div>
             <label for="start_date" class="form-label" style="font-size: 0.85rem;">From Date:</label>
-            <input type="date" name="start_date" id="start_date" value="{{ start_date }}" class="form-control" style="min-height: 40px; padding: 0.4rem 0.85rem;">
+            <input type="date" name="start_date" id="start_date" value="{{ start_date }}" class="form-control"
+                style="min-height: 40px; padding: 0.4rem 0.85rem;">
         </div>
 
         <div>
             <label for="end_date" class="form-label" style="font-size: 0.85rem;">To Date:</label>
-            <input type="date" name="end_date" id="end_date" value="{{ end_date }}" class="form-control" style="min-height: 40px; padding: 0.4rem 0.85rem;">
+            <input type="date" name="end_date" id="end_date" value="{{ end_date }}" class="form-control"
+                style="min-height: 40px; padding: 0.4rem 0.85rem;">
         </div>
 
         <div>
             <label for="office_id" class="form-label" style="font-size: 0.85rem;">Office:</label>
-            <select name="office_id" id="office_id" class="form-select" style="min-height: 40px; padding: 0.4rem 0.85rem;">
+            <select name="office_id" id="office_id" class="form-select"
+                style="min-height: 40px; padding: 0.4rem 0.85rem;">
                 <option value="">All Offices</option>
                 {% for o in offices %}
                 <option value="{{ o.id }}" {% if o.id == selected_office_id %}selected{% endif %}>
@@ -37,30 +167,38 @@
         </div>
 
         <div>
-            <label for="unit_id" class="form-label" style="font-size: 0.85rem;">Unit:</label>
+            <label for="unit_id" class="form-label" style="font-size: 0.85rem;">Unit / Division:</label>
             <select name="unit_id" id="unit_id" class="form-select" style="min-height: 40px; padding: 0.4rem 0.85rem;">
                 <option value="">All Units</option>
                 {% for u in units %}
-                <option value="{{ u.id }}" {% if u.id == selected_unit_id %}selected{% endif %}>
+                <option value="{{ u.id }}" data-office="{{ u.office_id }}" {% if u.id == selected_unit_id %}selected{% endif %}>
                     {{ u.office.code }} - {{ u.name }}
                 </option>
                 {% endfor %}
             </select>
         </div>
 
-        <div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
             <button type="submit" class="btn btn-primary btn-sm" style="min-height: 40px;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
                 </svg>
                 <span>Filter Report</span>
             </button>
+            {% if selected_office_id or selected_unit_id or start_date != end_date %}
+            <a href="{% url 'queueing:pct_report' %}" class="btn btn-outline btn-sm"
+                style="min-height: 40px; text-decoration: none; display: inline-flex; align-items: center;"
+                title="Reset filters to today">
+                <span>Reset</span>
+            </a>
+            {% endif %}
         </div>
     </form>
 </div>
 
 <!-- KPI Summary Metrics -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+<div
+    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
     <div class="card" style="padding: 1.25rem; margin-bottom: 0;">
         <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
             Total Tickets Served
@@ -75,9 +213,16 @@
         <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
             Overall Target Compliance
         </div>
-        <div class="mono" style="font-size: 2.25rem; font-weight: 800; color: {% if overall_compliance >= 80 %}var(--dole-green){% else %}var(--dole-red){% endif %}; margin-top: 0.25rem;">
+        {% if total_served > 0 %}
+        <div class="mono"
+            style="font-size: 2.25rem; font-weight: 800; color: {% if overall_compliance >= 85 %}var(--dole-green){% elif overall_compliance >= 70 %}#d97706{% else %}var(--dole-red){% endif %}; margin-top: 0.25rem;">
             {{ overall_compliance }}%
         </div>
+        {% else %}
+        <div class="mono" style="font-size: 2.25rem; font-weight: 800; color: var(--text-muted); margin-top: 0.25rem;">
+            —
+        </div>
+        {% endif %}
         <div style="font-size: 0.8rem; color: var(--text-muted);">Served within Citizen's Charter PCT</div>
     </div>
 
@@ -85,8 +230,12 @@
         <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
             Avg Wait Time
         </div>
-        <div class="mono" style="font-size: 2.25rem; font-weight: 800; color: var(--text-primary); margin-top: 0.25rem;">
-            {{ overall_avg_wait }} <span style="font-size: 1rem; font-weight: normal;">min</span>
+        <div class="mono"
+            style="font-size: 2.25rem; font-weight: 800; color: var(--text-primary); margin-top: 0.25rem;">
+            {% if total_served > 0 and overall_avg_wait > 0 %}{{ overall_avg_wait }} <span
+                style="font-size: 1rem; font-weight: normal;">min</span>{% elif total_served > 0 %}0 <span
+                style="font-size: 1rem; font-weight: normal;">min</span>{% else %}<span
+                style="color: var(--text-muted);">—</span>{% endif %}
         </div>
         <div style="font-size: 0.8rem; color: var(--text-muted);">From arrival to service call</div>
     </div>
@@ -95,8 +244,12 @@
         <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
             Avg Actual PCT
         </div>
-        <div class="mono" style="font-size: 2.25rem; font-weight: 800; color: var(--text-primary); margin-top: 0.25rem;">
-            {{ overall_avg_actual }} <span style="font-size: 1rem; font-weight: normal;">min</span>
+        <div class="mono"
+            style="font-size: 2.25rem; font-weight: 800; color: var(--text-primary); margin-top: 0.25rem;">
+            {% if total_served > 0 and overall_avg_actual > 0 %}{{ overall_avg_actual }} <span
+                style="font-size: 1rem; font-weight: normal;">min</span>{% elif total_served > 0 %}0 <span
+                style="font-size: 1rem; font-weight: normal;">min</span>{% else %}<span
+                style="color: var(--text-muted);">—</span>{% endif %}
         </div>
         <div style="font-size: 0.8rem; color: var(--text-muted);">Counter service duration</div>
     </div>
@@ -115,7 +268,10 @@
 <!-- Detailed Table per Service -->
 <div class="card">
     <div class="card-header">
-        <h3>Service Performance Breakdown</h3>
+        <h3 style="margin: 0; font-size: 1.15rem;">Service Performance Breakdown</h3>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">
+            {{ report_rows|length }} Service{% if report_rows|length != 1 %}s{% endif %} with transaction records
+        </span>
     </div>
 
     <div class="data-table-container">
@@ -144,12 +300,25 @@
                     <td>{{ row.service.unit.name }} ({{ row.service.unit.office.code }})</td>
                     <td class="mono"><strong>{{ row.target_pct }} min</strong></td>
                     <td class="mono" style="font-weight: 700;">{{ row.served_count }}</td>
-                    <td class="mono">{{ row.avg_wait_minutes }} min</td>
-                    <td class="mono">{{ row.avg_actual_minutes }} min</td>
+                    <td class="mono">
+                        {% if row.served_count > 0 %}
+                        {{ row.avg_wait_minutes }} min
+                        {% else %}
+                        <span style="color: var(--text-muted);">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="mono">
+                        {% if row.served_count > 0 %}
+                        {{ row.avg_actual_minutes }} min
+                        {% else %}
+                        <span style="color: var(--text-muted);">—</span>
+                        {% endif %}
+                    </td>
                     <td>
                         {% if row.served_count > 0 %}
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span class="mono" style="font-weight: 800; color: {% if row.compliance_pct >= 85 %}var(--dole-green){% elif row.compliance_pct >= 70 %}#d97706{% else %}var(--dole-red){% endif %};">
+                            <span class="mono"
+                                style="font-weight: 800; color: {% if row.compliance_pct >= 85 %}var(--dole-green){% elif row.compliance_pct >= 70 %}#d97706{% else %}var(--dole-red){% endif %};">
                                 {{ row.compliance_pct }}%
                             </span>
                         </div>
@@ -161,8 +330,11 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-                        No transaction data found for the selected filters.
+                    <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2.5rem 1rem;">
+                        <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem;">No transaction data
+                            found</div>
+                        <p style="font-size: 0.85rem; margin: 0;">Try adjusting the date range, office, or unit filters
+                            above.</p>
                     </td>
                 </tr>
                 {% endfor %}
@@ -170,4 +342,78 @@
         </table>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Dynamic filtering: show only units belonging to the selected office
+    (function () {
+        const officeSelect = document.getElementById('office_id');
+        const unitSelect = document.getElementById('unit_id');
+        if (!officeSelect || !unitSelect) return;
+
+        function syncUnits() {
+            const selectedOffice = officeSelect.value;
+            const options = unitSelect.querySelectorAll('option');
+            let selectedOptionHidden = false;
+
+            options.forEach(opt => {
+                if (!opt.value) return; // Always keep "All Units"
+                const optOffice = opt.getAttribute('data-office');
+                if (!selectedOffice || optOffice === selectedOffice) {
+                    opt.hidden = false;
+                    opt.disabled = false;
+                } else {
+                    opt.hidden = true;
+                    opt.disabled = true;
+                    if (opt.selected) {
+                        selectedOptionHidden = true;
+                    }
+                }
+            });
+
+            if (selectedOptionHidden) {
+                unitSelect.value = '';
+            }
+        }
+
+        officeSelect.addEventListener('change', syncUnits);
+        syncUnits();
+    })();
+
+    // Quick date range presets
+    function setDateRange(range) {
+        const startInput = document.getElementById('start_date');
+        const endInput = document.getElementById('end_date');
+        if (!startInput || !endInput) return;
+
+        const pad = (n) => String(n).padStart(2, '0');
+        const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+        const now = new Date();
+        const todayStr = fmt(now);
+
+        if (range === 'today') {
+            startInput.value = todayStr;
+            endInput.value = todayStr;
+        } else if (range === 'yesterday') {
+            const y = new Date(now);
+            y.setDate(y.getDate() - 1);
+            const yStr = fmt(y);
+            startInput.value = yStr;
+            endInput.value = yStr;
+        } else if (range === 'week') {
+            const dayOfWeek = now.getDay();
+            const distToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            const monday = new Date(now);
+            monday.setDate(now.getDate() - distToMonday);
+            startInput.value = fmt(monday);
+            endInput.value = todayStr;
+        } else if (range === 'month') {
+            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+            startInput.value = fmt(firstDay);
+            endInput.value = todayStr;
+        }
+    }
+</script>
 {% endblock %}

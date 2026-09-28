@@ -5,8 +5,16 @@ from .models import (
     CsmResponse,
     CtmsCounter,
     CtmsStaffOffice,
+    CtmsDisplayConfig,
     CtmsTransaction,
 )
+
+@admin.register(CtmsDisplayConfig)
+class CtmsDisplayConfigAdmin(admin.ModelAdmin):
+    list_display = ('id', 'office', 'is_active', 'updated_at')
+    search_fields = ('office__name', 'office__code', 'arta_video_url')
+    list_filter = ('is_active',)
+
 
 @admin.register(CsmOffice)
 class CsmOfficeAdmin(admin.ModelAdmin):

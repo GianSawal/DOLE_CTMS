@@ -22,6 +22,45 @@ from .services import (
 User = get_user_model()
 
 class CtmsCoreTestCase(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS csm_office (
+                    id integer PRIMARY KEY AUTOINCREMENT,
+                    name varchar(200) NOT NULL UNIQUE,
+                    code varchar(10) NOT NULL UNIQUE,
+                    is_active bool NOT NULL,
+                    qr_issued_at datetime NULL
+                );
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS csm_service (
+                    id integer PRIMARY KEY AUTOINCREMENT,
+                    name varchar(200) NOT NULL UNIQUE,
+                    is_active bool NOT NULL,
+                    sort_order smallint unsigned NOT NULL
+                );
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS csm_csmresponse (
+                    id integer PRIMARY KEY AUTOINCREMENT,
+                    ctms_transaction_id bigint NULL UNIQUE,
+                    created_at datetime NOT NULL
+                );
+            """)
+
+    @classmethod
+    def tearDownClass(cls):
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("DROP TABLE IF EXISTS csm_csmresponse;")
+            cursor.execute("DROP TABLE IF EXISTS csm_service;")
+            cursor.execute("DROP TABLE IF EXISTS csm_office;")
+        super().tearDownClass()
+
     def setUp(self):
         self.client = APIClient()
         self.office = CsmOffice.objects.create(name="DOLE Pampanga Field Office", code="CRK", is_active=True)
@@ -53,19 +92,19 @@ class CtmsCoreTestCase(TestCase):
         self.assertEqual(tx_priority.queue_no, "P-002")
 
         # Staff calls next -> Priority client must be called first despite checking in later!
-        called = call_next_transaction(self.office, self.counter1)
+        called = call_next_transaction(self.office, self.counter1, personnel="Officer Juan")
         self.assertIsNotNone(called)
         self.assertEqual(called.id, tx_priority.id)
         self.assertEqual(called.status, 'serving')
         self.assertEqual(called.counter, self.counter1)
 
         # Second call -> Regular client called
-        called_second = call_next_transaction(self.office, self.counter1)
+        called_second = call_next_transaction(self.office, self.counter1, personnel="Officer Juan")
         self.assertEqual(called_second.id, tx_regular.id)
 
     def test_done_and_survey_hand_off(self):
         tx = create_transaction(self.office, self.service, is_priority=False)
-        call_next_transaction(self.office, self.counter1)
+        call_next_transaction(self.office, self.counter1, personnel="Officer Juan")
         tx.refresh_from_db()
 
         # Mark done

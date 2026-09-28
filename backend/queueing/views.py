@@ -307,7 +307,15 @@ def front_desk_queue(request):
         active_office = assigned_office
     else:
         offices = Office.objects.filter(is_active=True).order_by('sort_order', 'name')
-        active_office_id = request.GET.get('office_id') or (offices.first().id if offices.exists() else None)
+        raw_office_id = request.GET.get('office_id')
+        active_office_id = None
+        if raw_office_id:
+            try:
+                active_office_id = int(raw_office_id)
+            except (ValueError, TypeError):
+                active_office_id = None
+        if not active_office_id and offices.exists():
+            active_office_id = offices.first().id
         active_office = Office.objects.filter(id=active_office_id).first() if active_office_id else None
 
     newly_issued_ticket = None
@@ -374,7 +382,7 @@ def front_desk_print(request, public_id):
 
     csm_base = settings.CSM_SURVEY_BASE_URL.rstrip('/')
     survey_url = f"{csm_base}/survey/t/{ticket.public_id}/"
-    qr_data_uri = generate_qr_data_uri(survey_url, box_size=5)
+    qr_data_uri = generate_qr_data_uri(survey_url, box_size=5, fill_color="black")
 
     items_by_unit = {}
     for item in ticket.items.all():
@@ -415,7 +423,15 @@ def unit_queue(request):
         active_unit = assigned_unit
     else:
         units = Unit.objects.filter(is_active=True).select_related('office').order_by('office__sort_order', 'name')
-        active_unit_id = request.GET.get('unit_id') or (units.first().id if units.exists() else None)
+        raw_unit_id = request.GET.get('unit_id')
+        active_unit_id = None
+        if raw_unit_id:
+            try:
+                active_unit_id = int(raw_unit_id)
+            except (ValueError, TypeError):
+                active_unit_id = None
+        if not active_unit_id and units.exists():
+            active_unit_id = units.first().id
         active_unit = Unit.objects.filter(id=active_unit_id).first() if active_unit_id else None
 
     context = _get_unit_queue_context(active_unit, today)
@@ -436,8 +452,14 @@ def unit_queue_partial(request):
     if staff_profile and staff_profile.unit:
         active_unit = staff_profile.unit
     else:
-        active_unit_id = request.GET.get('unit_id')
-        active_unit = Unit.objects.filter(id=active_unit_id).first()
+        raw_unit_id = request.GET.get('unit_id')
+        active_unit_id = None
+        if raw_unit_id:
+            try:
+                active_unit_id = int(raw_unit_id)
+            except (ValueError, TypeError):
+                active_unit_id = None
+        active_unit = Unit.objects.filter(id=active_unit_id).first() if active_unit_id else None
 
     context = _get_unit_queue_context(active_unit, today)
     context['active_unit'] = active_unit
@@ -499,7 +521,7 @@ def unit_action(request, item_id, action):
     """
     POST action endpoint for Unit Staff queue buttons (Call, Start, Done, Skip, Requeue).
     """
-    item = get_object_or_404(TicketItem.objects.select_related('ticket', 'unit'), id=item_id)
+    item = get_object_or_404(TicketItem.objects.select_related('ticket', 'unit', 'service'), id=item_id)
 
     # Permission check: ensure staff belongs to this unit (if staff has assigned unit)
     staff_profile = getattr(request.user, 'queueing_profile', None)
@@ -544,34 +566,60 @@ def pct_report(request):
     today = timezone.localdate()
     start_date_str = request.GET.get('start_date', str(today))
     end_date_str = request.GET.get('end_date', str(today))
-    office_id = request.GET.get('office_id')
-    unit_id = request.GET.get('unit_id')
+    raw_office_id = request.GET.get('office_id')
+    raw_unit_id = request.GET.get('unit_id')
 
     try:
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-    except ValueError:
+    except (ValueError, TypeError):
         start_date = today
 
     try:
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-    except ValueError:
+    except (ValueError, TypeError):
         end_date = today
+
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    selected_office_id = None
+    if raw_office_id:
+        try:
+            selected_office_id = int(raw_office_id)
+        except (ValueError, TypeError):
+            selected_office_id = None
+
+    selected_unit_id = None
+    if raw_unit_id:
+        try:
+            selected_unit_id = int(raw_unit_id)
+        except (ValueError, TypeError):
+            selected_unit_id = None
+
+    # If both office and unit are specified, ensure unit belongs to the office
+    if selected_office_id and selected_unit_id:
+        if not Unit.objects.filter(id=selected_unit_id, office_id=selected_office_id).exists():
+            selected_unit_id = None
 
     items_qs = TicketItem.objects.filter(
         ticket__service_date__gte=start_date,
         ticket__service_date__lte=end_date,
     ).select_related('service', 'unit', 'ticket')
 
-    if office_id:
-        items_qs = items_qs.filter(unit__office_id=office_id)
-    if unit_id:
-        items_qs = items_qs.filter(unit_id=unit_id)
+    if selected_office_id:
+        items_qs = items_qs.filter(unit__office_id=selected_office_id)
+    if selected_unit_id:
+        items_qs = items_qs.filter(unit_id=selected_unit_id)
 
-    services_qs = Service.objects.all().select_related('unit__office')
-    if office_id:
-        services_qs = services_qs.filter(unit__office_id=office_id)
-    if unit_id:
-        services_qs = services_qs.filter(unit_id=unit_id)
+    items_list = list(items_qs)
+
+    services_qs = Service.objects.all().select_related('unit__office').order_by(
+        'unit__office__sort_order', 'unit__sort_order', 'sort_order', 'name'
+    )
+    if selected_office_id:
+        services_qs = services_qs.filter(unit__office_id=selected_office_id)
+    if selected_unit_id:
+        services_qs = services_qs.filter(unit_id=selected_unit_id)
 
     # Compute report metrics per service
     report_rows = []
@@ -579,10 +627,12 @@ def pct_report(request):
     total_within_target_all = 0
     total_skipped_all = 0
     total_wait_seconds_all = 0
+    total_wait_count_all = 0
     total_actual_seconds_all = 0
+    total_actual_count_all = 0
 
     for s in services_qs:
-        service_items = [item for item in items_qs if item.service_id == s.id]
+        service_items = [item for item in items_list if item.service_id == s.id]
         done_items = [item for item in service_items if item.status == TicketItem.Status.DONE]
         skipped_items = [item for item in service_items if item.status == TicketItem.Status.SKIPPED]
 
@@ -591,14 +641,14 @@ def pct_report(request):
 
         # Wait times for served items
         wait_seconds_list = [
-            (item.started_at - item.ticket.created_at).total_seconds()
+            max(0, (item.started_at - item.ticket.created_at).total_seconds())
             for item in done_items if item.started_at
         ]
         avg_wait_minutes = round(sum(wait_seconds_list) / len(wait_seconds_list) / 60, 1) if wait_seconds_list else 0
 
         # Actual PCT
         actual_seconds_list = [
-            (item.completed_at - item.started_at).total_seconds()
+            max(0, (item.completed_at - item.started_at).total_seconds())
             for item in done_items if item.completed_at and item.started_at
         ]
         avg_actual_minutes = round(sum(actual_seconds_list) / len(actual_seconds_list) / 60, 1) if actual_seconds_list else 0
@@ -614,7 +664,9 @@ def pct_report(request):
         total_within_target_all += within_target_count
         total_skipped_all += skipped_count
         total_wait_seconds_all += sum(wait_seconds_list)
+        total_wait_count_all += len(wait_seconds_list)
         total_actual_seconds_all += sum(actual_seconds_list)
+        total_actual_count_all += len(actual_seconds_list)
 
         if service_items or served_count > 0 or skipped_count > 0:
             report_rows.append({
@@ -628,17 +680,17 @@ def pct_report(request):
             })
 
     overall_compliance = round((total_within_target_all / total_served_all * 100), 1) if total_served_all > 0 else 0
-    overall_avg_wait = round((total_wait_seconds_all / total_served_all / 60), 1) if total_served_all > 0 else 0
-    overall_avg_actual = round((total_actual_seconds_all / total_served_all / 60), 1) if total_served_all > 0 else 0
+    overall_avg_wait = round((total_wait_seconds_all / total_wait_count_all / 60), 1) if total_wait_count_all > 0 else 0
+    overall_avg_actual = round((total_actual_seconds_all / total_actual_count_all / 60), 1) if total_actual_count_all > 0 else 0
 
     offices = Office.objects.filter(is_active=True).order_by('sort_order', 'name')
-    units = Unit.objects.filter(is_active=True).order_by('office__sort_order', 'name')
+    units = Unit.objects.filter(is_active=True).select_related('office').order_by('office__sort_order', 'name')
 
     context = {
         'start_date': start_date.strftime('%Y-%m-%d'),
         'end_date': end_date.strftime('%Y-%m-%d'),
-        'selected_office_id': int(office_id) if office_id else None,
-        'selected_unit_id': int(unit_id) if unit_id else None,
+        'selected_office_id': selected_office_id,
+        'selected_unit_id': selected_unit_id,
         'offices': offices,
         'units': units,
         'report_rows': report_rows,
@@ -649,3 +701,4 @@ def pct_report(request):
         'total_skipped': total_skipped_all,
     }
     return render(request, 'queueing/pct_report.html', context)
+

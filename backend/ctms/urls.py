@@ -17,6 +17,7 @@ from .views import (
     StaffTransactionsListView,
     StaffReportsSummaryView,
     StaffQrCodeView,
+    StaffDisplayVideoView,
     CtmsCounterViewSet,
     CtmsStaffOfficeViewSet,
 )
@@ -45,9 +46,10 @@ urlpatterns = [
     path('staff/transactions/walkin/', StaffCreateWalkinView.as_view(), name='staff-walkin'),
     path('staff/transactions/<int:pk>/<str:action>/', StaffTransactionActionView.as_view(), name='staff-transaction-action'),
 
-    # Reports and QR
+    # Reports, QR, and TV Display Video
     path('staff/reports/summary/', StaffReportsSummaryView.as_view(), name='staff-reports-summary'),
     path('staff/qr/<int:office_id>/', StaffQrCodeView.as_view(), name='staff-qr-code'),
+    path('staff/display-video/', StaffDisplayVideoView.as_view(), name='staff-display-video'),
 
     # Routers (Counters & Staff-Offices)
     path('', include(router.urls)),

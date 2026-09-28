@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import ArtaVideoModal from './ArtaVideoModal';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [showArtaModal, setShowArtaModal] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -12,7 +14,7 @@ export default function Navbar() {
   };
 
   const navLinkStyle = ({ isActive }) => ({
-    padding: '0.45rem 0.75rem',
+    padding: '0.45rem 0.85rem',
     borderRadius: 'var(--radius-md)',
     textDecoration: 'none',
     fontSize: '0.86rem',
@@ -31,8 +33,9 @@ export default function Navbar() {
     <>
       <div className="dole-tricolor-bar" />
       <nav className="staff-navbar">
-        <div className="staff-navbar-main">
-          <div className="staff-navbar-brand">
+        {/* Left: Brand */}
+        <div className="staff-navbar-left">
+          <NavLink to="/staff/queue" className="staff-navbar-brand" style={{ textDecoration: 'none' }}>
             <img
               src="/dolelogo.png"
               alt="DOLE Logo"
@@ -42,24 +45,11 @@ export default function Navbar() {
               <div className="staff-logo-sub">DOLE CTMS</div>
               <strong className="staff-logo-title">Staff Portal</strong>
             </div>
-          </div>
-
-          <div className="staff-navbar-user">
-            <div className="staff-user-info">
-              <div className="staff-user-name">{user?.username}</div>
-              <div className="staff-user-office">
-                {user?.is_superuser
-                  ? 'DOLE Admin'
-                  : (user?.assigned_offices?.[0]?.code || 'Staff')}
-              </div>
-            </div>
-            <button onClick={handleLogout} className="btn btn-outline btn-sm staff-signout-btn">
-              Sign Out
-            </button>
-          </div>
+          </NavLink>
         </div>
 
-        <div className="staff-navbar-links">
+        {/* Center: Navigation Links centered on computer view */}
+        <div className="staff-navbar-center">
           <NavLink to="/staff/queue" style={navLinkStyle}>
             📋 Queue
           </NavLink>
@@ -67,13 +57,47 @@ export default function Navbar() {
             📊 Transactions
           </NavLink>
           <NavLink to="/staff/reports" style={navLinkStyle}>
-            📈 Reports & Rate
+            📈 Reports &amp; Rate
           </NavLink>
           <NavLink to="/staff/qr" style={navLinkStyle}>
             🖨️ Check-in QR
           </NavLink>
+          <button
+            type="button"
+            onClick={() => setShowArtaModal(true)}
+            className="staff-nav-arta-btn"
+            title="Configure ARTA / Citizen's Charter Video for TV Display"
+          >
+            🎥 Add ARTA Video
+          </button>
+        </div>
+
+        {/* Right: User Profile & Sign Out on Top Right */}
+        <div className="staff-navbar-right">
+          <div className="staff-user-info">
+            <div className="staff-user-name">{user?.username}</div>
+            <div className="staff-user-office">
+              {user?.is_superuser
+                ? 'DOLE Admin'
+                : (user?.assigned_offices?.[0]?.code || 'Staff')}
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="btn btn-outline btn-sm staff-signout-btn"
+            title="Sign out of staff portal"
+          >
+            Sign Out
+          </button>
         </div>
       </nav>
+
+      {/* ARTA Video Modal */}
+      <ArtaVideoModal
+        isOpen={showArtaModal}
+        onClose={() => setShowArtaModal(false)}
+        defaultOfficeId={user?.assigned_offices?.[0]?.id}
+      />
     </>
   );
 }

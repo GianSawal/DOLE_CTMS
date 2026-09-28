@@ -517,3 +517,57 @@ class QueueingCoreTestCase(TestCase):
             )
             row_expired = cursor.fetchone()
             self.assertEqual(bool(row_expired[1]), False)
+
+    # -----------------------------------------------------------------
+    # 7. PCT Compliance Report View & QR Utilities
+    # -----------------------------------------------------------------
+    def test_pct_report_view_and_calculations(self):
+        from .qr import generate_qr_data_uri, generate_qr_bytes
+
+        # Must require login
+        res_anon = self.client.get('/reports/pct/')
+        self.assertEqual(res_anon.status_code, 302)
+
+        # Authenticated access
+        self.client.force_login(self.pacd_user)
+        res = self.client.get('/reports/pct/')
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Processing Cycle Time (PCT) Compliance Report")
+
+        # Create a completed transaction today
+        ticket = issue_ticket(office=self.ro3, services=[self.srv_labor])
+        item = ticket.items.first()
+        call_item(item, user=self.unit_user)
+        start_item(item, user=self.unit_user)
+        complete_item(item, user=self.unit_user)
+
+        # Filter by today's date and office
+        res_filtered = self.client.get(f'/reports/pct/?office_id={self.ro3.id}&unit_id={self.unit_lrls.id}')
+        self.assertEqual(res_filtered.status_code, 200)
+        self.assertContains(res_filtered, "Labor Rights Query")
+
+        # Edge case: non-integer / malformed params must not cause 500 error
+        res_malformed = self.client.get('/reports/pct/?office_id=invalid&unit_id=also_bad&start_date=wrong&end_date=bad')
+        self.assertEqual(res_malformed.status_code, 200)
+
+        # Edge case: inverted dates
+        res_inverted = self.client.get('/reports/pct/?start_date=2026-12-31&end_date=2026-01-01')
+        self.assertEqual(res_inverted.status_code, 200)
+
+    def test_qr_utilities(self):
+        from .qr import generate_qr_data_uri, generate_qr_bytes
+
+        # Empty / None handling
+        self.assertEqual(generate_qr_data_uri(''), '')
+        self.assertEqual(generate_qr_data_uri(None), '')
+        self.assertEqual(generate_qr_bytes(''), b'')
+        self.assertEqual(generate_qr_bytes(None), b'')
+
+        # Valid payload
+        uri = generate_qr_data_uri("https://example.com/test", fill_color="#0305ba")
+        self.assertTrue(uri.startswith("data:image/png;base64,"))
+
+        # Binary output
+        raw = generate_qr_bytes("https://example.com/test", fill_color="black")
+        self.assertEqual(raw[:8], b'\x89PNG\r\n\x1a\n')
+

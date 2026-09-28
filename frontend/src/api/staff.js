@@ -51,4 +51,12 @@ export const staffApi = {
   },
 
   getQrCodeUrl: (officeId) => `/api/staff/qr/${officeId}/`,
+
+  getDisplayVideo: (officeId) => apiRequest(`/staff/display-video/?office=${officeId}`),
+
+  updateDisplayVideo: (officeId, artaVideoUrl, isActive = true) => apiRequest('/staff/display-video/', {
+    method: 'POST',
+    body: JSON.stringify({ office: officeId, arta_video_url: artaVideoUrl, is_active: isActive }),
+  }),
 };
+
