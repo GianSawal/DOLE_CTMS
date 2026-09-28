@@ -13,7 +13,12 @@ import {
   ANNOUNCEMENT_END_EVENT,
 } from '../../utils/airportChime';
 import { parseVideoEmbedUrl } from '../../components/ArtaVideoModal';
-import { parseFolderLink } from '../../utils/localVideoPlaylist';
+import {
+  parseFolderLink,
+  savePlaylistToIndexedDB,
+  loadPlaylistFromIndexedDB,
+  clearPlaylistFromIndexedDB,
+} from '../../utils/localVideoPlaylist';
 
 const fallbackServiceDescriptions = {
   sena: 'Conciliation-mediation of labor issues, disputes, and worker grievances.',
@@ -68,6 +73,9 @@ export default function DisplayBoard() {
 
   const [playlist, setPlaylist] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [folderInputVal, setFolderInputVal] = useState('');
+  const folderFileInputRef = useRef(null);
   const videoRef = useRef(null);
   const iframeRef = useRef(null);
   const defaultVideoVolumeRef = useRef(0.75);
@@ -198,39 +206,109 @@ export default function DisplayBoard() {
     };
   }, []);
 
-  // Parse folder link or video URL whenever artaVideoUrl updates
+  // Load playlist: 1. IndexedDB local folder videos, 2. localStorage folder link, 3. backend artaVideoUrl
   useEffect(() => {
-    if (!artaVideoUrl) {
-      setPlaylist([]);
-      return;
-    }
-
     let isMounted = true;
-    async function loadVideos() {
-      const ytEmbed = parseVideoEmbedUrl(artaVideoUrl);
+    async function initPlaylist() {
+      // 1. Check local IndexedDB folder videos
+      try {
+        const dbItems = await loadPlaylistFromIndexedDB();
+        if (isMounted && dbItems && dbItems.length > 0) {
+          setPlaylist(dbItems);
+          setCurrentIndex(0);
+          return;
+        }
+      } catch {}
+
+      // 2. Check locally saved folder link on this TV display
+      const savedTvLink = localStorage.getItem(`ctms_tv_folder_link_${officeId}`);
+      const targetUrl = savedTvLink || artaVideoUrl;
+      if (!targetUrl) return;
+
+      const ytEmbed = parseVideoEmbedUrl(targetUrl);
       if (ytEmbed && ytEmbed.type === 'youtube') {
         if (isMounted) {
-          setPlaylist([{ id: 0, url: ytEmbed.url, isYouTube: true }]);
+          setPlaylist([{ id: 0, url: ytEmbed.url, name: "ARTA Citizen's Charter", isYouTube: true }]);
           setCurrentIndex(0);
         }
         return;
       }
 
-      const items = await parseFolderLink(artaVideoUrl);
+      const items = await parseFolderLink(targetUrl);
       if (isMounted) {
         if (items && items.length > 0) {
           setPlaylist(items);
           setCurrentIndex(0);
         } else {
-          setPlaylist([{ id: 0, url: artaVideoUrl, isYouTube: false }]);
+          setPlaylist([{ id: 0, url: targetUrl, isYouTube: false }]);
           setCurrentIndex(0);
         }
       }
     }
 
-    loadVideos();
+    initPlaylist();
     return () => { isMounted = false; };
-  }, [artaVideoUrl]);
+  }, [officeId, artaVideoUrl]);
+
+  // Handle local folder selection (0 server storage)
+  const handleFolderFilesSelected = async (e) => {
+    const files = e.target.files;
+    if (!files || !files.length) return;
+    try {
+      const saved = await savePlaylistToIndexedDB(files);
+      if (saved && saved.length > 0) {
+        setPlaylist(saved);
+        setCurrentIndex(0);
+        localStorage.removeItem(`ctms_tv_folder_link_${officeId}`);
+        setShowFolderModal(false);
+      }
+    } catch (err) {
+      console.error('Failed to save local folder:', err);
+    }
+  };
+
+  // Handle saving custom folder link or multiple URLs
+  const handleSaveCustomFolderLink = async (e) => {
+    e?.preventDefault?.();
+    const trimmed = folderInputVal.trim();
+    if (!trimmed) return;
+
+    try {
+      localStorage.setItem(`ctms_tv_folder_link_${officeId}`, trimmed);
+      await clearPlaylistFromIndexedDB();
+
+      const ytEmbed = parseVideoEmbedUrl(trimmed);
+      if (ytEmbed && ytEmbed.type === 'youtube') {
+        setPlaylist([{ id: 0, url: ytEmbed.url, name: "ARTA Video", isYouTube: true }]);
+        setCurrentIndex(0);
+        setShowFolderModal(false);
+        return;
+      }
+
+      const items = await parseFolderLink(trimmed);
+      if (items && items.length > 0) {
+        setPlaylist(items);
+        setCurrentIndex(0);
+      } else {
+        setPlaylist([{ id: 0, url: trimmed, isYouTube: false }]);
+        setCurrentIndex(0);
+      }
+      setShowFolderModal(false);
+    } catch (err) {
+      console.error('Failed to parse folder link:', err);
+    }
+  };
+
+  // Reset to default ARTA YouTube video
+  const handleResetToDefaultVideo = async () => {
+    const defaultUrl = 'https://www.youtube.com/watch?v=7uK7f0E4g2w';
+    localStorage.removeItem(`ctms_tv_folder_link_${officeId}`);
+    await clearPlaylistFromIndexedDB();
+    const ytEmbed = parseVideoEmbedUrl(defaultUrl);
+    setPlaylist([{ id: 0, url: ytEmbed.url, name: "ARTA RA 11032 Citizen's Charter", isYouTube: true }]);
+    setCurrentIndex(0);
+    setShowFolderModal(false);
+  };
 
   // Auto-advance to next video in folder when current video finishes
   const handleVideoEnded = () => {
@@ -718,9 +796,9 @@ export default function DisplayBoard() {
           <div style={{
             display: 'flex',
             flexDirection: 'column',
-            flex: artaEmbed ? '1 1 auto' : '1',
+            flex: '1 1 auto',
             minHeight: 0,
-            maxHeight: artaEmbed ? '320px' : 'none',
+            maxHeight: '320px',
           }}>
             <div style={{
               fontSize: '1.25rem',
@@ -771,38 +849,59 @@ export default function DisplayBoard() {
             </div>
           </div>
 
-          {/* Under Upcoming Queue: ARTA Citizen's Charter Video */}
-          {artaEmbed ? (
+          {/* Under Upcoming Queue: ARTA Citizen's Charter Video Player */}
+          <div style={{
+            backgroundColor: '#0b1120',
+            borderRadius: '14px',
+            border: '1px solid rgba(217, 119, 6, 0.45)',
+            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.5)',
+            padding: '0.85rem',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0,
+          }}>
             <div style={{
-              backgroundColor: '#0b1120',
-              borderRadius: '14px',
-              border: '1px solid rgba(217, 119, 6, 0.45)',
-              boxShadow: '0 6px 20px rgba(0, 0, 0, 0.5)',
-              padding: '0.85rem',
               display: 'flex',
-              flexDirection: 'column',
-              flexShrink: 0,
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '0.5rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              paddingBottom: '0.4rem',
             }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '0.5rem',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                paddingBottom: '0.4rem',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                  <span style={{ fontSize: '1.1rem' }}>🎥</span>
-                  <span style={{
-                    fontSize: '0.85rem',
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    color: 'var(--dole-gold)',
-                  }}>
-                    ARTA · Citizen's Charter
-                  </span>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <span style={{ fontSize: '1.1rem' }}>🎥</span>
+                <span style={{
+                  fontSize: '0.85rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: 'var(--dole-gold)',
+                }}>
+                  ARTA · Citizen's Charter
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowFolderModal(true)}
+                  title="Configure Local Video Folder or Link"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '9999px',
+                    color: '#93c5fd',
+                    padding: '0.15rem 0.6rem',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                  }}
+                >
+                  <span>📁</span>
+                  <span>Folder Link</span>
+                </button>
                 <span style={{
                   fontSize: '0.7rem',
                   padding: '0.15rem 0.5rem',
@@ -815,18 +914,20 @@ export default function DisplayBoard() {
                   R.A. 11032
                 </span>
               </div>
+            </div>
 
-              {/* Video Player 16:9 */}
-              <div style={{
-                position: 'relative',
-                width: '100%',
-                paddingTop: '56.25%',
-                backgroundColor: '#000000',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                border: '1px solid rgba(255,255,255,0.1)',
-              }}>
-                {artaEmbed.type === 'youtube' || artaEmbed.type === 'embed' ? (
+            {/* Video Player 16:9 */}
+            <div style={{
+              position: 'relative',
+              width: '100%',
+              paddingTop: '56.25%',
+              backgroundColor: '#000000',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}>
+              {artaEmbed ? (
+                artaEmbed.type === 'youtube' || artaEmbed.type === 'embed' ? (
                   <iframe
                     ref={iframeRef}
                     src={artaEmbed.url}
@@ -870,25 +971,56 @@ export default function DisplayBoard() {
                       objectFit: 'contain',
                     }}
                   />
-                )}
-              </div>
-
-              <div style={{
-                marginTop: '0.4rem',
-                fontSize: '0.72rem',
-                color: '#94a3b8',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}>
-                <span>Anti-Red Tape Authority awareness video</span>
-                <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                  <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                  Playing
-                </span>
-              </div>
+                )
+              ) : (
+                <div
+                  onClick={() => setShowFolderModal(true)}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    padding: '1.25rem',
+                    textAlign: 'center',
+                    backgroundColor: '#0b1120',
+                  }}
+                >
+                  <span style={{ fontSize: '2.5rem', marginBottom: '0.4rem' }}>📁</span>
+                  <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--dole-gold)', marginBottom: '0.25rem' }}>
+                    Click to Play Local Video Folder
+                  </span>
+                  <span style={{ fontSize: '0.76rem', color: '#94a3b8', maxWidth: '300px', lineHeight: 1.35 }}>
+                    Play local folder link or select video files sequentially with 0 server storage.
+                  </span>
+                </div>
+              )}
             </div>
-          ) : null}
+
+            <div style={{
+              marginTop: '0.4rem',
+              fontSize: '0.72rem',
+              color: '#94a3b8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
+                {playlist.length > 1
+                  ? `Video ${currentIndex + 1}/${playlist.length}: ${currentVideoItem?.name || 'Local Video'}`
+                  : 'Anti-Red Tape Authority awareness video'}
+              </span>
+              <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                {playlist.length > 1 ? `Looping (${playlist.length})` : 'Playing'}
+              </span>
+            </div>
+          </div>
         </section>
       </div>
 
@@ -904,6 +1036,162 @@ export default function DisplayBoard() {
         <span>DOLE Client Transaction Monitoring System (CTMS)</span>
         <span>Display updates automatically every 5 seconds</span>
       </footer>
+
+      {/* Hidden File Input for Local Folder Selection */}
+      <input
+        ref={folderFileInputRef}
+        type="file"
+        webkitdirectory=""
+        directory=""
+        multiple
+        accept="video/*"
+        onChange={handleFolderFilesSelected}
+        style={{ display: 'none' }}
+      />
+
+      {/* Local Video Folder Configuration Modal */}
+      {showFolderModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '1rem',
+        }}>
+          <div style={{
+            backgroundColor: '#111827',
+            border: '1px solid rgba(217, 119, 6, 0.5)',
+            borderRadius: '16px',
+            padding: '1.75rem',
+            maxWidth: '520px',
+            width: '100%',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
+            color: '#ffffff',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--dole-gold)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span>📁</span> Local Video Folder Configuration
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowFolderModal(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer', lineHeight: 1 }}
+              >
+                ×
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1.25rem', lineHeight: 1.4 }}>
+              Play videos sequentially in a continuous loop with <strong>0 server storage used</strong>.
+            </p>
+
+            {/* Option A: Select Local Folder from PC */}
+            <div style={{
+              backgroundColor: '#1e293b',
+              border: '1px dashed #3b82f6',
+              borderRadius: '12px',
+              padding: '1.25rem',
+              textAlign: 'center',
+              marginBottom: '1rem',
+            }}>
+              <div style={{ fontSize: '1.8rem', marginBottom: '0.25rem' }}>📂</div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.25rem' }}>Select Local Video Folder</div>
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+                Select any folder on this TV / computer containing video files (.mp4, .webm)
+              </div>
+              <button
+                type="button"
+                onClick={() => folderFileInputRef.current?.click()}
+                style={{
+                  backgroundColor: '#2563eb',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.55rem 1.25rem',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Browse Local Folder...
+              </button>
+            </div>
+
+            {/* Option B: Enter Folder Link or URLs */}
+            <form onSubmit={handleSaveCustomFolderLink} style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0', marginBottom: '0.4rem' }}>
+                Or Enter Folder Link / URLs:
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="text"
+                  value={folderInputVal}
+                  onChange={(e) => setFolderInputVal(e.target.value)}
+                  placeholder="e.g. http://10.6.50.38/videos/ or C:\Videos or URL"
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#0b1120',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '8px',
+                    padding: '0.6rem 0.85rem',
+                    color: '#ffffff',
+                    fontSize: '0.85rem',
+                  }}
+                />
+                <button
+                  type="submit"
+                  style={{
+                    backgroundColor: 'var(--dole-gold)',
+                    color: '#000000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.6rem 1rem',
+                    fontWeight: 800,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Play Link
+                </button>
+              </div>
+            </form>
+
+            {/* Footer controls: default ARTA video or Clear */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <button
+                type="button"
+                onClick={handleResetToDefaultVideo}
+                style={{ background: 'none', border: 'none', color: '#93c5fd', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Reset to ARTA RA 11032 Video
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFolderModal(false)}
+                style={{
+                  backgroundColor: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#cbd5e1',
+                  borderRadius: '6px',
+                  padding: '0.35rem 0.85rem',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
