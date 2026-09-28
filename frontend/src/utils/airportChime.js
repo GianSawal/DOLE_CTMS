@@ -179,17 +179,11 @@ export async function playAirportChime(presetKey = 'classic4') {
   }
 }
 
-export const ANNOUNCEMENT_START_EVENT = 'dole_announcement_start';
-export const ANNOUNCEMENT_END_EVENT = 'dole_announcement_end';
-
 /**
  * Speaks the queue number and personnel announcement via Web Speech API.
  */
-export function speakQueueAnnouncement({ queueNo, counter, personnel, lang = 'en', onEnd }) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) {
-    onEnd?.();
-    return;
-  }
+export function speakQueueAnnouncement({ queueNo, counter, personnel, lang = 'en' }) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
   try {
     window.speechSynthesis.cancel(); // Cancel any overlapping speech
@@ -228,16 +222,6 @@ export function speakQueueAnnouncement({ queueNo, counter, personnel, lang = 'en
     utterance.volume = 1.0;
     utterance.lang = lang === 'fil' ? 'fil-PH' : 'en-US';
 
-    const handleSpeechFinish = () => {
-      onEnd?.();
-      try {
-        window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_END_EVENT, { detail: { queueNo } }));
-      } catch {}
-    };
-
-    utterance.onend = handleSpeechFinish;
-    utterance.onerror = handleSpeechFinish;
-
     const voices = window.speechSynthesis.getVoices();
     if (voices && voices.length > 0) {
       if (lang === 'fil') {
@@ -257,68 +241,28 @@ export function speakQueueAnnouncement({ queueNo, counter, personnel, lang = 'en
     window.speechSynthesis.speak(utterance);
   } catch (err) {
     console.debug('Speech synthesis announcement notice:', err);
-    onEnd?.();
   }
 }
 
 /**
  * Complete airport public announcement:
- * 1. Dispatches ANNOUNCEMENT_START_EVENT to duck background video sound.
- * 2. Plays the 4-tone airport chime.
- * 3. Waits for chime melody to conclude (~1.85s).
- * 4. Speaks the announcement clearly through Text-to-Speech.
- * 5. Dispatches ANNOUNCEMENT_END_EVENT to restore video sound.
+ * 1. Plays the 4-tone airport chime.
+ * 2. Waits for chime melody to conclude (~1.85s).
+ * 3. Speaks the announcement clearly through Text-to-Speech.
  */
 let pendingSpeechTimer = null;
-let duckSafetyTimer = null;
 
-export async function announceNowServing({ queueNo, counter, personnel, lang = 'en', onDuckStart, onDuckEnd }) {
+export async function announceNowServing({ queueNo, counter, personnel, lang = 'en' }) {
   if (pendingSpeechTimer) {
     clearTimeout(pendingSpeechTimer);
     pendingSpeechTimer = null;
   }
-  if (duckSafetyTimer) {
-    clearTimeout(duckSafetyTimer);
-    duckSafetyTimer = null;
-  }
 
-  // 1. Notify listeners immediately that an announcement started (to duck video volume)
-  try {
-    window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_START_EVENT, { detail: { queueNo, counter, personnel } }));
-  } catch {}
-  onDuckStart?.();
-
-  // Safety fallback: if speech API is muted or fails, ensure video volume restores in 8 seconds
-  duckSafetyTimer = setTimeout(() => {
-    try {
-      window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_END_EVENT, { detail: { queueNo } }));
-    } catch {}
-    onDuckEnd?.();
-    duckSafetyTimer = null;
-  }, 8500);
-
-  const handleDone = () => {
-    if (duckSafetyTimer) {
-      clearTimeout(duckSafetyTimer);
-      duckSafetyTimer = null;
-    }
-    try {
-      window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_END_EVENT, { detail: { queueNo } }));
-    } catch {}
-    onDuckEnd?.();
-  };
-
-  // 2. Play the airport chime
+  // 1. Play the airport chime
   await playAirportChime();
 
-  // 3. Trigger voice announcement after the chime plays
+  // 2. Trigger voice announcement after the chime plays
   pendingSpeechTimer = setTimeout(() => {
-    speakQueueAnnouncement({
-      queueNo,
-      counter,
-      personnel,
-      lang,
-      onEnd: handleDone,
-    });
+    speakQueueAnnouncement({ queueNo, counter, personnel, lang });
   }, 1850);
 }
