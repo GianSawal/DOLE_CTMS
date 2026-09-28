@@ -77,6 +77,7 @@ export default function DisplayBoard() {
   const [folderInputVal, setFolderInputVal] = useState('');
   const folderFileInputRef = useRef(null);
   const videoRef = useRef(null);
+  const isUserPausedRef = useRef(false);
   const iframeRef = useRef(null);
   const defaultVideoVolumeRef = useRef(0.75);
   const isDuckingRef = useRef(false);
@@ -170,14 +171,18 @@ export default function DisplayBoard() {
 
   // Global listener for first user interaction (touch, click, key) to unlock Web Audio API & TTS
   useEffect(() => {
-    const handleUnlock = () => {
+    const handleUnlock = (e) => {
+      const isVideoTarget = e?.target?.closest?.('video') || e?.target?.tagName === 'VIDEO';
+
       unlockAudioContext().then(unlocked => {
         if (unlocked) {
           setAudioUnlocked(true);
           if (videoRef.current) {
             videoRef.current.muted = false;
             videoRef.current.volume = isDuckingRef.current ? 0.08 : defaultVideoVolumeRef.current;
-            videoRef.current.play().catch(() => {});
+            if (!isUserPausedRef.current && !isVideoTarget && videoRef.current.paused) {
+              videoRef.current.play().catch(() => {});
+            }
           }
         }
       });
@@ -313,7 +318,23 @@ export default function DisplayBoard() {
   // Auto-advance to next video in folder when current video finishes
   const handleVideoEnded = () => {
     if (playlist && playlist.length > 1) {
+      isUserPausedRef.current = false;
       setCurrentIndex((prev) => (prev + 1) % playlist.length);
+    }
+  };
+
+  const handleVideoCanPlay = (e) => {
+    const video = e.target;
+    if (isUserPausedRef.current) return;
+    video.volume = isDuckingRef.current ? 0.08 : defaultVideoVolumeRef.current;
+    const playPromise = video.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {
+        if (!isUserPausedRef.current) {
+          video.muted = true;
+          video.play().catch(() => {});
+        }
+      });
     }
   };
 
@@ -945,22 +966,22 @@ export default function DisplayBoard() {
                   />
                 ) : (
                   <video
-                    ref={(el) => {
-                      videoRef.current = el;
-                      if (el) {
-                        el.volume = isDuckingRef.current ? 0.08 : defaultVideoVolumeRef.current;
-                        el.play().catch(() => {
-                          el.muted = true;
-                          el.play().catch(() => {});
-                        });
-                      }
-                    }}
+                    ref={videoRef}
                     key={artaEmbed.url}
                     src={artaEmbed.url}
                     autoPlay
                     loop={playlist.length <= 1}
                     playsInline
                     controls
+                    onPlay={() => {
+                      isUserPausedRef.current = false;
+                    }}
+                    onPause={(e) => {
+                      if (!e.target.ended) {
+                        isUserPausedRef.current = true;
+                      }
+                    }}
+                    onCanPlay={handleVideoCanPlay}
                     onEnded={playlist.length > 1 ? handleVideoEnded : undefined}
                     style={{
                       position: 'absolute',
