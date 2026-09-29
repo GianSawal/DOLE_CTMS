@@ -77,7 +77,7 @@ export default function StaffPersonnel() {
   const [employeeId, setEmployeeId] = useState('');
   const [position, setPosition] = useState('');
   const [officeId, setOfficeId] = useState('');
-  const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
+  const [selectedDivisionId, setSelectedDivisionId] = useState('');
 
   // Delete Confirmation Modal
   const [deleteModalPersonnel, setDeleteModalPersonnel] = useState(null);
@@ -129,6 +129,20 @@ export default function StaffPersonnel() {
     return map;
   }, [divisions]);
 
+  // Available operational divisions (TSSD1, TSSD2, IMSD, MALSU)
+  const filteredDivisions = useMemo(() => {
+    const list = divisions.filter((d) => d.name && d.name.toUpperCase().trim() !== 'ALL');
+    const order = ['TSSD 1', 'TSSD1', 'TSSD 2', 'TSSD2', 'IMSD', 'MALSU'];
+    const getOrder = (name) => {
+      const idx = order.findIndex((o) => o.toLowerCase() === (name || '').toLowerCase().trim());
+      return idx === -1 ? 999 : idx;
+    };
+    if (list.length > 0) {
+      return [...list].sort((a, b) => getOrder(a.name) - getOrder(b.name));
+    }
+    return TARGET_DIVISIONS.map((t) => ({ id: divisionMap[t.key] || t.key, name: t.label }));
+  }, [divisions, divisionMap]);
+
   // Open Create Modal
   const openCreateModal = () => {
     setModalMode('create');
@@ -139,7 +153,7 @@ export default function StaffPersonnel() {
     setEmployeeId('');
     setPosition('');
     setOfficeId(offices[0]?.id || '');
-    setSelectedDivisionIds([]);
+    setSelectedDivisionId('');
     setShowModal(true);
   };
 
@@ -154,8 +168,8 @@ export default function StaffPersonnel() {
     setPosition(p.position || '');
     setOfficeId(p.office || p.office_id || '');
 
-    const currentDivIds = p.division_ids || [];
-    setSelectedDivisionIds(currentDivIds);
+    const currentDivId = (p.division_ids && p.division_ids.length > 0) ? String(p.division_ids[0]) : '';
+    setSelectedDivisionId(currentDivId);
     setShowModal(true);
   };
 
@@ -163,27 +177,6 @@ export default function StaffPersonnel() {
   const handleEmployeeIdChange = (e) => {
     const val = e.target.value.toUpperCase().replace(/\s+/g, '');
     setEmployeeId(val);
-  };
-
-  // Toggle division selection
-  const handleToggleDivision = (divKey, divAlias) => {
-    let targetId = divisionMap[divKey] || divisionMap[divAlias];
-    if (!targetId) {
-      const found = divisions.find(
-        (d) => d.name.toLowerCase() === divKey.toLowerCase() || d.name.toLowerCase() === divAlias.toLowerCase()
-      );
-      if (found) targetId = found.id;
-    }
-
-    if (!targetId) return;
-
-    setSelectedDivisionIds((prev) => {
-      if (prev.includes(targetId)) {
-        return prev.filter((id) => id !== targetId);
-      } else {
-        return [...prev, targetId];
-      }
-    });
   };
 
   // Submit Add / Edit Form
@@ -205,8 +198,8 @@ export default function StaffPersonnel() {
       showToast('Please select an Office.', 'error');
       return;
     }
-    if (selectedDivisionIds.length === 0) {
-      showToast('Please select at least one Division. The division determines which services this personnel can be assigned to.', 'error');
+    if (!selectedDivisionId) {
+      showToast('Please select a Division. The division determines which services this personnel can be assigned to.', 'error');
       return;
     }
 
@@ -220,7 +213,7 @@ export default function StaffPersonnel() {
           employee_id: employeeId.trim(),
           position: position.trim(),
           office: officeId,
-          division_ids: selectedDivisionIds,
+          division_ids: [selectedDivisionId],
         };
         await staffApi.createPersonnel(payload);
         showToast(`Personnel ${firstName.trim()} ${lastName.trim()} (${employeeId.trim()}) added successfully!`);
@@ -231,7 +224,7 @@ export default function StaffPersonnel() {
           last_name: lastName.trim(),
           position: position.trim(),
           office: officeId,
-          division_ids: selectedDivisionIds,
+          division_ids: [selectedDivisionId],
         };
         await staffApi.updatePersonnel(editingId, payload);
         showToast(`Personnel ${employeeId} updated successfully.`);
@@ -1078,86 +1071,51 @@ export default function StaffPersonnel() {
                 </span>
               </div>
 
-              {/* Row 4: Division Field (Checkboxes for TSSD 1, TSSD 2, IMSD, MALSU) */}
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-ground)',
-                  padding: '1.1rem 1.25rem',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Division (Determines Allowed Services) <span style={{ color: 'var(--dole-red)' }}>*</span>
-                  </label>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
-                    Select Division(s)
-                  </span>
-                </div>
+              {/* Row 4: Division Field (Single dropdown - only 1 division per personnel) */}
+              <div>
+                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
+                  DOLE Division <span style={{ color: 'var(--dole-red)' }}>*</span>
+                </label>
+                <select
+                  required
+                  value={selectedDivisionId ? String(selectedDivisionId) : ''}
+                  onChange={(e) => setSelectedDivisionId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-color)',
+                    fontSize: '0.9rem',
+                    backgroundColor: '#fff',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="" disabled>-- Select DOLE Division (1 Division Only) --</option>
+                  {filteredDivisions.map((div) => {
+                    const targetDiv = TARGET_DIVISIONS.find(
+                      (t) => t.key.toLowerCase() === (div.name || '').toLowerCase() || t.alias.toLowerCase() === (div.name || '').toLowerCase()
+                    );
+                    const label = targetDiv ? `${targetDiv.label} — ${targetDiv.fullName}` : div.name;
+                    return (
+                      <option key={div.id} value={String(div.id)}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
                 <div
                   style={{
+                    marginTop: '0.5rem',
+                    padding: '0.65rem 0.85rem',
                     backgroundColor: '#eff6ff',
                     border: '1px solid #bfdbfe',
                     borderRadius: 'var(--radius-sm)',
-                    padding: '0.65rem 0.85rem',
-                    marginBottom: '0.85rem',
-                    fontSize: '0.8rem',
+                    fontSize: '0.78rem',
                     color: '#1e40af',
                     lineHeight: 1.45,
                   }}
                 >
-                  <strong>⚠️ Division Service Assignment Rule:</strong>
-                  <div>
-                    The selected division strictly determines which services this personnel can access and be assigned to.
-                    For example, personnel assigned to <strong>TSSD1</strong> can only access and be assigned to services under the <strong>TSSD1</strong> division, and cannot access or be assigned to services belonging to other divisions.
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.65rem' }}>
-                  {TARGET_DIVISIONS.map((tDiv) => {
-                    const mappedId = divisionMap[tDiv.key] || divisionMap[tDiv.alias];
-                    const isChecked = mappedId ? selectedDivisionIds.includes(mappedId) : false;
-
-                    return (
-                      <label
-                        key={tDiv.key}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '0.75rem',
-                          padding: '0.75rem 0.85rem',
-                          borderRadius: 'var(--radius-sm)',
-                          backgroundColor: isChecked ? tDiv.bg : '#fff',
-                          border: isChecked ? `2px solid ${tDiv.color}` : '1px solid var(--border-color)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                          boxShadow: isChecked ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleToggleDivision(tDiv.key, tDiv.alias)}
-                          style={{
-                            width: '18px',
-                            height: '18px',
-                            cursor: 'pointer',
-                            marginTop: '2px',
-                            accentColor: tDiv.color,
-                          }}
-                        />
-                        <div>
-                          <div style={{ fontWeight: 800, fontSize: '0.88rem', color: tDiv.color }}>
-                            {tDiv.label}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
-                            {tDiv.fullName}
-                          </div>
-                        </div>
-                      </label>
-                    );
-                  })}
+                  🔒 <strong>Division Service Assignment Rule:</strong> Personnel can only be assigned to <strong>1 division</strong> (TSSD1, TSSD2, IMSD, or MALSU). The selected division strictly determines which queue services they can access and be assigned to.
                 </div>
               </div>
 
