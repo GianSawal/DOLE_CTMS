@@ -88,6 +88,24 @@ export const staffApi = {
     return apiRequest(`/staff/personnel/?${params.toString()}`);
   },
 
+  createPersonnel: (data) => apiRequest('/staff/personnel/', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  updatePersonnel: (id, data) => apiRequest(`/staff/personnel/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+
+  deletePersonnel: (id) => apiRequest(`/staff/personnel/${id}/`, {
+    method: 'DELETE',
+  }),
+
+  togglePersonnelActive: (id) => apiRequest(`/staff/personnel/${id}/toggle-active/`, {
+    method: 'POST',
+  }),
+
   getEmployees: (filters = {}) => {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => {

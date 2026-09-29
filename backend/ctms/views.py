@@ -1258,20 +1258,34 @@ class CsmDivisionListView(APIView):
         return Response(CsmDivisionSerializer(divisions, many=True).data)
 
 
-class StaffPersonnelListView(APIView):
+class StaffPersonnelViewSet(viewsets.ModelViewSet):
     """
-    Returns active personnel for staff assignment, optionally filtered by office and/or division.
-    Accessible by all authenticated staff users.
+    CRUD ViewSet for managing DOLE personnel directory.
+    - list/retrieve accessible to all authenticated staff (for assigning in queue).
+    - create/update/delete accessible only to superuser administrators.
+    - Creates personnel profiles WITHOUT requiring or creating login user accounts.
     """
-    permission_classes = [IsStaffUser]
+    serializer_class = CtmsEmployeeSerializer
+    queryset = CtmsEmployee.objects.all().select_related('office', 'user').prefetch_related('divisions').order_by('last_name', 'first_name')
 
-    def get(self, request):
-        qs = CtmsEmployee.objects.filter(user__is_active=True).select_related('office', 'user').prefetch_related('divisions').order_by('last_name', 'first_name')
-        office_id = request.query_params.get('office')
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsStaffUser()]
+        return [IsAdminUserOnly()]
+
+    def get_queryset(self):
+        qs = CtmsEmployee.objects.all().select_related('office', 'user').prefetch_related('divisions').order_by('last_name', 'first_name')
+
+        # If requested by staff (not admin viewing all in personnel tab) or if active_only requested
+        active_only = self.request.query_params.get('active_only')
+        if active_only == 'true' or not self.request.user.is_superuser:
+            qs = qs.filter(models.Q(is_active=True) & (models.Q(user__isnull=True) | models.Q(user__is_active=True)))
+
+        office_id = self.request.query_params.get('office')
         if office_id:
             qs = qs.filter(office_id=office_id)
 
-        division_param = request.query_params.get('division')
+        division_param = self.request.query_params.get('division')
         if division_param:
             div_clean = division_param.strip()
             names = [div_clean]
@@ -1283,25 +1297,115 @@ class StaffPersonnelListView(APIView):
                 names = ['IMSD']
             elif div_clean.upper() == 'MALSU':
                 names = ['MALSU']
-
             qs = qs.filter(models.Q(divisions__name__in=names) | models.Q(divisions__id__in=[div_clean] if div_clean.isdigit() else []))
 
-        data = []
-        for emp in qs.distinct():
-            div_names = [d.name for d in emp.divisions.all()]
-            data.append({
-                "id": emp.id,
-                "employee_id": emp.employee_id,
-                "first_name": emp.first_name,
-                "middle_name": emp.middle_name,
-                "last_name": emp.last_name,
-                "full_name": emp.full_name,
-                "position": emp.position,
-                "office_id": emp.office_id,
-                "office_name": emp.office.name,
-                "division_ids": [d.id for d in emp.divisions.all()],
-                "division_names": div_names,
-            })
-        return Response(data)
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(
+                models.Q(employee_id__icontains=search) |
+                models.Q(first_name__icontains=search) |
+                models.Q(last_name__icontains=search) |
+                models.Q(position__icontains=search)
+            )
+
+        return qs.distinct()
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        employee_id = str(data.get('employee_id', '')).strip()
+        first_name = str(data.get('first_name', '')).strip()
+        middle_name = str(data.get('middle_name', '')).strip()
+        last_name = str(data.get('last_name', '')).strip()
+        position = str(data.get('position', '')).strip()
+        office_id = data.get('office')
+        division_ids = data.get('division_ids', [])
+
+        if not employee_id:
+            return Response({"detail": "Employee ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not first_name or not last_name:
+            return Response({"detail": "First name and last name are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not office_id:
+            return Response({"detail": "DOLE Office is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not division_ids:
+            return Response({"detail": "At least one division is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if CtmsEmployee.objects.filter(employee_id__iexact=employee_id).exists():
+            return Response({"detail": f"Personnel with Employee ID '{employee_id}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+        office = get_object_or_404(CsmOffice, pk=office_id)
+
+        # Create pure Personnel record without user account
+        personnel = CtmsEmployee.objects.create(
+            user=None,
+            employee_id=employee_id,
+            first_name=first_name,
+            middle_name=middle_name,
+            last_name=last_name,
+            position=position,
+            office=office,
+            is_active=True,
+        )
+
+        # Set divisions
+        if division_ids:
+            id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
+            name_filters = models.Q(name__in=[str(x) for x in division_ids])
+            if 'TSSD1' in division_ids:
+                name_filters |= models.Q(name='TSSD 1')
+            if 'TSSD2' in division_ids:
+                name_filters |= models.Q(name='TSSD 2')
+            matched_divisions = CsmDivision.objects.filter(id_filters | name_filters)
+            personnel.divisions.set(matched_divisions)
+
+        return Response(CtmsEmployeeSerializer(personnel).data, status=status.HTTP_201_CREATED)
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        data = request.data
+
+        if 'first_name' in data:
+            instance.first_name = str(data['first_name']).strip()
+        if 'middle_name' in data:
+            instance.middle_name = str(data['middle_name']).strip()
+        if 'last_name' in data:
+            instance.last_name = str(data['last_name']).strip()
+        if 'position' in data:
+            instance.position = str(data['position']).strip()
+        if 'office' in data and data['office']:
+            instance.office = get_object_or_404(CsmOffice, pk=data['office'])
+        if 'is_active' in data:
+            instance.is_active = bool(data['is_active'])
+
+        instance.save()
+
+        if 'division_ids' in data:
+            division_ids = data['division_ids']
+            id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
+            name_filters = models.Q(name__in=[str(x) for x in division_ids])
+            if 'TSSD1' in division_ids:
+                name_filters |= models.Q(name='TSSD 1')
+            if 'TSSD2' in division_ids:
+                name_filters |= models.Q(name='TSSD 2')
+            matched_divisions = CsmDivision.objects.filter(id_filters | name_filters)
+            instance.divisions.set(matched_divisions)
+
+        return Response(CtmsEmployeeSerializer(instance).data)
+
+    @action(detail=True, methods=['post'], url_path='toggle-active')
+    def toggle_active(self, request, pk=None):
+        instance = self.get_object()
+        instance.is_active = not instance.is_active
+        instance.save()
+        if instance.user:
+            instance.user.is_active = instance.is_active
+            instance.user.save()
+        return Response({
+            "status": "success",
+            "is_active": instance.is_active,
+            "message": f"Personnel status set to {'active' if instance.is_active else 'inactive'}."
+        })
 
 

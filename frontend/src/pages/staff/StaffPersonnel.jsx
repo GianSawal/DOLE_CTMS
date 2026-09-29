@@ -71,8 +71,6 @@ export default function StaffPersonnel() {
   const [position, setPosition] = useState('');
   const [officeId, setOfficeId] = useState('');
   const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
-  const [temporaryPassword, setTemporaryPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
 
   // Delete Confirmation Modal
   const [deleteModalPersonnel, setDeleteModalPersonnel] = useState(null);
@@ -86,14 +84,14 @@ export default function StaffPersonnel() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [empRes, offRes, divRes] = await Promise.allSettled([
-        staffApi.getEmployees(),
+      const [perRes, offRes, divRes] = await Promise.allSettled([
+        staffApi.getPersonnel(),
         staffApi.getOffices(),
         staffApi.getDivisions(),
       ]);
 
-      if (empRes.status === 'fulfilled') {
-        setPersonnelList(Array.isArray(empRes.value) ? empRes.value : []);
+      if (perRes.status === 'fulfilled') {
+        setPersonnelList(Array.isArray(perRes.value) ? perRes.value : []);
       }
       if (offRes.status === 'fulfilled') {
         setOffices(Array.isArray(offRes.value) ? offRes.value : []);
@@ -135,8 +133,6 @@ export default function StaffPersonnel() {
     setPosition('');
     setOfficeId(offices[0]?.id || '');
     setSelectedDivisionIds([]);
-    setTemporaryPassword('');
-    setShowPassword(false);
     setShowModal(true);
   };
 
@@ -149,22 +145,17 @@ export default function StaffPersonnel() {
     setLastName(p.last_name || '');
     setEmployeeId(p.employee_id || '');
     setPosition(p.position || '');
-    setOfficeId(p.office || '');
+    setOfficeId(p.office || p.office_id || '');
 
     const currentDivIds = p.division_ids || [];
     setSelectedDivisionIds(currentDivIds);
-    setTemporaryPassword('');
-    setShowPassword(false);
     setShowModal(true);
   };
 
-  // Sync temporary password with employee ID when typing in create mode
+  // Format employee ID
   const handleEmployeeIdChange = (e) => {
     const val = e.target.value.toUpperCase().replace(/\s+/g, '');
     setEmployeeId(val);
-    if (modalMode === 'create' && !temporaryPassword) {
-      setTemporaryPassword(val);
-    }
   };
 
   // Toggle division selection
@@ -214,8 +205,6 @@ export default function StaffPersonnel() {
 
     setSubmitting(true);
     try {
-      const finalTemporaryPassword = temporaryPassword.trim() || employeeId.trim();
-
       if (modalMode === 'create') {
         const payload = {
           first_name: firstName.trim(),
@@ -225,17 +214,8 @@ export default function StaffPersonnel() {
           position: position.trim(),
           office: officeId,
           division_ids: selectedDivisionIds,
-          temporary_password: finalTemporaryPassword,
         };
-        await staffApi.createEmployee(payload);
-
-        setCreatedPersonnelInfo({
-          name: `${firstName.trim()} ${lastName.trim()}`,
-          employeeId: employeeId.trim(),
-          position: position.trim(),
-          office: formatOfficeName(offices.find((o) => String(o.id) === String(officeId))),
-        });
-
+        await staffApi.createPersonnel(payload);
         showToast(`Personnel ${firstName.trim()} ${lastName.trim()} (${employeeId.trim()}) added successfully!`);
       } else {
         const payload = {
@@ -246,10 +226,7 @@ export default function StaffPersonnel() {
           office: officeId,
           division_ids: selectedDivisionIds,
         };
-        if (temporaryPassword.trim()) {
-          payload.temporary_password = temporaryPassword.trim();
-        }
-        await staffApi.updateEmployee(editingId, payload);
+        await staffApi.updatePersonnel(editingId, payload);
         showToast(`Personnel ${employeeId} updated successfully.`);
       }
       setShowModal(false);
@@ -264,7 +241,7 @@ export default function StaffPersonnel() {
   // Toggle Active Status
   const handleToggleActive = async (p) => {
     try {
-      const res = await staffApi.toggleEmployeeActive(p.id);
+      const res = await staffApi.togglePersonnelActive(p.id);
       showToast(`Personnel ${p.employee_id} is now ${res.is_active ? 'Active' : 'Inactive'}.`);
       setPersonnelList((prev) =>
         prev.map((item) => (item.id === p.id ? { ...item, is_active: res.is_active } : item))
@@ -279,7 +256,7 @@ export default function StaffPersonnel() {
     if (!deleteModalPersonnel) return;
     setDeleteSubmitting(true);
     try {
-      await staffApi.deleteEmployee(deleteModalPersonnel.id);
+      await staffApi.deletePersonnel(deleteModalPersonnel.id);
       showToast(`Personnel ${deleteModalPersonnel.employee_id} deleted.`);
       setDeleteModalPersonnel(null);
       setPersonnelList((prev) => prev.filter((item) => item.id !== deleteModalPersonnel.id));
@@ -361,62 +338,7 @@ export default function StaffPersonnel() {
         </div>
       )}
 
-      {/* Account Creation Success Dialog */}
-      {createdPersonnelInfo && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(17, 24, 39, 0.65)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 99999,
-            padding: '1rem',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#fff',
-              borderRadius: 'var(--radius-lg)',
-              maxWidth: '480px',
-              width: '100%',
-              padding: '1.75rem',
-              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
-              border: '2px solid var(--dole-green)',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🎉</div>
-            <h3 style={{ fontSize: '1.3rem', color: 'var(--dole-green)', margin: '0 0 0.5rem 0', fontWeight: 800 }}>
-              Personnel Added Successfully!
-            </h3>
-            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-              <strong>{createdPersonnelInfo.name}</strong> was registered with position <strong>{createdPersonnelInfo.position}</strong> at <strong>{createdPersonnelInfo.office}</strong>.
-            </p>
-            <button
-              type="button"
-              onClick={() => setCreatedPersonnelInfo(null)}
-              className="btn btn-primary"
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                fontWeight: 700,
-                fontSize: '0.95rem',
-                backgroundColor: 'var(--dole-blue)',
-                color: '#fff',
-                borderRadius: 'var(--radius-md)',
-              }}
-            >
-              Done &amp; Close
-            </button>
-          </div>
-        </div>
-      )}
+
 
       <main style={{ flex: 1, padding: '1.75rem 2rem', maxWidth: '1440px', width: '100%', margin: '0 auto' }}>
         {/* Top Header Banner */}
@@ -1232,62 +1154,7 @@ export default function StaffPersonnel() {
                 </div>
               </div>
 
-              {/* Row 5: Initial Password Field */}
-              <div
-                style={{
-                  backgroundColor: 'var(--dole-gold-light)',
-                  padding: '1.1rem 1.25rem',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--dole-gold)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                  <label
-                    style={{
-                      fontSize: '0.84rem',
-                      fontWeight: 700,
-                      color: 'var(--dole-gold-dark)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                    }}
-                  >
-                    <span>🔑</span> Initial Password {modalMode === 'create' && <span style={{ color: 'var(--dole-red)' }}>*</span>}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      fontSize: '0.75rem',
-                      color: 'var(--dole-blue)',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      padding: 0,
-                      minHeight: 'auto',
-                    }}
-                  >
-                    {showPassword ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder={modalMode === 'create' ? 'Defaults to Employee ID' : 'Leave blank to keep existing password'}
-                  value={temporaryPassword}
-                  onChange={(e) => setTemporaryPassword(e.target.value)}
-                  className="mono"
-                  style={{
-                    width: '100%',
-                    padding: '0.6rem 0.8rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--dole-gold)',
-                    fontSize: '0.9rem',
-                    backgroundColor: '#fff',
-                    outline: 'none',
-                  }}
-                />
-              </div>
+
 
               {/* Modal Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>

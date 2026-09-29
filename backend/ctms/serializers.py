@@ -52,7 +52,7 @@ class CtmsStaffOfficeSerializer(serializers.ModelSerializer):
 
 
 class CtmsEmployeeSerializer(serializers.ModelSerializer):
-    username = serializers.ReadOnlyField(source='user.username')
+    username = serializers.SerializerMethodField()
     office_name = serializers.ReadOnlyField(source='office.name')
     office_code = serializers.ReadOnlyField(source='office.code')
     divisions_detail = CsmDivisionSerializer(source='divisions', many=True, read_only=True)
@@ -63,7 +63,7 @@ class CtmsEmployeeSerializer(serializers.ModelSerializer):
         source='divisions',
         required=False
     )
-    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
+    is_active = serializers.SerializerMethodField()
 
     class Meta:
         model = CtmsEmployee
@@ -89,6 +89,14 @@ class CtmsEmployeeSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
+    def get_username(self, obj):
+        return obj.user.username if obj.user else obj.employee_id
+
+    def get_is_active(self, obj):
+        if obj.user:
+            return bool(obj.user.is_active and obj.is_active)
+        return bool(obj.is_active)
 
     def get_division_names(self, obj):
         return [d.name for d in obj.divisions.all()]

@@ -6,6 +6,7 @@ import Navbar from '../../components/Navbar';
 import Modal from '../../components/Modal';
 import PrintSlip from '../../components/PrintSlip';
 import SearchableServiceSelect from '../../components/SearchableServiceSelect';
+import SearchablePersonnelSelect from '../../components/SearchablePersonnelSelect';
 import { broadcastQueueCall } from '../../utils/airportChime';
 
 export default function StaffQueue() {
@@ -135,7 +136,7 @@ export default function StaffQueue() {
   // Fetch registered personnel for the selected office
   useEffect(() => {
     if (selectedOffice) {
-      staffApi.getPersonnel({ office: selectedOffice })
+      staffApi.getPersonnel({ office: selectedOffice, active_only: 'true' })
         .then(data => setOfficePersonnel(Array.isArray(data) ? data : []))
         .catch(() => {});
     }
@@ -193,6 +194,11 @@ export default function StaffQueue() {
 
   const handleOpenAssignModal = (tx) => {
     setAssignTx(tx);
+    if (selectedOffice) {
+      staffApi.getPersonnel({ office: selectedOffice, active_only: 'true' })
+        .then(data => setOfficePersonnel(Array.isArray(data) ? data : []))
+        .catch(() => {});
+    }
     const txDiv = normalizeDiv(tx?.division_name);
     const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(d.name));
     const canUserSelfAssign = user?.is_superuser || !txDiv || loggedInUserDivs.includes(txDiv);
@@ -1103,54 +1109,24 @@ export default function StaffQueue() {
             </div>
           </div>
 
-          {/* Quick Select from Registered Personnel */}
+          {/* Select Registered DOLE Personnel with Instant Real-Time Search */}
           <div style={{ marginBottom: '1.25rem' }}>
-            <label style={{ fontWeight: 700, marginBottom: '0.4rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.86rem' }}>
-              <span>Select Registered DOLE Personnel</span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {eligiblePersonnel.length} eligible in {assignTx?.division_name || 'division'}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <label style={{ fontWeight: 700, fontSize: '0.86rem', margin: 0 }}>
+                Select DOLE Personnel (Instant Real-time Search) *
+              </label>
+              <span style={{ fontSize: '0.75rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
+                {eligiblePersonnel.length} available in {assignTx?.division_name || 'division'}
               </span>
-            </label>
-            <select
-              value={
-                officePersonnel.some(p => p.full_name === assignPersonnelName)
-                  ? assignPersonnelName
-                  : ''
-              }
-              onChange={(e) => {
-                if (e.target.value) {
-                  setAssignPersonnelName(e.target.value);
-                }
-              }}
-              style={{
-                width: '100%',
-                padding: '0.65rem 0.75rem',
-                fontSize: '0.9rem',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-color)',
-                backgroundColor: '#fff',
-              }}
-            >
-              <option value="">-- Choose Registered Personnel --</option>
-              {eligiblePersonnel.length > 0 && (
-                <optgroup label={`Eligible for ${assignTx?.division_name || 'Frontline'} Division`}>
-                  {eligiblePersonnel.map((p) => (
-                    <option key={p.id} value={p.full_name}>
-                      ✓ {p.full_name} ({p.position || 'Staff'} · {p.division_names?.join(', ')})
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {ineligiblePersonnel.length > 0 && (
-                <optgroup label="Unavailable (Assigned to Other Divisions)">
-                  {ineligiblePersonnel.map((p) => (
-                    <option key={p.id} value="" disabled style={{ color: '#9ca3af' }}>
-                      🚫 {p.full_name} ({p.position || 'Staff'} · Assigned to: {p.division_names?.join(', ')})
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
+            </div>
+            <SearchablePersonnelSelect
+              personnel={eligiblePersonnel}
+              value={assignPersonnelName}
+              onChange={(name) => setAssignPersonnelName(name)}
+              placeholder={`-- Select ${assignTx?.division_name || ''} Personnel --`}
+              searchPlaceholder={`Type to search ${assignTx?.division_name || ''} personnel...`}
+              serviceDivision={assignTx?.division_name}
+            />
           </div>
 
           <div style={{ marginBottom: '1.25rem' }}>
@@ -1170,6 +1146,9 @@ export default function StaffQueue() {
                 borderColor: matchedIneligible ? 'var(--dole-red)' : undefined,
               }}
             />
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+              Select from dropdown above or type name manually.
+            </span>
           </div>
 
           {matchedIneligible && (
