@@ -22,6 +22,9 @@ export default function StaffUsers() {
   // Toast / notification
   const [toast, setToast] = useState(null);
 
+  // Success alert modal after creating an account
+  const [createdAccountInfo, setCreatedAccountInfo] = useState(null);
+
   // Add / Edit Modal state
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit'
@@ -37,6 +40,7 @@ export default function StaffUsers() {
   const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
   const [temporaryPassword, setTemporaryPassword] = useState('');
   const [passwordEdited, setPasswordEdited] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Reset Password Modal
   const [resetModalEmployee, setResetModalEmployee] = useState(null);
@@ -49,7 +53,7 @@ export default function StaffUsers() {
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 4500);
+    setTimeout(() => setToast(null), 5000);
   };
 
   const loadData = async () => {
@@ -87,7 +91,6 @@ export default function StaffUsers() {
     divisions.forEach((div) => {
       const name = div.name.trim();
       map[name] = div.id;
-      // also map normalized aliases
       if (name === 'TSSD 1') map['TSSD1'] = div.id;
       if (name === 'TSSD 2') map['TSSD2'] = div.id;
     });
@@ -107,6 +110,7 @@ export default function StaffUsers() {
     setSelectedDivisionIds([]);
     setTemporaryPassword('');
     setPasswordEdited(false);
+    setShowPassword(false);
     setShowModal(true);
   };
 
@@ -121,11 +125,11 @@ export default function StaffUsers() {
     setPosition(emp.position || '');
     setOfficeId(emp.office || '');
 
-    // Resolve division IDs
     const currentDivIds = emp.division_ids || [];
     setSelectedDivisionIds(currentDivIds);
     setTemporaryPassword('');
     setPasswordEdited(false);
+    setShowPassword(false);
     setShowModal(true);
   };
 
@@ -140,10 +144,8 @@ export default function StaffUsers() {
 
   // Toggle division selection
   const handleToggleDivision = (divKey, divAlias) => {
-    // Resolve division id from divisionMap
     let targetId = divisionMap[divKey] || divisionMap[divAlias];
     if (!targetId) {
-      // Fallback: match by name in divisions list
       const found = divisions.find(
         (d) => d.name.toLowerCase() === divKey.toLowerCase() || d.name.toLowerCase() === divAlias.toLowerCase()
       );
@@ -184,6 +186,8 @@ export default function StaffUsers() {
 
     setSubmitting(true);
     try {
+      const finalTemporaryPassword = temporaryPassword.trim() || employeeId.trim();
+
       if (modalMode === 'create') {
         const payload = {
           first_name: firstName.trim(),
@@ -193,10 +197,19 @@ export default function StaffUsers() {
           position: position.trim(),
           office: officeId,
           division_ids: selectedDivisionIds,
-          temporary_password: temporaryPassword.trim() || employeeId.trim(),
+          temporary_password: finalTemporaryPassword,
         };
         await staffApi.createEmployee(payload);
-        showToast(`Employee ${employeeId} (${firstName} ${lastName}) successfully registered! Temporary password: ${payload.temporary_password}`);
+
+        // Show prominent account creation confirmation
+        setCreatedAccountInfo({
+          name: `${firstName.trim()} ${lastName.trim()}`,
+          username: employeeId.trim(),
+          password: finalTemporaryPassword,
+          office: offices.find((o) => String(o.id) === String(officeId))?.name || 'Assigned Office',
+        });
+
+        showToast(`Account successfully created on database! Username: ${employeeId.trim()}`);
       } else {
         const payload = {
           first_name: firstName.trim(),
@@ -206,13 +219,16 @@ export default function StaffUsers() {
           office: officeId,
           division_ids: selectedDivisionIds,
         };
+        if (temporaryPassword.trim()) {
+          payload.temporary_password = temporaryPassword.trim();
+        }
         await staffApi.updateEmployee(editingId, payload);
-        showToast(`Employee ${employeeId} profile updated successfully.`);
+        showToast(`Employee ${employeeId} updated successfully.`);
       }
       setShowModal(false);
       loadData();
     } catch (err) {
-      showToast(err.message || 'Operation failed. Please verify the inputs.', 'error');
+      showToast(err.message || 'Operation failed. Please check inputs and try again.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -262,7 +278,7 @@ export default function StaffUsers() {
     setDeleteSubmitting(true);
     try {
       await staffApi.deleteEmployee(deleteModalEmployee.id);
-      showToast(`Employee ${deleteModalEmployee.employee_id} (${deleteModalEmployee.full_name}) deleted.`);
+      showToast(`Employee ${deleteModalEmployee.employee_id} deleted.`);
       setDeleteModalEmployee(null);
       setEmployees((prev) => prev.filter((item) => item.id !== deleteModalEmployee.id));
     } catch (err) {
@@ -341,6 +357,92 @@ export default function StaffUsers() {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* Account Creation Success Dialog */}
+      {createdAccountInfo && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(17, 24, 39, 0.65)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '1rem',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: 'var(--radius-lg)',
+              maxWidth: '480px',
+              width: '100%',
+              padding: '1.75rem',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+              border: '2px solid var(--dole-green)',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🎉</div>
+            <h3 style={{ fontSize: '1.3rem', color: 'var(--dole-green)', margin: '0 0 0.5rem 0', fontWeight: 800 }}>
+              Account Created Successfully!
+            </h3>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+              An account for <strong>{createdAccountInfo.name}</strong> was saved to the database. They can now log in using these credentials:
+            </p>
+
+            <div
+              style={{
+                backgroundColor: 'var(--bg-ground)',
+                padding: '1.1rem 1.25rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-color)',
+                textAlign: 'left',
+                marginBottom: '1.5rem',
+              }}
+            >
+              <div style={{ marginBottom: '0.75rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                  Username
+                </span>
+                <span className="mono" style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--dole-blue)' }}>
+                  {createdAccountInfo.username}
+                </span>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                  Temporary Password
+                </span>
+                <span className="mono" style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--dole-green)' }}>
+                  {createdAccountInfo.password}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCreatedAccountInfo(null)}
+              className="btn btn-primary"
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                backgroundColor: 'var(--dole-blue)',
+                color: '#fff',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              Done &amp; Close
+            </button>
+          </div>
         </div>
       )}
 
@@ -501,7 +603,6 @@ export default function StaffUsers() {
             marginBottom: '1.25rem',
           }}
         >
-          {/* Search Box */}
           <div style={{ flex: '1 1 260px', position: 'relative' }}>
             <span
               style={{
@@ -532,7 +633,6 @@ export default function StaffUsers() {
             />
           </div>
 
-          {/* Office Filter */}
           <div style={{ minWidth: '180px' }}>
             <select
               value={officeFilter}
@@ -556,7 +656,6 @@ export default function StaffUsers() {
             </select>
           </div>
 
-          {/* Division Filter */}
           <div style={{ minWidth: '150px' }}>
             <select
               value={divisionFilter}
@@ -579,7 +678,6 @@ export default function StaffUsers() {
             </select>
           </div>
 
-          {/* Refresh Button */}
           <button
             type="button"
             onClick={loadData}
@@ -782,7 +880,6 @@ export default function StaffUsers() {
                         {/* Actions */}
                         <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
                           <div style={{ display: 'inline-flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                            {/* Edit */}
                             <button
                               type="button"
                               onClick={() => openEditModal(emp)}
@@ -800,7 +897,6 @@ export default function StaffUsers() {
                               ✏️ Edit
                             </button>
 
-                            {/* Reset Password */}
                             <button
                               type="button"
                               onClick={() => openResetPasswordModal(emp)}
@@ -818,7 +914,6 @@ export default function StaffUsers() {
                               🔑 Reset Pass
                             </button>
 
-                            {/* Delete */}
                             <button
                               type="button"
                               onClick={() => openDeleteModal(emp)}
@@ -896,11 +991,11 @@ export default function StaffUsers() {
             >
               <div>
                 <h2 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', margin: 0 }}>
-                  {modalMode === 'create' ? '➕ Register New Employee' : `✏️ Edit Employee (${employeeId})`}
+                  {modalMode === 'create' ? '➕ Add New Employee' : `✏️ Edit Employee (${employeeId})`}
                 </h2>
                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                   {modalMode === 'create'
-                    ? 'Enter employee details. Assigned divisions dictate which client queues they can access.'
+                    ? 'Fill in the fields below. Saving will automatically create the user account on the database.'
                     : 'Update employee information and division queue permissions.'}
                 </p>
               </div>
@@ -926,7 +1021,7 @@ export default function StaffUsers() {
               {/* Row 1: Name Fields (First, Middle, Last) */}
               <div>
                 <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                  Full Name <span style={{ color: 'var(--dole-red)' }}>*</span>
+                  Employee Full Name <span style={{ color: 'var(--dole-red)' }}>*</span>
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem' }}>
                   <div>
@@ -1008,7 +1103,7 @@ export default function StaffUsers() {
                     }}
                   />
                   <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    {modalMode === 'create' ? 'Unique identifier used for login username.' : 'Employee ID cannot be changed.'}
+                    {modalMode === 'create' ? 'This Employee ID will be the account username.' : 'Employee ID cannot be edited.'}
                   </span>
                 </div>
 
@@ -1060,7 +1155,7 @@ export default function StaffUsers() {
                   ))}
                 </select>
                 <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Regional Office No. 3, Field Offices (Pampanga, Clark, Tarlac, Bulacan, Nueva Ecija, Aurora, Bataan, Zambales)
+                  Regional Office No. 3, Pampanga, Clark, Tarlac, Bulacan, Nueva Ecija, Aurora, Bataan, Zambales
                 </span>
               </div>
 
@@ -1078,11 +1173,11 @@ export default function StaffUsers() {
                     Division Queue Access (Checkboxes) <span style={{ color: 'var(--dole-red)' }}>*</span>
                   </label>
                   <span style={{ fontSize: '0.74rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
-                    Multi-select allowed
+                    Select one or more
                   </span>
                 </div>
                 <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-                  Select which division(s) this employee belongs to. <strong>The division(s) selected determine which Waiting in Line / Queue tickets the employee is allowed to view and call.</strong>
+                  The division(s) selected determine which <strong>Waiting in Line / Queue tickets</strong> this employee is allowed to view and call.
                 </p>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.65rem' }}>
@@ -1132,31 +1227,56 @@ export default function StaffUsers() {
                 </div>
               </div>
 
-              {/* Row 5: Temporary Password Field (Create mode only) */}
-              {modalMode === 'create' && (
-                <div
-                  style={{
-                    backgroundColor: 'var(--dole-gold-light)',
-                    padding: '1rem 1.15rem',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--dole-gold)',
-                  }}
-                >
+              {/* Row 5: Temporary Password Field */}
+              <div
+                style={{
+                  backgroundColor: 'var(--dole-gold-light)',
+                  padding: '1.1rem 1.25rem',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--dole-gold)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
                   <label
                     style={{
                       fontSize: '0.84rem',
                       fontWeight: 700,
                       color: 'var(--dole-gold-dark)',
-                      display: 'block',
-                      marginBottom: '0.4rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
                     }}
                   >
-                    🔑 Temporary Password <span style={{ color: 'var(--dole-red)' }}>*</span>
+                    <span>🔑</span> Temporary Password <span style={{ color: 'var(--dole-red)' }}>*</span>
                   </label>
+                  {modalMode === 'create' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTemporaryPassword(employeeId);
+                        setPasswordEdited(false);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--dole-blue)',
+                        fontSize: '0.76rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        padding: 0,
+                        minHeight: 'auto',
+                      }}
+                    >
+                      ↺ Match Employee ID
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ position: 'relative' }}>
                   <input
-                    type="text"
-                    required
-                    placeholder="Temporary Password (defaults to Employee ID)"
+                    type={showPassword ? 'text' : 'password'}
+                    required={modalMode === 'create'}
+                    placeholder={modalMode === 'create' ? (employeeId || 'Will match Employee ID') : 'Leave blank to keep unchanged'}
                     value={temporaryPassword}
                     onChange={(e) => {
                       setTemporaryPassword(e.target.value);
@@ -1165,20 +1285,63 @@ export default function StaffUsers() {
                     className="mono"
                     style={{
                       width: '100%',
-                      padding: '0.6rem 0.8rem',
+                      padding: '0.65rem 2.5rem 0.65rem 0.85rem',
                       borderRadius: 'var(--radius-sm)',
                       border: '1px solid var(--border-color)',
-                      fontSize: '0.88rem',
+                      fontSize: '0.92rem',
                       fontWeight: 700,
                       backgroundColor: '#fff',
                       outline: 'none',
                     }}
                   />
-                  <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
-                    ℹ️ By default, the temporary password matches the <strong>Employee ID</strong>. The employee will use this password to log into the staff portal.
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    style={{
+                      position: 'absolute',
+                      right: '0.75rem',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '1rem',
+                      padding: 0,
+                      minHeight: 'auto',
+                    }}
+                  >
+                    {showPassword ? '👁️' : '🙈'}
+                  </button>
+                </div>
+
+                {/* Account Credentials Live Preview Badge */}
+                <div
+                  style={{
+                    marginTop: '0.75rem',
+                    padding: '0.65rem 0.85rem',
+                    backgroundColor: '#fff',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px dashed var(--dole-gold)',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
+                    ⚡ Automatic Account Creation Summary:
+                  </div>
+                  <div style={{ color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                    <div>
+                      Username: <strong className="mono" style={{ color: 'var(--dole-blue)' }}>{employeeId || '(enter employee ID)'}</strong>
+                    </div>
+                    <div>
+                      Password: <strong className="mono" style={{ color: 'var(--dole-green)' }}>{(temporaryPassword.trim() || employeeId.trim()) || '(matches employee ID)'}</strong>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                    Upon clicking <strong>Save Changes</strong>, an account is automatically saved on our database so the employee can immediately log into the staff portal.
                   </div>
                 </div>
-              )}
+              </div>
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
@@ -1187,7 +1350,7 @@ export default function StaffUsers() {
                   onClick={() => setShowModal(false)}
                   className="btn btn-outline"
                   style={{
-                    padding: '0.6rem 1.1rem',
+                    padding: '0.65rem 1.2rem',
                     fontSize: '0.9rem',
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--border-color)',
@@ -1202,17 +1365,18 @@ export default function StaffUsers() {
                   disabled={submitting}
                   className="btn btn-primary"
                   style={{
-                    padding: '0.6rem 1.4rem',
-                    fontSize: '0.9rem',
-                    fontWeight: 700,
+                    padding: '0.65rem 1.6rem',
+                    fontSize: '0.92rem',
+                    fontWeight: 800,
                     borderRadius: 'var(--radius-md)',
                     backgroundColor: 'var(--dole-blue)',
                     color: '#fff',
                     minHeight: 'auto',
+                    boxShadow: 'var(--shadow-md)',
                     opacity: submitting ? 0.7 : 1,
                   }}
                 >
-                  {submitting ? 'Saving...' : modalMode === 'create' ? '💾 Register Employee' : '💾 Save Changes'}
+                  {submitting ? 'Saving to Database...' : '💾 Save Changes'}
                 </button>
               </div>
             </form>

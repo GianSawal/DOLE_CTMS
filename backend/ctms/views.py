@@ -912,6 +912,9 @@ class StaffEmployeeViewSet(viewsets.ModelViewSet):
             CtmsStaffOffice.objects.create(user=employee.user, office=office)
         if 'is_active' in data:
             employee.user.is_active = bool(data['is_active'])
+        if 'temporary_password' in data and data['temporary_password']:
+            pwd = str(data['temporary_password']).strip()
+            employee.user.set_password(pwd)
 
         employee.user.save()
         employee.save()
