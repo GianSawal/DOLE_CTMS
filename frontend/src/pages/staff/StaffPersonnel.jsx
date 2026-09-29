@@ -2,19 +2,52 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Navbar from '../../components/Navbar';
 import { staffApi } from '../../api/staff';
 
-const TARGET_DIVISIONS = [
-  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Support Services Division 1', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
-  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Support Services Division 2', color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
+export const DOLE_POSITIONS = [
+  'Regional Director',
+  'Director',
+  'Assistant Regional Director',
+  'Supervising Labor Employment Officer',
+  'Senior Labor Inspector',
+  'Labor Employment Officer III',
+  'Labor Employment Officer II',
+  'Labor Employment Officer I',
+  'Admin Aide IV',
+  'Admin Aide III',
+  'Admin Aide II',
+  'Admin Aide I',
+  'Admin Officer V',
+  'Job Order',
+  'GIP',
+  'Statistician',
+  'Information Systems Analyst',
+  'Chief Labor Employment Officer',
+];
+
+export const TARGET_DIVISIONS = [
+  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD1', fullName: 'Technical Support Services Division 1', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD2', fullName: 'Technical Support Services Division 2', color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
   { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
   { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation Arbitration and Legal Services Unit', color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
 ];
 
-export default function StaffUsers() {
-  const [employees, setEmployees] = useState([]);
+export const formatOfficeName = (off) => {
+  if (!off) return '';
+  const name = typeof off === 'string' ? off : (off.name || '');
+  const code = typeof off === 'object' ? (off.code || '') : '';
+  if (code === 'RO3' || name === 'DOLE Regional Office III') {
+    return 'Regional Office No. 3';
+  }
+  return name;
+};
+
+export default function StaffPersonnel() {
+  const [personnelList, setPersonnelList] = useState([]);
   const [offices, setOffices] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [officeFilter, setOfficeFilter] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
@@ -22,8 +55,8 @@ export default function StaffUsers() {
   // Toast / notification
   const [toast, setToast] = useState(null);
 
-  // Success alert modal after creating an account
-  const [createdAccountInfo, setCreatedAccountInfo] = useState(null);
+  // Success alert modal after adding personnel
+  const [createdPersonnelInfo, setCreatedPersonnelInfo] = useState(null);
 
   // Add / Edit Modal state
   const [showModal, setShowModal] = useState(false);
@@ -39,16 +72,10 @@ export default function StaffUsers() {
   const [officeId, setOfficeId] = useState('');
   const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
   const [temporaryPassword, setTemporaryPassword] = useState('');
-  const [passwordEdited, setPasswordEdited] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Reset Password Modal
-  const [resetModalEmployee, setResetModalEmployee] = useState(null);
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [resetSubmitting, setResetSubmitting] = useState(false);
-
   // Delete Confirmation Modal
-  const [deleteModalEmployee, setDeleteModalEmployee] = useState(null);
+  const [deleteModalPersonnel, setDeleteModalPersonnel] = useState(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const showToast = (message, type = 'success') => {
@@ -66,7 +93,7 @@ export default function StaffUsers() {
       ]);
 
       if (empRes.status === 'fulfilled') {
-        setEmployees(Array.isArray(empRes.value) ? empRes.value : []);
+        setPersonnelList(Array.isArray(empRes.value) ? empRes.value : []);
       }
       if (offRes.status === 'fulfilled') {
         setOffices(Array.isArray(offRes.value) ? offRes.value : []);
@@ -75,7 +102,7 @@ export default function StaffUsers() {
         setDivisions(Array.isArray(divRes.value) ? divRes.value : []);
       }
     } catch (err) {
-      showToast(err.message || 'Failed to load user management data', 'error');
+      showToast(err.message || 'Failed to load personnel data', 'error');
     } finally {
       setLoading(false);
     }
@@ -85,7 +112,7 @@ export default function StaffUsers() {
     loadData();
   }, []);
 
-  // Map divisions from backend to target checklist
+  // Map divisions from backend
   const divisionMap = useMemo(() => {
     const map = {};
     divisions.forEach((div) => {
@@ -109,26 +136,24 @@ export default function StaffUsers() {
     setOfficeId(offices[0]?.id || '');
     setSelectedDivisionIds([]);
     setTemporaryPassword('');
-    setPasswordEdited(false);
     setShowPassword(false);
     setShowModal(true);
   };
 
   // Open Edit Modal
-  const openEditModal = (emp) => {
+  const openEditModal = (p) => {
     setModalMode('edit');
-    setEditingId(emp.id);
-    setFirstName(emp.first_name || '');
-    setMiddleName(emp.middle_name || '');
-    setLastName(emp.last_name || '');
-    setEmployeeId(emp.employee_id || '');
-    setPosition(emp.position || '');
-    setOfficeId(emp.office || '');
+    setEditingId(p.id);
+    setFirstName(p.first_name || '');
+    setMiddleName(p.middle_name || '');
+    setLastName(p.last_name || '');
+    setEmployeeId(p.employee_id || '');
+    setPosition(p.position || '');
+    setOfficeId(p.office || '');
 
-    const currentDivIds = emp.division_ids || [];
+    const currentDivIds = p.division_ids || [];
     setSelectedDivisionIds(currentDivIds);
     setTemporaryPassword('');
-    setPasswordEdited(false);
     setShowPassword(false);
     setShowModal(true);
   };
@@ -137,7 +162,7 @@ export default function StaffUsers() {
   const handleEmployeeIdChange = (e) => {
     const val = e.target.value.toUpperCase().replace(/\s+/g, '');
     setEmployeeId(val);
-    if (modalMode === 'create' && !passwordEdited) {
+    if (modalMode === 'create' && !temporaryPassword) {
       setTemporaryPassword(val);
     }
   };
@@ -174,14 +199,17 @@ export default function StaffUsers() {
       showToast('Employee ID is required.', 'error');
       return;
     }
+    if (!position) {
+      showToast('Please select a Position.', 'error');
+      return;
+    }
     if (!officeId) {
       showToast('Please select an Office.', 'error');
       return;
     }
     if (selectedDivisionIds.length === 0) {
-      if (!window.confirm('No division selected. The employee will not be able to access division queue lines. Continue?')) {
-        return;
-      }
+      showToast('Please select at least one Division. The division determines which services this personnel can be assigned to.', 'error');
+      return;
     }
 
     setSubmitting(true);
@@ -201,15 +229,14 @@ export default function StaffUsers() {
         };
         await staffApi.createEmployee(payload);
 
-        // Show prominent account creation confirmation
-        setCreatedAccountInfo({
+        setCreatedPersonnelInfo({
           name: `${firstName.trim()} ${lastName.trim()}`,
-          username: employeeId.trim(),
-          password: finalTemporaryPassword,
-          office: offices.find((o) => String(o.id) === String(officeId))?.name || 'Assigned Office',
+          employeeId: employeeId.trim(),
+          position: position.trim(),
+          office: formatOfficeName(offices.find((o) => String(o.id) === String(officeId))),
         });
 
-        showToast(`Account successfully created on database! Username: ${employeeId.trim()}`);
+        showToast(`Personnel ${firstName.trim()} ${lastName.trim()} (${employeeId.trim()}) added successfully!`);
       } else {
         const payload = {
           first_name: firstName.trim(),
@@ -223,7 +250,7 @@ export default function StaffUsers() {
           payload.temporary_password = temporaryPassword.trim();
         }
         await staffApi.updateEmployee(editingId, payload);
-        showToast(`Employee ${employeeId} updated successfully.`);
+        showToast(`Personnel ${employeeId} updated successfully.`);
       }
       setShowModal(false);
       loadData();
@@ -234,86 +261,60 @@ export default function StaffUsers() {
     }
   };
 
-  // Trigger Reset Password Modal
-  const openResetPasswordModal = (emp) => {
-    setResetModalEmployee(emp);
-    setNewPasswordInput(emp.employee_id);
-  };
-
-  const handleConfirmResetPassword = async () => {
-    if (!resetModalEmployee) return;
-    setResetSubmitting(true);
-    try {
-      const pwd = newPasswordInput.trim() || resetModalEmployee.employee_id;
-      const res = await staffApi.resetEmployeePassword(resetModalEmployee.id, pwd);
-      showToast(res.message || `Password for ${resetModalEmployee.employee_id} has been reset.`);
-      setResetModalEmployee(null);
-    } catch (err) {
-      showToast(err.message || 'Failed to reset password', 'error');
-    } finally {
-      setResetSubmitting(false);
-    }
-  };
-
   // Toggle Active Status
-  const handleToggleActive = async (emp) => {
+  const handleToggleActive = async (p) => {
     try {
-      const res = await staffApi.toggleEmployeeActive(emp.id);
-      showToast(`User ${emp.employee_id} is now ${res.is_active ? 'Active' : 'Inactive'}.`);
-      setEmployees((prev) =>
-        prev.map((item) => (item.id === emp.id ? { ...item, is_active: res.is_active } : item))
+      const res = await staffApi.toggleEmployeeActive(p.id);
+      showToast(`Personnel ${p.employee_id} is now ${res.is_active ? 'Active' : 'Inactive'}.`);
+      setPersonnelList((prev) =>
+        prev.map((item) => (item.id === p.id ? { ...item, is_active: res.is_active } : item))
       );
     } catch (err) {
-      showToast(err.message || 'Failed to toggle account status', 'error');
+      showToast(err.message || 'Failed to toggle personnel status', 'error');
     }
   };
 
-  // Trigger Delete Confirmation
-  const openDeleteModal = (emp) => {
-    setDeleteModalEmployee(emp);
-  };
-
+  // Delete Personnel
   const handleConfirmDelete = async () => {
-    if (!deleteModalEmployee) return;
+    if (!deleteModalPersonnel) return;
     setDeleteSubmitting(true);
     try {
-      await staffApi.deleteEmployee(deleteModalEmployee.id);
-      showToast(`Employee ${deleteModalEmployee.employee_id} deleted.`);
-      setDeleteModalEmployee(null);
-      setEmployees((prev) => prev.filter((item) => item.id !== deleteModalEmployee.id));
+      await staffApi.deleteEmployee(deleteModalPersonnel.id);
+      showToast(`Personnel ${deleteModalPersonnel.employee_id} deleted.`);
+      setDeleteModalPersonnel(null);
+      setPersonnelList((prev) => prev.filter((item) => item.id !== deleteModalPersonnel.id));
     } catch (err) {
-      showToast(err.message || 'Failed to delete employee', 'error');
+      showToast(err.message || 'Failed to delete personnel', 'error');
     } finally {
       setDeleteSubmitting(false);
     }
   };
 
-  // Filtered employees list
-  const filteredEmployees = useMemo(() => {
-    return employees.filter((emp) => {
+  // Filtered personnel list with instant real-time search
+  const filteredPersonnel = useMemo(() => {
+    return personnelList.filter((p) => {
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
-        (emp.employee_id && emp.employee_id.toLowerCase().includes(q)) ||
-        (emp.first_name && emp.first_name.toLowerCase().includes(q)) ||
-        (emp.last_name && emp.last_name.toLowerCase().includes(q)) ||
-        (emp.position && emp.position.toLowerCase().includes(q)) ||
-        (emp.office_name && emp.office_name.toLowerCase().includes(q));
+        (p.employee_id && p.employee_id.toLowerCase().includes(q)) ||
+        (p.first_name && p.first_name.toLowerCase().includes(q)) ||
+        (p.last_name && p.last_name.toLowerCase().includes(q)) ||
+        (p.position && p.position.toLowerCase().includes(q)) ||
+        (p.office_name && p.office_name.toLowerCase().includes(q));
 
-      const matchesOffice = !officeFilter || String(emp.office) === String(officeFilter);
+      const matchesOffice = !officeFilter || String(p.office) === String(officeFilter);
 
       const matchesDivision =
         !divisionFilter ||
-        (emp.division_names && emp.division_names.some((d) => d.toLowerCase().includes(divisionFilter.toLowerCase())));
+        (p.division_names && p.division_names.some((d) => d.toLowerCase().includes(divisionFilter.toLowerCase())));
 
       return matchesSearch && matchesOffice && matchesDivision;
     });
-  }, [employees, searchQuery, officeFilter, divisionFilter]);
+  }, [personnelList, searchQuery, officeFilter, divisionFilter]);
 
-  // Summary counts
-  const totalEmployees = employees.length;
-  const activeCount = employees.filter((e) => e.is_active).length;
-  const officeCount = new Set(employees.map((e) => e.office)).size;
+  const totalPersonnel = personnelList.length;
+  const activeCount = personnelList.filter((p) => p.is_active).length;
+  const officeCount = new Set(personnelList.map((p) => p.office)).size;
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-ground)', display: 'flex', flexDirection: 'column' }}>
@@ -361,7 +362,7 @@ export default function StaffUsers() {
       )}
 
       {/* Account Creation Success Dialog */}
-      {createdAccountInfo && (
+      {createdPersonnelInfo && (
         <div
           style={{
             position: 'fixed',
@@ -392,43 +393,14 @@ export default function StaffUsers() {
           >
             <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🎉</div>
             <h3 style={{ fontSize: '1.3rem', color: 'var(--dole-green)', margin: '0 0 0.5rem 0', fontWeight: 800 }}>
-              Account Created Successfully!
+              Personnel Added Successfully!
             </h3>
             <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-              An account for <strong>{createdAccountInfo.name}</strong> was saved to the database. They can now log in using these credentials:
+              <strong>{createdPersonnelInfo.name}</strong> was registered with position <strong>{createdPersonnelInfo.position}</strong> at <strong>{createdPersonnelInfo.office}</strong>.
             </p>
-
-            <div
-              style={{
-                backgroundColor: 'var(--bg-ground)',
-                padding: '1.1rem 1.25rem',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-color)',
-                textAlign: 'left',
-                marginBottom: '1.5rem',
-              }}
-            >
-              <div style={{ marginBottom: '0.75rem' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
-                  Username
-                </span>
-                <span className="mono" style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--dole-blue)' }}>
-                  {createdAccountInfo.username}
-                </span>
-              </div>
-              <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
-                  Temporary Password
-                </span>
-                <span className="mono" style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--dole-green)' }}>
-                  {createdAccountInfo.password}
-                </span>
-              </div>
-            </div>
-
             <button
               type="button"
-              onClick={() => setCreatedAccountInfo(null)}
+              onClick={() => setCreatedPersonnelInfo(null)}
               className="btn btn-primary"
               style={{
                 width: '100%',
@@ -465,9 +437,9 @@ export default function StaffUsers() {
         >
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <span style={{ fontSize: '1.6rem' }}>👥</span>
+              <span style={{ fontSize: '1.6rem' }}>👤</span>
               <h1 style={{ fontSize: '1.45rem', color: 'var(--text-primary)', margin: 0 }}>
-                User &amp; Employee Management
+                DOLE Personnel Management
               </h1>
               <span
                 style={{
@@ -485,7 +457,7 @@ export default function StaffUsers() {
               </span>
             </div>
             <p style={{ margin: '0.3rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-              Create and manage staff accounts, assign field offices, and restrict queue line access by division.
+              Add and manage personnel information, positions, field offices, and enforce division-based service assignment restrictions.
             </p>
           </div>
 
@@ -506,8 +478,31 @@ export default function StaffUsers() {
               boxShadow: 'var(--shadow-md)',
             }}
           >
-            <span>➕</span> Add New Employee
+            <span>➕</span> Add Personnel Information
           </button>
+        </div>
+
+        {/* Division Restriction Policy Banner */}
+        <div
+          style={{
+            backgroundColor: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: 'var(--radius-md)',
+            padding: '0.85rem 1.15rem',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            color: '#1e40af',
+            fontSize: '0.86rem',
+            lineHeight: 1.45,
+          }}
+        >
+          <span style={{ fontSize: '1.3rem' }}>🔒</span>
+          <div>
+            <strong>Division-to-Service Assignment Policy:</strong> The selected division strictly governs which frontline services a personnel can access and be assigned to.
+            For example, personnel assigned to <strong>TSSD1</strong> can only access and be assigned to services under <strong>TSSD1</strong>, and cannot be designated to services under TSSD2, IMSD, or MALSU.
+          </div>
         </div>
 
         {/* Stats Summary Cards */}
@@ -529,10 +524,10 @@ export default function StaffUsers() {
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Total Employees
+              Total Personnel
             </div>
             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
-              {totalEmployees}
+              {totalPersonnel}
             </div>
           </div>
 
@@ -546,7 +541,7 @@ export default function StaffUsers() {
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Active Accounts
+              Active Personnel
             </div>
             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--dole-green)', marginTop: '0.2rem' }}>
               {activeCount}
@@ -563,7 +558,7 @@ export default function StaffUsers() {
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Offices Assigned
+              Field Offices Assigned
             </div>
             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--dole-blue)', marginTop: '0.2rem' }}>
               {officeCount}
@@ -580,7 +575,7 @@ export default function StaffUsers() {
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Active Divisions
+              Divisions Configured
             </div>
             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--dole-gold-dark)', marginTop: '0.2rem' }}>
               {TARGET_DIVISIONS.length}
@@ -618,7 +613,7 @@ export default function StaffUsers() {
             </span>
             <input
               type="text"
-              placeholder="Search by ID, name, position..."
+              placeholder="Search personnel by name, Employee ID, position..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -633,7 +628,7 @@ export default function StaffUsers() {
             />
           </div>
 
-          <div style={{ minWidth: '180px' }}>
+          <div style={{ minWidth: '220px' }}>
             <select
               value={officeFilter}
               onChange={(e) => setOfficeFilter(e.target.value)}
@@ -647,16 +642,16 @@ export default function StaffUsers() {
                 outline: 'none',
               }}
             >
-              <option value="">All Offices</option>
+              <option value="">All Field Offices</option>
               {offices.map((off) => (
                 <option key={off.id} value={off.id}>
-                  {off.name}
+                  {formatOfficeName(off)} ({off.code})
                 </option>
               ))}
             </select>
           </div>
 
-          <div style={{ minWidth: '150px' }}>
+          <div style={{ minWidth: '160px' }}>
             <select
               value={divisionFilter}
               onChange={(e) => setDivisionFilter(e.target.value)}
@@ -671,8 +666,8 @@ export default function StaffUsers() {
               }}
             >
               <option value="">All Divisions</option>
-              <option value="TSSD 1">TSSD 1</option>
-              <option value="TSSD 2">TSSD 2</option>
+              <option value="TSSD 1">TSSD1</option>
+              <option value="TSSD 2">TSSD2</option>
               <option value="IMSD">IMSD</option>
               <option value="MALSU">MALSU</option>
             </select>
@@ -700,7 +695,7 @@ export default function StaffUsers() {
           </button>
         </div>
 
-        {/* Employees Table */}
+        {/* Personnel Table */}
         <div
           style={{
             backgroundColor: 'var(--bg-card)',
@@ -713,16 +708,16 @@ export default function StaffUsers() {
           {loading ? (
             <div style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
               <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>⏳</div>
-              <p>Loading employee directory...</p>
+              <p>Loading DOLE personnel records...</p>
             </div>
-          ) : filteredEmployees.length === 0 ? (
+          ) : filteredPersonnel.length === 0 ? (
             <div style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📂</div>
-              <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No employees found</p>
+              <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No personnel records found</p>
               <p style={{ fontSize: '0.88rem', marginTop: '0.25rem' }}>
                 {searchQuery || officeFilter || divisionFilter
                   ? 'Try adjusting your search filters.'
-                  : 'Get started by clicking "+ Add New Employee" above.'}
+                  : 'Get started by clicking "+ Add Personnel Information" above.'}
               </p>
             </div>
           ) : (
@@ -737,7 +732,7 @@ export default function StaffUsers() {
                     <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                       Assigned Division(s)
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', fontWeight: 400 }}>
-                        (Dictates Queue Access)
+                        (Determines Allowed Services)
                       </span>
                     </th>
                     <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Status</th>
@@ -747,10 +742,10 @@ export default function StaffUsers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredEmployees.map((emp) => {
+                  {filteredPersonnel.map((p) => {
                     return (
                       <tr
-                        key={emp.id}
+                        key={p.id}
                         style={{
                           borderBottom: '1px solid var(--border-color)',
                           transition: 'background-color 0.15s',
@@ -772,29 +767,31 @@ export default function StaffUsers() {
                               border: '1px solid var(--border-color)',
                             }}
                           >
-                            {emp.employee_id}
+                            {p.employee_id}
                           </span>
                         </td>
 
                         {/* Full Name */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                            {emp.full_name || `${emp.first_name} ${emp.last_name}`}
+                            {p.full_name || `${p.first_name} ${p.last_name}`}
                           </div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            Username: <code className="mono">{emp.username || emp.employee_id}</code>
-                          </div>
+                          {p.middle_name && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              Middle: {p.middle_name}
+                            </div>
+                          )}
                         </td>
 
                         {/* Position */}
-                        <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)' }}>
-                          {emp.position || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>— None —</span>}
+                        <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                          {p.position || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>— None —</span>}
                         </td>
 
                         {/* Office */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.office_name}</div>
-                          {emp.office_code && (
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{formatOfficeName(p.office_name)}</div>
+                          {p.office_code && (
                             <span
                               style={{
                                 fontSize: '0.72rem',
@@ -804,16 +801,16 @@ export default function StaffUsers() {
                                 borderRadius: 'var(--radius-sm)',
                               }}
                             >
-                              {emp.office_code}
+                              {p.office_code}
                             </span>
                           )}
                         </td>
 
                         {/* Assigned Divisions */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          {emp.division_names && emp.division_names.length > 0 ? (
+                          {p.division_names && p.division_names.length > 0 ? (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                              {emp.division_names.map((divName) => {
+                              {p.division_names.map((divName) => {
                                 const targetDiv = TARGET_DIVISIONS.find(
                                   (t) => t.key.toLowerCase() === divName.toLowerCase() || t.alias.toLowerCase() === divName.toLowerCase()
                                 );
@@ -859,7 +856,7 @@ export default function StaffUsers() {
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <button
                             type="button"
-                            onClick={() => handleToggleActive(emp)}
+                            onClick={() => handleToggleActive(p)}
                             title="Click to toggle active status"
                             style={{
                               fontSize: '0.75rem',
@@ -868,12 +865,12 @@ export default function StaffUsers() {
                               borderRadius: 'var(--radius-full)',
                               border: 'none',
                               cursor: 'pointer',
-                              backgroundColor: emp.is_active ? 'var(--dole-green-light)' : 'var(--dole-red-light)',
-                              color: emp.is_active ? 'var(--dole-green)' : 'var(--dole-red)',
+                              backgroundColor: p.is_active ? 'var(--dole-green-light)' : 'var(--dole-red-light)',
+                              color: p.is_active ? 'var(--dole-green)' : 'var(--dole-red)',
                               minHeight: 'auto',
                             }}
                           >
-                            {emp.is_active ? '● Active' : '○ Inactive'}
+                            {p.is_active ? '● Active' : '○ Inactive'}
                           </button>
                         </td>
 
@@ -882,9 +879,9 @@ export default function StaffUsers() {
                           <div style={{ display: 'inline-flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
                             <button
                               type="button"
-                              onClick={() => openEditModal(emp)}
+                              onClick={() => openEditModal(p)}
                               className="btn btn-outline"
-                              title="Edit employee details"
+                              title="Edit personnel information"
                               style={{
                                 minHeight: 'auto',
                                 padding: '0.35rem 0.65rem',
@@ -899,26 +896,9 @@ export default function StaffUsers() {
 
                             <button
                               type="button"
-                              onClick={() => openResetPasswordModal(emp)}
+                              onClick={() => setDeleteModalPersonnel(p)}
                               className="btn btn-outline"
-                              title="Reset temporary password"
-                              style={{
-                                minHeight: 'auto',
-                                padding: '0.35rem 0.65rem',
-                                fontSize: '0.8rem',
-                                borderRadius: 'var(--radius-sm)',
-                                color: 'var(--dole-gold-dark)',
-                                border: '1px solid var(--border-color)',
-                              }}
-                            >
-                              🔑 Reset Pass
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => openDeleteModal(emp)}
-                              className="btn btn-outline"
-                              title="Delete employee account"
+                              title="Delete personnel record"
                               style={{
                                 minHeight: 'auto',
                                 padding: '0.35rem 0.65rem',
@@ -943,7 +923,7 @@ export default function StaffUsers() {
       </main>
 
       {/* ========================================================= */}
-      {/* Modal: Add / Edit Employee                                 */}
+      {/* Modal: Add / Edit Personnel                                 */}
       {/* ========================================================= */}
       {showModal && (
         <div
@@ -991,12 +971,12 @@ export default function StaffUsers() {
             >
               <div>
                 <h2 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', margin: 0 }}>
-                  {modalMode === 'create' ? '➕ Add New Employee' : `✏️ Edit Employee (${employeeId})`}
+                  {modalMode === 'create' ? '➕ Add Personnel Information' : `✏️ Edit Personnel Information (${employeeId})`}
                 </h2>
                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                   {modalMode === 'create'
-                    ? 'Fill in the fields below. Saving will automatically create the user account on the database.'
-                    : 'Update employee information and division queue permissions.'}
+                    ? 'Fill in the personnel information below. The assigned division determines the services this personnel can access.'
+                    : 'Update personnel details, position, office, and division assignment.'}
                 </p>
               </div>
               <button
@@ -1021,7 +1001,7 @@ export default function StaffUsers() {
               {/* Row 1: Name Fields (First, Middle, Last) */}
               <div>
                 <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                  Employee Full Name <span style={{ color: 'var(--dole-red)' }}>*</span>
+                  Personnel Full Name <span style={{ color: 'var(--dole-red)' }}>*</span>
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem' }}>
                   <div>
@@ -1103,28 +1083,38 @@ export default function StaffUsers() {
                     }}
                   />
                   <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    {modalMode === 'create' ? 'This Employee ID will be the account username.' : 'Employee ID cannot be edited.'}
+                    {modalMode === 'create' ? 'Official Employee ID / Username.' : 'Employee ID cannot be modified.'}
                   </span>
                 </div>
 
                 <div>
                   <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                    Position / Designation
+                    Position <span style={{ color: 'var(--dole-red)' }}>*</span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Labor and Employment Officer III"
+                  <select
+                    required
                     value={position}
                     onChange={(e) => setPosition(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '0.6rem 0.8rem',
+                      padding: '0.62rem 0.8rem',
                       borderRadius: 'var(--radius-sm)',
                       border: '1px solid var(--border-color)',
                       fontSize: '0.88rem',
                       outline: 'none',
+                      backgroundColor: '#fff',
                     }}
-                  />
+                  >
+                    <option value="" disabled>-- Select Position --</option>
+                    {DOLE_POSITIONS.map((pos) => (
+                      <option key={pos} value={pos}>
+                        {pos}
+                      </option>
+                    ))}
+                    {position && !DOLE_POSITIONS.includes(position) && (
+                      <option value={position}>{position} (Current)</option>
+                    )}
+                  </select>
                 </div>
               </div>
 
@@ -1150,12 +1140,12 @@ export default function StaffUsers() {
                   <option value="" disabled>-- Select DOLE Office --</option>
                   {offices.map((off) => (
                     <option key={off.id} value={off.id}>
-                      {off.name} ({off.code})
+                      {formatOfficeName(off)} ({off.code})
                     </option>
                   ))}
                 </select>
                 <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Regional Office No. 3, Pampanga, Clark, Tarlac, Bulacan, Nueva Ecija, Aurora, Bataan, Zambales
+                  Regional Office No. 3, Pampanga Field Office, Clark Satellite Office, Tarlac Field Office, Bulacan Field Office, Nueva Ecija Field Office, Aurora Field Office, or Bataan Field Office
                 </span>
               </div>
 
@@ -1170,15 +1160,30 @@ export default function StaffUsers() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
                   <label style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Division Queue Access (Checkboxes) <span style={{ color: 'var(--dole-red)' }}>*</span>
+                    Division (Determines Allowed Services) <span style={{ color: 'var(--dole-red)' }}>*</span>
                   </label>
                   <span style={{ fontSize: '0.74rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
-                    Select one or more
+                    Select Division(s)
                   </span>
                 </div>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-                  The division(s) selected determine which <strong>Waiting in Line / Queue tickets</strong> this employee is allowed to view and call.
-                </p>
+                <div
+                  style={{
+                    backgroundColor: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.65rem 0.85rem',
+                    marginBottom: '0.85rem',
+                    fontSize: '0.8rem',
+                    color: '#1e40af',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <strong>⚠️ Division Service Assignment Rule:</strong>
+                  <div>
+                    The selected division strictly determines which services this personnel can access and be assigned to.
+                    For example, personnel assigned to <strong>TSSD1</strong> can only access and be assigned to services under the <strong>TSSD1</strong> division, and cannot access or be assigned to services belonging to other divisions.
+                  </div>
+                </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.65rem' }}>
                   {TARGET_DIVISIONS.map((tDiv) => {
@@ -1227,7 +1232,7 @@ export default function StaffUsers() {
                 </div>
               </div>
 
-              {/* Row 5: Temporary Password Field */}
+              {/* Row 5: Initial Password Field */}
               <div
                 style={{
                   backgroundColor: 'var(--dole-gold-light)',
@@ -1247,116 +1252,50 @@ export default function StaffUsers() {
                       gap: '0.35rem',
                     }}
                   >
-                    <span>🔑</span> Temporary Password <span style={{ color: 'var(--dole-red)' }}>*</span>
+                    <span>🔑</span> Initial Password {modalMode === 'create' && <span style={{ color: 'var(--dole-red)' }}>*</span>}
                   </label>
-                  {modalMode === 'create' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTemporaryPassword(employeeId);
-                        setPasswordEdited(false);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--dole-blue)',
-                        fontSize: '0.76rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        padding: 0,
-                        minHeight: 'auto',
-                      }}
-                    >
-                      ↺ Match Employee ID
-                    </button>
-                  )}
-                </div>
-
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required={modalMode === 'create'}
-                    placeholder={modalMode === 'create' ? (employeeId || 'Will match Employee ID') : 'Leave blank to keep unchanged'}
-                    value={temporaryPassword}
-                    onChange={(e) => {
-                      setTemporaryPassword(e.target.value);
-                      setPasswordEdited(true);
-                    }}
-                    className="mono"
-                    style={{
-                      width: '100%',
-                      padding: '0.65rem 2.5rem 0.65rem 0.85rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      fontSize: '0.92rem',
-                      fontWeight: 700,
-                      backgroundColor: '#fff',
-                      outline: 'none',
-                    }}
-                  />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    title={showPassword ? 'Hide password' : 'Show password'}
                     style={{
-                      position: 'absolute',
-                      right: '0.75rem',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
                       background: 'none',
                       border: 'none',
+                      fontSize: '0.75rem',
+                      color: 'var(--dole-blue)',
+                      fontWeight: 600,
                       cursor: 'pointer',
-                      fontSize: '1rem',
                       padding: 0,
                       minHeight: 'auto',
                     }}
                   >
-                    {showPassword ? '👁️' : '🙈'}
+                    {showPassword ? 'Hide' : 'Show'}
                   </button>
                 </div>
-
-                {/* Account Credentials Live Preview Badge */}
-                <div
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder={modalMode === 'create' ? 'Defaults to Employee ID' : 'Leave blank to keep existing password'}
+                  value={temporaryPassword}
+                  onChange={(e) => setTemporaryPassword(e.target.value)}
+                  className="mono"
                   style={{
-                    marginTop: '0.75rem',
-                    padding: '0.65rem 0.85rem',
-                    backgroundColor: '#fff',
+                    width: '100%',
+                    padding: '0.6rem 0.8rem',
                     borderRadius: 'var(--radius-sm)',
-                    border: '1px dashed var(--dole-gold)',
-                    fontSize: '0.8rem',
+                    border: '1px solid var(--dole-gold)',
+                    fontSize: '0.9rem',
+                    backgroundColor: '#fff',
+                    outline: 'none',
                   }}
-                >
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-                    ⚡ Automatic Account Creation Summary:
-                  </div>
-                  <div style={{ color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div>
-                      Username: <strong className="mono" style={{ color: 'var(--dole-blue)' }}>{employeeId || '(enter employee ID)'}</strong>
-                    </div>
-                    <div>
-                      Password: <strong className="mono" style={{ color: 'var(--dole-green)' }}>{(temporaryPassword.trim() || employeeId.trim()) || '(matches employee ID)'}</strong>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                    Upon clicking <strong>Save Changes</strong>, an account is automatically saved on our database so the employee can immediately log into the staff portal.
-                  </div>
-                </div>
+                />
               </div>
 
-              {/* Action Buttons */}
+              {/* Modal Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
                   className="btn btn-outline"
-                  style={{
-                    padding: '0.65rem 1.2rem',
-                    fontSize: '0.9rem',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-secondary)',
-                    minHeight: 'auto',
-                  }}
+                  disabled={submitting}
                 >
                   Cancel
                 </button>
@@ -1365,18 +1304,13 @@ export default function StaffUsers() {
                   disabled={submitting}
                   className="btn btn-primary"
                   style={{
-                    padding: '0.65rem 1.6rem',
-                    fontSize: '0.92rem',
-                    fontWeight: 800,
-                    borderRadius: 'var(--radius-md)',
                     backgroundColor: 'var(--dole-blue)',
                     color: '#fff',
-                    minHeight: 'auto',
-                    boxShadow: 'var(--shadow-md)',
-                    opacity: submitting ? 0.7 : 1,
+                    fontWeight: 700,
+                    padding: '0.65rem 1.4rem',
                   }}
                 >
-                  {submitting ? 'Saving to Database...' : '💾 Save Changes'}
+                  {submitting ? 'Saving...' : modalMode === 'create' ? 'Save Personnel' : 'Update Personnel'}
                 </button>
               </div>
             </form>
@@ -1385,125 +1319,9 @@ export default function StaffUsers() {
       )}
 
       {/* ========================================================= */}
-      {/* Modal: Reset Password                                     */}
-      {/* ========================================================= */}
-      {resetModalEmployee && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(17, 24, 39, 0.6)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '1rem',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: 'var(--radius-lg)',
-              maxWidth: '460px',
-              width: '100%',
-              padding: '1.5rem',
-              boxShadow: '0 20px 45px rgba(0,0,0,0.22)',
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '1.5rem' }}>🔑</span>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)' }}>
-                Reset Temporary Password
-              </h3>
-            </div>
-            <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.4 }}>
-              Set a new temporary password for <strong>{resetModalEmployee.full_name}</strong> ({resetModalEmployee.employee_id}).
-            </p>
-
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
-                New Temporary Password:
-              </label>
-              <input
-                type="text"
-                value={newPasswordInput}
-                onChange={(e) => setNewPasswordInput(e.target.value)}
-                className="mono"
-                placeholder={resetModalEmployee.employee_id}
-                style={{
-                  width: '100%',
-                  padding: '0.6rem 0.8rem',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border-color)',
-                  fontSize: '0.9rem',
-                  fontWeight: 700,
-                  outline: 'none',
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setNewPasswordInput(resetModalEmployee.employee_id)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--dole-blue)',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  padding: '0.3rem 0 0 0',
-                  minHeight: 'auto',
-                }}
-              >
-                ↺ Reset to Employee ID ({resetModalEmployee.employee_id})
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
-              <button
-                type="button"
-                onClick={() => setResetModalEmployee(null)}
-                className="btn btn-outline"
-                style={{
-                  padding: '0.5rem 1rem',
-                  fontSize: '0.86rem',
-                  borderRadius: 'var(--radius-md)',
-                  minHeight: 'auto',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={resetSubmitting}
-                onClick={handleConfirmResetPassword}
-                className="btn btn-primary"
-                style={{
-                  padding: '0.5rem 1.15rem',
-                  fontSize: '0.86rem',
-                  fontWeight: 700,
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--dole-gold-dark)',
-                  color: '#fff',
-                  minHeight: 'auto',
-                  opacity: resetSubmitting ? 0.7 : 1,
-                }}
-              >
-                {resetSubmitting ? 'Updating...' : 'Set Password'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
       {/* Modal: Delete Confirmation                                */}
       {/* ========================================================= */}
-      {deleteModalEmployee && (
+      {deleteModalPersonnel && (
         <div
           style={{
             position: 'fixed',
@@ -1529,47 +1347,36 @@ export default function StaffUsers() {
               padding: '1.5rem',
               boxShadow: '0 20px 45px rgba(0,0,0,0.22)',
               border: '1px solid var(--border-color)',
+              textAlign: 'center',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '1.5rem' }}>⚠️</span>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--dole-red)' }}>
-                Delete Employee Account?
-              </h3>
-            </div>
-            <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.4 }}>
-              Are you sure you want to delete <strong>{deleteModalEmployee.full_name}</strong> ({deleteModalEmployee.employee_id})?
-              This will permanently revoke their access to the CTMS staff portal and queue management.
+            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>⚠️</div>
+            <h3 style={{ fontSize: '1.2rem', color: 'var(--dole-red)', margin: '0 0 0.5rem 0' }}>
+              Delete Personnel Record?
+            </h3>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+              Are you sure you want to delete personnel{' '}
+              <strong>{deleteModalPersonnel.full_name || deleteModalPersonnel.employee_id}</strong> ({deleteModalPersonnel.employee_id})?
             </p>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem' }}>
               <button
                 type="button"
-                onClick={() => setDeleteModalEmployee(null)}
+                onClick={() => setDeleteModalPersonnel(null)}
                 className="btn btn-outline"
-                style={{
-                  padding: '0.5rem 1rem',
-                  fontSize: '0.86rem',
-                  borderRadius: 'var(--radius-md)',
-                  minHeight: 'auto',
-                }}
+                disabled={deleteSubmitting}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={deleteSubmitting}
                 onClick={handleConfirmDelete}
+                disabled={deleteSubmitting}
                 className="btn"
                 style={{
-                  padding: '0.5rem 1.15rem',
-                  fontSize: '0.86rem',
-                  fontWeight: 700,
-                  borderRadius: 'var(--radius-md)',
                   backgroundColor: 'var(--dole-red)',
                   color: '#fff',
-                  minHeight: 'auto',
-                  opacity: deleteSubmitting ? 0.7 : 1,
+                  fontWeight: 700,
+                  padding: '0.6rem 1.25rem',
                 }}
               >
                 {deleteSubmitting ? 'Deleting...' : 'Yes, Delete'}
