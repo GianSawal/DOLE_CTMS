@@ -1,49 +1,828 @@
 {% extends 'queueing/base.html' %}
+{% load static %}
 
 {% block title %}Processing Cycle Time (PCT) Compliance Report — DOLE Queueing{% endblock %}
 {% block main_class %}main-wrapper-wide{% endblock %}
 
 {% block extra_head %}
 <style>
-    .preset-btn {
-        background: transparent;
-        border: 1px solid var(--border-color, #cbd5e1);
-        color: var(--text-secondary, #475569);
-        padding: 0.25rem 0.6rem;
+    /* ==========================================================================
+       PCT Compliance Report — Executive Government Analytics UI
+       Citizen's Charter & ARTA (RA 11032) Performance Monitoring
+       ========================================================================== */
+
+    :root {
+        --pct-navy: #0305ba;
+        --pct-navy-dark: #020382;
+        --pct-navy-subtle: #f0f3ff;
+        --pct-slate-900: #0f172a;
+        --pct-slate-800: #1e293b;
+        --pct-slate-700: #334155;
+        --pct-slate-600: #475569;
+        --pct-slate-500: #64748b;
+        --pct-slate-300: #cbd5e1;
+        --pct-slate-200: #e2e8f0;
+        --pct-slate-100: #f1f5f9;
+        --pct-slate-50: #f8fafc;
+        --pct-green-600: #059669;
+        --pct-green-500: #10b981;
+        --pct-green-50: #ecfdf5;
+        --pct-amber-600: #d97706;
+        --pct-amber-500: #f59e0b;
+        --pct-amber-50: #fffbeb;
+        --pct-red-600: #dc2626;
+        --pct-red-500: #ef4444;
+        --pct-red-50: #fef2f2;
+        --pct-card-radius: 12px;
+        --pct-border-color: #e2e8f0;
+        --pct-shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+        --pct-shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+        --pct-shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.03);
+    }
+
+    /* Page Header Banner */
+    .pct-header-card {
+        background: #ffffff;
+        border: 1px solid var(--pct-slate-200);
+        border-radius: var(--pct-card-radius);
+        padding: 1.5rem 1.75rem;
+        margin-bottom: 1.5rem;
+        box-shadow: var(--pct-shadow-sm);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .pct-header-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #0305ba 0%, #1e40af 50%, #ffc603 50%, #ffc603 55%, #ff0103 55%, #dc2626 100%);
+    }
+
+    .pct-badge-law {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        background: var(--pct-navy-subtle);
+        color: var(--pct-navy);
+        border: 1px solid #c7d2fe;
         font-size: 0.75rem;
-        border-radius: 4px;
-        cursor: pointer;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0.25rem 0.65rem;
+        border-radius: 9999px;
+        margin-bottom: 0.5rem;
+    }
+
+    .pct-page-title {
+        font-size: 1.65rem;
+        font-weight: 800;
+        color: var(--pct-slate-900);
+        line-height: 1.2;
+        margin: 0;
+        letter-spacing: -0.025em;
+    }
+
+    .pct-page-subtitle {
+        color: var(--pct-slate-600);
+        font-size: 0.925rem;
+        margin: 0.35rem 0 0 0;
+        line-height: 1.5;
+        max-width: 780px;
+    }
+
+    .pct-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+    }
+
+    /* Action Buttons */
+    .pct-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.45rem;
+        font-family: inherit;
+        font-size: 0.875rem;
         font-weight: 600;
+        padding: 0.55rem 1rem;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.15s ease-in-out;
+        white-space: nowrap;
+        min-height: 40px;
+    }
+
+    .pct-btn-primary {
+        background: var(--pct-navy);
+        color: #ffffff;
+        box-shadow: 0 1px 2px rgba(3, 5, 186, 0.2);
+    }
+
+    .pct-btn-primary:hover {
+        background: var(--pct-navy-dark);
+        color: #ffffff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(3, 5, 186, 0.25);
+    }
+
+    .pct-btn-outline {
+        background: #ffffff;
+        border-color: var(--pct-slate-300);
+        color: var(--pct-slate-700);
+    }
+
+    .pct-btn-outline:hover {
+        background: var(--pct-slate-50);
+        border-color: var(--pct-slate-400);
+        color: var(--pct-slate-900);
+    }
+
+    .pct-btn-ghost {
+        background: transparent;
+        color: var(--pct-slate-600);
+        border: 1px dashed var(--pct-slate-300);
+    }
+
+    .pct-btn-ghost:hover {
+        background: var(--pct-slate-100);
+        color: var(--pct-slate-900);
+        border-color: var(--pct-slate-400);
+    }
+
+    /* Filters Card */
+    .pct-filter-card {
+        background: #ffffff;
+        border: 1px solid var(--pct-slate-200);
+        border-radius: var(--pct-card-radius);
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: var(--pct-shadow-sm);
+    }
+
+    .pct-filter-topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        padding-bottom: 1rem;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--pct-slate-100);
+    }
+
+    .pct-filter-title {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--pct-slate-700);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    /* Quick Date Segmented Group */
+    .pct-presets-group {
+        display: inline-flex;
+        background: var(--pct-slate-100);
+        padding: 3px;
+        border-radius: 8px;
+        border: 1px solid var(--pct-slate-200);
+        gap: 2px;
+    }
+
+    .pct-preset-pill {
+        background: transparent;
+        border: none;
+        color: var(--pct-slate-600);
+        font-family: inherit;
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 0.35rem 0.75rem;
+        border-radius: 6px;
+        cursor: pointer;
         transition: all 0.15s ease;
     }
 
-    .preset-btn:hover {
-        background: #f1f5f9;
-        color: var(--dole-blue, #0305ba);
-        border-color: var(--dole-blue, #0305ba);
+    .pct-preset-pill:hover {
+        color: var(--pct-navy);
+        background: rgba(255, 255, 255, 0.6);
     }
 
+    .pct-preset-pill.active {
+        background: #ffffff;
+        color: var(--pct-navy);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        font-weight: 700;
+    }
+
+    /* Filter Form Grid */
+    .pct-filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 1rem;
+        align-items: flex-end;
+    }
+
+    .pct-input-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .pct-label {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: var(--pct-slate-700);
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    .pct-control {
+        width: 100%;
+        min-height: 42px;
+        padding: 0.45rem 0.85rem;
+        font-family: inherit;
+        font-size: 0.9rem;
+        color: var(--pct-slate-800);
+        background-color: #ffffff;
+        border: 1px solid var(--pct-slate-300);
+        border-radius: 8px;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .pct-control:focus {
+        outline: none;
+        border-color: var(--pct-navy);
+        box-shadow: 0 0 0 3px rgba(3, 5, 186, 0.12);
+    }
+
+    .pct-filter-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    /* Active Filters Indicator Banner */
+    .pct-active-chips {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.85rem;
+        padding-top: 0.75rem;
+        border-top: 1px dashed var(--pct-slate-200);
+        font-size: 0.8rem;
+    }
+
+    .pct-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: var(--pct-slate-100);
+        color: var(--pct-slate-700);
+        padding: 0.2rem 0.65rem;
+        border-radius: 9999px;
+        font-weight: 500;
+        border: 1px solid var(--pct-slate-200);
+    }
+
+    .pct-chip strong {
+        color: var(--pct-slate-900);
+    }
+
+    /* Executive KPI Dashboard Cards */
+    .pct-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1.15rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .pct-kpi-card {
+        background: #ffffff;
+        border: 1px solid var(--pct-slate-200);
+        border-radius: var(--pct-card-radius);
+        padding: 1.25rem 1.35rem;
+        box-shadow: var(--pct-shadow-sm);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+
+    .pct-kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--pct-shadow-md);
+        border-color: #cbd5e1;
+    }
+
+    .pct-kpi-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .pct-kpi-title {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: var(--pct-slate-600);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        line-height: 1.3;
+    }
+
+    .pct-kpi-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .pct-kpi-icon-blue {
+        background: #eef2ff;
+        color: #1e40af;
+    }
+
+    .pct-kpi-icon-green {
+        background: #ecfdf5;
+        color: #047857;
+    }
+
+    .pct-kpi-icon-amber {
+        background: #fffbeb;
+        color: #b45309;
+    }
+
+    .pct-kpi-icon-red {
+        background: #fef2f2;
+        color: #b91c1c;
+    }
+
+    .pct-kpi-icon-slate {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .pct-kpi-icon-purple {
+        background: #f5f3ff;
+        color: #6d28d9;
+    }
+
+    .pct-kpi-value-row {
+        display: flex;
+        align-items: baseline;
+        gap: 0.4rem;
+        margin: 0.15rem 0 0.5rem 0;
+    }
+
+    .pct-kpi-num {
+        font-family: var(--font-mono, monospace);
+        font-size: 2.25rem;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.03em;
+        color: var(--pct-slate-900);
+    }
+
+    .pct-kpi-unit {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--pct-slate-500);
+    }
+
+    .pct-kpi-footer {
+        font-size: 0.785rem;
+        color: var(--pct-slate-500);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--pct-slate-100);
+    }
+
+    .pct-compliance-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        font-size: 0.725rem;
+        font-weight: 700;
+        padding: 0.2rem 0.55rem;
+        border-radius: 9999px;
+    }
+
+    .pct-compliance-high {
+        background: #dcfce7;
+        color: #15803d;
+        border: 1px solid #bbf7d0;
+    }
+
+    .pct-compliance-mid {
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
+    }
+
+    .pct-compliance-low {
+        background: #fee2e2;
+        color: #b91c1c;
+        border: 1px solid #fecaca;
+    }
+
+    /* Mini Progress Bar for KPI */
+    .pct-mini-track {
+        width: 100%;
+        height: 6px;
+        background: var(--pct-slate-100);
+        border-radius: 9999px;
+        overflow: hidden;
+        margin-top: 0.45rem;
+    }
+
+    .pct-mini-fill {
+        height: 100%;
+        border-radius: 9999px;
+        transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Table Section Card */
+    .pct-table-card {
+        background: #ffffff;
+        border: 1px solid var(--pct-slate-200);
+        border-radius: var(--pct-card-radius);
+        box-shadow: var(--pct-shadow-sm);
+        margin-bottom: 2rem;
+        overflow: hidden;
+    }
+
+    .pct-table-header {
+        padding: 1.25rem 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+        border-bottom: 1px solid var(--pct-slate-200);
+        background: #ffffff;
+    }
+
+    .pct-table-title-group h3 {
+        margin: 0;
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: var(--pct-slate-900);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .pct-table-title-group p {
+        margin: 0.25rem 0 0 0;
+        font-size: 0.85rem;
+        color: var(--pct-slate-500);
+    }
+
+    .pct-table-tools {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .pct-search-box {
+        position: relative;
+        min-width: 260px;
+    }
+
+    .pct-search-icon {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--pct-slate-400);
+        pointer-events: none;
+    }
+
+    .pct-search-input {
+        width: 100%;
+        min-height: 38px;
+        padding: 0.4rem 0.85rem 0.4rem 2.2rem;
+        font-family: inherit;
+        font-size: 0.85rem;
+        border: 1px solid var(--pct-slate-300);
+        border-radius: 8px;
+        background: var(--pct-slate-50);
+        transition: all 0.15s ease;
+    }
+
+    .pct-search-input:focus {
+        outline: none;
+        background: #ffffff;
+        border-color: var(--pct-navy);
+        box-shadow: 0 0 0 3px rgba(3, 5, 186, 0.1);
+    }
+
+    /* Filter tabs inside table header */
+    .pct-status-tabs {
+        display: inline-flex;
+        background: var(--pct-slate-100);
+        padding: 2px;
+        border-radius: 8px;
+        gap: 2px;
+    }
+
+    .pct-tab-btn {
+        background: transparent;
+        border: none;
+        padding: 0.35rem 0.65rem;
+        font-size: 0.785rem;
+        font-weight: 600;
+        color: var(--pct-slate-600);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .pct-tab-btn.active {
+        background: #ffffff;
+        color: var(--pct-navy);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+        font-weight: 700;
+    }
+
+    /* Table Styles */
+    .pct-table-wrapper {
+        overflow-x: auto;
+        width: 100%;
+    }
+
+    .pct-data-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 0.885rem;
+    }
+
+    .pct-data-table thead th {
+        background: var(--pct-slate-50);
+        color: var(--pct-slate-700);
+        font-weight: 700;
+        font-size: 0.775rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid var(--pct-slate-200);
+        white-space: nowrap;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .pct-data-table tbody td {
+        padding: 0.9rem 1rem;
+        border-bottom: 1px solid var(--pct-slate-200);
+        color: var(--pct-slate-800);
+        vertical-align: middle;
+    }
+
+    .pct-data-table tbody tr {
+        transition: background-color 0.15s ease;
+    }
+
+    .pct-data-table tbody tr:hover {
+        background-color: #f8faff;
+    }
+
+    .pct-service-name {
+        font-weight: 700;
+        color: var(--pct-slate-900);
+        font-size: 0.925rem;
+        line-height: 1.35;
+        margin-bottom: 0.25rem;
+    }
+
+    .pct-meta-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+    }
+
+    .pct-unit-badge {
+        font-size: 0.75rem;
+        color: var(--pct-slate-600);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .pct-office-tag {
+        font-size: 0.7rem;
+        font-weight: 700;
+        background: var(--pct-slate-100);
+        color: var(--pct-slate-700);
+        padding: 0.1rem 0.45rem;
+        border-radius: 4px;
+        border: 1px solid var(--pct-slate-200);
+    }
+
+    .pct-class-badge {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 0.15rem 0.5rem;
+        border-radius: 4px;
+    }
+
+    .pct-class-simple {
+        background: #ecfdf5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+    }
+
+    .pct-class-complex {
+        background: #fffbeb;
+        color: #92400e;
+        border: 1px solid #fde68a;
+    }
+
+    .pct-class-tech {
+        background: #eff6ff;
+        color: #1e40af;
+        border: 1px solid #bfdbfe;
+    }
+
+    .pct-target-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: var(--pct-slate-100);
+        color: var(--pct-slate-800);
+        font-weight: 700;
+        font-size: 0.825rem;
+        padding: 0.25rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--pct-slate-200);
+    }
+
+    /* Comparison indicator between actual and target */
+    .pct-comp-indicator {
+        font-size: 0.725rem;
+        font-weight: 600;
+        display: block;
+        margin-top: 0.2rem;
+    }
+
+    .pct-comp-good {
+        color: var(--pct-green-600);
+    }
+
+    .pct-comp-warn {
+        color: var(--pct-red-600);
+    }
+
+    /* Compliance column visual bar */
+    .pct-table-progress-wrap {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        min-width: 140px;
+    }
+
+    .pct-table-progress-bar {
+        flex: 1;
+        height: 8px;
+        background: var(--pct-slate-100);
+        border-radius: 9999px;
+        overflow: hidden;
+    }
+
+    .pct-table-progress-fill {
+        height: 100%;
+        border-radius: 9999px;
+    }
+
+    /* Empty state card */
+    .pct-empty-state {
+        text-align: center;
+        padding: 3.5rem 1.5rem;
+    }
+
+    .pct-empty-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+        background: var(--pct-slate-100);
+        color: var(--pct-slate-400);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1rem;
+    }
+
+    /* Citizen's Charter Reference Card */
+    .pct-charter-legend {
+        background: #ffffff;
+        border: 1px solid var(--pct-slate-200);
+        border-radius: var(--pct-card-radius);
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 2rem;
+        box-shadow: var(--pct-shadow-sm);
+    }
+
+    .pct-legend-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--pct-slate-800);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.75rem;
+    }
+
+    .pct-legend-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1rem;
+        font-size: 0.825rem;
+        color: var(--pct-slate-600);
+        line-height: 1.5;
+    }
+
+    .pct-legend-item {
+        background: var(--pct-slate-50);
+        border: 1px solid var(--pct-slate-200);
+        border-radius: 8px;
+        padding: 0.85rem 1rem;
+    }
+
+    .pct-legend-item-title {
+        font-weight: 700;
+        color: var(--pct-slate-900);
+        margin-bottom: 0.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    /* ==========================================================================
+       Print & Official Government Report Styling
+       ========================================================================== */
     @media print {
+        @page {
+            size: A4 landscape;
+            margin: 1.2cm 1.5cm;
+        }
 
         .header-navbar,
         .footer,
         .dole-tricolor-bar,
         .no-print,
         form,
-        .btn,
-        .preset-btn {
+        .pct-header-actions,
+        .pct-filter-card,
+        .pct-table-tools,
+        .pct-tab-btn,
+        .pct-charter-legend,
+        .alert-messages {
             display: none !important;
         }
 
-        .print-only-header {
+        .print-only-official-header {
             display: block !important;
+        }
+
+        .print-signatories {
+            display: flex !important;
         }
 
         body {
             background: #ffffff !important;
             color: #000000 !important;
-            font-size: 10pt;
+            font-size: 9pt !important;
             padding: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
         }
 
         .main-wrapper,
@@ -53,300 +832,703 @@
             margin: 0 !important;
         }
 
-        .card {
+        .pct-header-card {
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 0 1rem 0 !important;
+            margin-bottom: 1rem !important;
+        }
+
+        .pct-header-card::before {
+            display: none !important;
+        }
+
+        .pct-kpi-grid {
+            gap: 0.75rem !important;
+            margin-bottom: 1rem !important;
+        }
+
+        .pct-kpi-card {
             box-shadow: none !important;
             border: 1px solid #94a3b8 !important;
-            margin-bottom: 1rem !important;
+            padding: 0.75rem !important;
             page-break-inside: avoid;
         }
 
-        .data-table {
-            font-size: 9pt;
-            width: 100% !important;
-            border-collapse: collapse !important;
+        .pct-kpi-num {
+            font-size: 1.6rem !important;
+            color: #000000 !important;
         }
 
-        .data-table th,
-        .data-table td {
+        .pct-table-card {
+            box-shadow: none !important;
             border: 1px solid #94a3b8 !important;
+            page-break-inside: auto;
+        }
+
+        .pct-table-header {
+            border-bottom: 1px solid #94a3b8 !important;
+            padding: 0.75rem 1rem !important;
+        }
+
+        .pct-data-table {
+            font-size: 8.5pt !important;
+            width: 100% !important;
+        }
+
+        .pct-data-table thead th {
+            background-color: #f1f5f9 !important;
+            border-bottom: 2px solid #0f172a !important;
+            color: #000000 !important;
+            padding: 5px 8px !important;
+        }
+
+        .pct-data-table tbody td {
+            border-bottom: 1px solid #cbd5e1 !important;
             padding: 5px 8px !important;
             color: #000000 !important;
         }
 
-        .data-table th {
-            background-color: #f1f5f9 !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+        .pct-service-name {
+            color: #000000 !important;
+        }
+
+        .pct-table-progress-wrap {
+            min-width: 80px !important;
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- Official Print Header (Visible only on print/export) -->
-<div class="print-only-header"
-    style="display: none; text-align: center; margin-bottom: 1.5rem; border-bottom: 2px solid #0f172a; padding-bottom: 0.85rem;">
-    <div style="font-size: 10pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569;">
-        Republic of the Philippines</div>
-    <div style="font-size: 14pt; font-weight: 900; color: #0305ba; letter-spacing: -0.01em;">DEPARTMENT OF LABOR AND
-        EMPLOYMENT</div>
-    <div style="font-size: 10.5pt; font-weight: 700; color: #1e293b;">Regional Office No. III — Central Luzon</div>
-    <div style="font-size: 12.5pt; font-weight: 800; margin-top: 0.5rem; color: #0f172a;">PROCESSING CYCLE TIME (PCT)
-        COMPLIANCE AUDIT REPORT</div>
-    <div style="font-size: 9pt; color: #64748b; margin-top: 0.25rem;">
-        Coverage: <strong>{{ start_date }}</strong> to <strong>{{ end_date }}</strong> &bull; Generated: {% now "F d, Y
-        h:i A" %}
-        {% if selected_office_id %}&bull; Office Filter Applied{% endif %}
+<!-- Official Print Header (Visible only when printed or exported as PDF) -->
+<div class="print-only-official-header" style="display: none; text-align: center; margin-bottom: 1.5rem; border-bottom: 2px solid #0f172a; padding-bottom: 1rem;">
+    <div style="font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #475569;">
+        Republic of the Philippines
+    </div>
+    <div style="font-size: 14pt; font-weight: 900; color: #0305ba; letter-spacing: -0.01em; margin-top: 2px;">
+        DEPARTMENT OF LABOR AND EMPLOYMENT
+    </div>
+    <div style="font-size: 11pt; font-weight: 700; color: #1e293b; margin-top: 2px;">
+        Regional Office No. III — Central Luzon
+    </div>
+    <div style="font-size: 12.5pt; font-weight: 800; margin-top: 0.65rem; color: #0f172a; text-transform: uppercase;">
+        Processing Cycle Time (PCT) Compliance Audit Report
+    </div>
+    <div style="font-size: 8.5pt; color: #475569; margin-top: 0.35rem; display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap;">
+        <span>Coverage Period: <strong>{{ start_date }}</strong> to <strong>{{ end_date }}</strong></span>
+        <span>Generated: <strong>{% now "F d, Y h:i A" %}</strong></span>
+        <span>Total Volume: <strong>{{ total_served }} transactions</strong></span>
+        <span>Overall Compliance: <strong>{{ overall_compliance }}%</strong></span>
     </div>
 </div>
 
-<!-- On-Screen Page Title -->
-<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;"
-    class="no-print">
-    <div>
-        <h2 style="margin: 0; font-size: 1.5rem;">Processing Cycle Time (PCT) Compliance Report</h2>
-        <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
-            Performance monitoring against Citizen's Charter standards under Republic Act No. 11032 (Ease of Doing
-            Business).
-        </p>
-    </div>
-    <div style="display: flex; gap: 0.5rem; align-items: center;">
-        <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()"
-            style="min-height: 40px; display: inline-flex; align-items: center; gap: 0.5rem;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 6 2 18 2 18 9"></polyline>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-                <rect x="6" y="14" width="12" height="8"></rect>
-            </svg>
-            <span>Print Report</span>
-        </button>
-    </div>
-</div>
-
-<!-- Filters Card -->
-<div class="card no-print" style="padding: 1.25rem; margin-bottom: 1.5rem;">
-    <div
-        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-        <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-            Report Filters &amp; Parameters
-        </span>
-        <div style="display: flex; gap: 0.35rem; align-items: center;">
-            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 0.25rem;">Quick Dates:</span>
-            <button type="button" class="preset-btn" onclick="setDateRange('today')">Today</button>
-            <button type="button" class="preset-btn" onclick="setDateRange('yesterday')">Yesterday</button>
-            <button type="button" class="preset-btn" onclick="setDateRange('week')">This Week</button>
-            <button type="button" class="preset-btn" onclick="setDateRange('month')">This Month</button>
-        </div>
-    </div>
-
-    <form method="GET" action="{% url 'queueing:pct_report' %}" id="filter-form"
-        style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+<!-- On-Screen Executive Header Banner -->
+<div class="pct-header-card no-print">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1.25rem;">
         <div>
-            <label for="start_date" class="form-label" style="font-size: 0.85rem;">From Date:</label>
-            <input type="date" name="start_date" id="start_date" value="{{ start_date }}" class="form-control"
-                style="min-height: 40px; padding: 0.4rem 0.85rem;">
-        </div>
-
-        <div>
-            <label for="end_date" class="form-label" style="font-size: 0.85rem;">To Date:</label>
-            <input type="date" name="end_date" id="end_date" value="{{ end_date }}" class="form-control"
-                style="min-height: 40px; padding: 0.4rem 0.85rem;">
-        </div>
-
-        <div>
-            <label for="office_id" class="form-label" style="font-size: 0.85rem;">Office:</label>
-            <select name="office_id" id="office_id" class="form-select"
-                style="min-height: 40px; padding: 0.4rem 0.85rem;">
-                <option value="">All Offices</option>
-                {% for o in offices %}
-                <option value="{{ o.id }}" {% if o.id == selected_office_id %}selected{% endif %}>
-                    {{ o.name }} ({{ o.code }})
-                </option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div>
-            <label for="unit_id" class="form-label" style="font-size: 0.85rem;">Unit / Division:</label>
-            <select name="unit_id" id="unit_id" class="form-select" style="min-height: 40px; padding: 0.4rem 0.85rem;">
-                <option value="">All Units</option>
-                {% for u in units %}
-                <option value="{{ u.id }}" data-office="{{ u.office_id }}" {% if u.id == selected_unit_id %}selected{% endif %}>
-                    {{ u.office.code }} - {{ u.name }}
-                </option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button type="submit" class="btn btn-primary btn-sm" style="min-height: 40px;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            <div class="pct-badge-law">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                 </svg>
-                <span>Filter Report</span>
+                <span>Republic Act No. 11032 &bull; ARTA Citizen's Charter Audit</span>
+            </div>
+            <h2 class="pct-page-title">Processing Cycle Time (PCT) Compliance Report</h2>
+            <p class="pct-page-subtitle">
+                Official statutory performance monitoring and service delivery metrics across DOLE Regional Office III frontline units.
+            </p>
+        </div>
+
+        <div class="pct-header-actions">
+            <!-- Print / PDF Action -->
+            <button type="button" class="pct-btn pct-btn-primary" onclick="window.print()" title="Print formal report or save as PDF">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                    <rect x="6" y="14" width="12" height="8"></rect>
+                </svg>
+                <span>Print Official Report</span>
             </button>
+
+            <!-- Export to CSV -->
+            <button type="button" class="pct-btn pct-btn-outline" id="btn-export-csv" onclick="exportReportToCSV()" title="Download breakdown table as CSV spreadsheet">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Export CSV</span>
+            </button>
+
             {% if selected_office_id or selected_unit_id or start_date != end_date %}
-            <a href="{% url 'queueing:pct_report' %}" class="btn btn-outline btn-sm"
-                style="min-height: 40px; text-decoration: none; display: inline-flex; align-items: center;"
-                title="Reset filters to today">
-                <span>Reset</span>
+            <a href="{% url 'queueing:pct_report' %}" class="pct-btn pct-btn-ghost" title="Reset all filters back to today">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                    <path d="M3 3v5h5"></path>
+                </svg>
+                <span>Reset Filters</span>
             </a>
             {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Filters & Audit Scope Card -->
+<div class="pct-filter-card no-print">
+    <div class="pct-filter-topbar">
+        <div class="pct-filter-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color: var(--pct-navy);">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+            <span>Report Scope &amp; Audit Parameters</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <span style="font-size: 0.775rem; font-weight: 600; color: var(--pct-slate-500); text-transform: uppercase;">Quick Timeframe:</span>
+            <div class="pct-presets-group" role="group" aria-label="Date presets">
+                <button type="button" class="pct-preset-pill" id="preset-today" onclick="setDateRange('today')">Today</button>
+                <button type="button" class="pct-preset-pill" id="preset-yesterday" onclick="setDateRange('yesterday')">Yesterday</button>
+                <button type="button" class="pct-preset-pill" id="preset-week" onclick="setDateRange('week')">This Week</button>
+                <button type="button" class="pct-preset-pill" id="preset-month" onclick="setDateRange('month')">This Month</button>
+            </div>
+        </div>
+    </div>
+
+    <form method="GET" action="{% url 'queueing:pct_report' %}" id="filter-form">
+        <div class="pct-filter-grid">
+            <div class="pct-input-wrap">
+                <label for="start_date" class="pct-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                    <span>From Date:</span>
+                </label>
+                <input type="date" name="start_date" id="start_date" value="{{ start_date }}" class="pct-control">
+            </div>
+
+            <div class="pct-input-wrap">
+                <label for="end_date" class="pct-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                    <span>To Date:</span>
+                </label>
+                <input type="date" name="end_date" id="end_date" value="{{ end_date }}" class="pct-control">
+            </div>
+
+            <div class="pct-input-wrap">
+                <label for="office_id" class="pct-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 21h18"></path>
+                        <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                    </svg>
+                    <span>Provincial / Field Office:</span>
+                </label>
+                <select name="office_id" id="office_id" class="pct-control">
+                    <option value="">All Field Offices &amp; RO</option>
+                    {% for o in offices %}
+                    <option value="{{ o.id }}" {% if o.id == selected_office_id %}selected{% endif %}>
+                        {{ o.name }} ({{ o.code }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="pct-input-wrap">
+                <label for="unit_id" class="pct-label">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                    </svg>
+                    <span>Service Unit / Division:</span>
+                </label>
+                <select name="unit_id" id="unit_id" class="pct-control">
+                    <option value="">All Operating Units</option>
+                    {% for u in units %}
+                    <option value="{{ u.id }}" data-office="{{ u.office_id }}" {% if u.id == selected_unit_id %}selected{% endif %}>
+                        {{ u.office.code }} — {{ u.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="pct-filter-actions">
+                <button type="submit" class="pct-btn pct-btn-primary" style="flex: 1;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
+                    <span>Apply Filter</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Active Filter Summary Chips -->
+        <div class="pct-active-chips">
+            <span style="font-weight: 700; color: var(--pct-slate-500); text-transform: uppercase; font-size: 0.75rem;">Active Filter:</span>
+            <span class="pct-chip">
+                <span>Period:</span>
+                <strong>{{ start_date }} to {{ end_date }}</strong>
+            </span>
+            <span class="pct-chip">
+                <span>Office:</span>
+                <strong>
+                    {% if selected_office_id %}
+                        {% for o in offices %}{% if o.id == selected_office_id %}{{ o.name }}{% endif %}{% endfor %}
+                    {% else %}
+                        All Offices
+                    {% endif %}
+                </strong>
+            </span>
+            <span class="pct-chip">
+                <span>Unit:</span>
+                <strong>
+                    {% if selected_unit_id %}
+                        {% for u in units %}{% if u.id == selected_unit_id %}{{ u.name }}{% endif %}{% endfor %}
+                    {% else %}
+                        All Units
+                    {% endif %}
+                </strong>
+            </span>
         </div>
     </form>
 </div>
 
-<!-- KPI Summary Metrics -->
-<div
-    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-    <div class="card" style="padding: 1.25rem; margin-bottom: 0;">
-        <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-            Total Tickets Served
+<!-- Executive Summary Metric Cards -->
+<div class="pct-kpi-grid">
+    <!-- Total Tickets Served -->
+    <div class="pct-kpi-card">
+        <div>
+            <div class="pct-kpi-header">
+                <span class="pct-kpi-title">Total Tickets Served</span>
+                <div class="pct-kpi-icon pct-kpi-icon-blue">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <polyline points="9 15 11 17 15 13"></polyline>
+                    </svg>
+                </div>
+            </div>
+            <div class="pct-kpi-value-row">
+                <span class="pct-kpi-num">{{ total_served }}</span>
+                <span class="pct-kpi-unit">tickets</span>
+            </div>
         </div>
-        <div class="mono" style="font-size: 2.25rem; font-weight: 800; color: var(--dole-blue); margin-top: 0.25rem;">
-            {{ total_served }}
+        <div class="pct-kpi-footer">
+            <span>Completed services</span>
+            <span style="font-weight: 700; color: #1e40af;">100% Audited</span>
         </div>
-        <div style="font-size: 0.8rem; color: var(--text-muted);">Completed services</div>
     </div>
 
-    <div class="card" style="padding: 1.25rem; margin-bottom: 0;">
-        <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-            Overall Target Compliance
+    <!-- Overall PCT Compliance Rate -->
+    <div class="pct-kpi-card" style="border-top: 3px solid {% if total_served == 0 %}#94a3b8{% elif overall_compliance >= 85 %}#059669{% elif overall_compliance >= 70 %}#d97706{% else %}#dc2626{% endif %};">
+        <div>
+            <div class="pct-kpi-header">
+                <span class="pct-kpi-title">Overall PCT Compliance</span>
+                <div class="pct-kpi-icon {% if total_served == 0 %}pct-kpi-icon-slate{% elif overall_compliance >= 85 %}pct-kpi-icon-green{% elif overall_compliance >= 70 %}pct-kpi-icon-amber{% else %}pct-kpi-icon-red{% endif %}">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        {% if overall_compliance >= 85 %}
+                        <polyline points="9 12 11 14 15 10"></polyline>
+                        {% endif %}
+                    </svg>
+                </div>
+            </div>
+            <div class="pct-kpi-value-row">
+                {% if total_served > 0 %}
+                <span class="pct-kpi-num" style="color: {% if overall_compliance >= 85 %}#059669{% elif overall_compliance >= 70 %}#d97706{% else %}#dc2626{% endif %};">
+                    {{ overall_compliance }}%
+                </span>
+                {% else %}
+                <span class="pct-kpi-num" style="color: var(--pct-slate-400);">—</span>
+                {% endif %}
+            </div>
+            {% if total_served > 0 %}
+            <div class="pct-mini-track">
+                <div class="pct-mini-fill" style="width: {{ overall_compliance }}%; background-color: {% if overall_compliance >= 85 %}#059669{% elif overall_compliance >= 70 %}#d97706{% else %}#dc2626{% endif %};"></div>
+            </div>
+            {% endif %}
         </div>
-        {% if total_served > 0 %}
-        <div class="mono"
-            style="font-size: 2.25rem; font-weight: 800; color: {% if overall_compliance >= 85 %}var(--dole-green){% elif overall_compliance >= 70 %}#d97706{% else %}var(--dole-red){% endif %}; margin-top: 0.25rem;">
-            {{ overall_compliance }}%
+        <div class="pct-kpi-footer">
+            <span>Charter Standard (Target ≥85%)</span>
+            {% if total_served > 0 %}
+                {% if overall_compliance >= 85 %}
+                <span class="pct-compliance-pill pct-compliance-high">Compliant</span>
+                {% elif overall_compliance >= 70 %}
+                <span class="pct-compliance-pill pct-compliance-mid">Moderate</span>
+                {% else %}
+                <span class="pct-compliance-pill pct-compliance-low">Needs Review</span>
+                {% endif %}
+            {% else %}
+                <span style="color: var(--pct-slate-400);">No transactions</span>
+            {% endif %}
         </div>
-        {% else %}
-        <div class="mono" style="font-size: 2.25rem; font-weight: 800; color: var(--text-muted); margin-top: 0.25rem;">
-            —
-        </div>
-        {% endif %}
-        <div style="font-size: 0.8rem; color: var(--text-muted);">Served within Citizen's Charter PCT</div>
     </div>
 
-    <div class="card" style="padding: 1.25rem; margin-bottom: 0;">
-        <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-            Avg Wait Time
+    <!-- Avg Wait Time -->
+    <div class="pct-kpi-card">
+        <div>
+            <div class="pct-kpi-header">
+                <span class="pct-kpi-title">Average Wait Time</span>
+                <div class="pct-kpi-icon pct-kpi-icon-blue">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                </div>
+            </div>
+            <div class="pct-kpi-value-row">
+                {% if total_served > 0 and overall_avg_wait > 0 %}
+                <span class="pct-kpi-num">{{ overall_avg_wait }}</span>
+                <span class="pct-kpi-unit">min</span>
+                {% elif total_served > 0 %}
+                <span class="pct-kpi-num">0</span>
+                <span class="pct-kpi-unit">min</span>
+                {% else %}
+                <span class="pct-kpi-num" style="color: var(--pct-slate-400);">—</span>
+                {% endif %}
+            </div>
         </div>
-        <div class="mono"
-            style="font-size: 2.25rem; font-weight: 800; color: var(--text-primary); margin-top: 0.25rem;">
-            {% if total_served > 0 and overall_avg_wait > 0 %}{{ overall_avg_wait }} <span
-                style="font-size: 1rem; font-weight: normal;">min</span>{% elif total_served > 0 %}0 <span
-                style="font-size: 1rem; font-weight: normal;">min</span>{% else %}<span
-                style="color: var(--text-muted);">—</span>{% endif %}
+        <div class="pct-kpi-footer">
+            <span>Ticket issuance to service call</span>
+            <span style="color: var(--pct-slate-600); font-weight: 600;">Queue efficiency</span>
         </div>
-        <div style="font-size: 0.8rem; color: var(--text-muted);">From arrival to service call</div>
     </div>
 
-    <div class="card" style="padding: 1.25rem; margin-bottom: 0;">
-        <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-            Avg Actual PCT
+    <!-- Avg Actual PCT -->
+    <div class="pct-kpi-card">
+        <div>
+            <div class="pct-kpi-header">
+                <span class="pct-kpi-title">Average Actual PCT</span>
+                <div class="pct-kpi-icon pct-kpi-icon-purple">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 14 10"></polyline>
+                    </svg>
+                </div>
+            </div>
+            <div class="pct-kpi-value-row">
+                {% if total_served > 0 and overall_avg_actual > 0 %}
+                <span class="pct-kpi-num">{{ overall_avg_actual }}</span>
+                <span class="pct-kpi-unit">min</span>
+                {% elif total_served > 0 %}
+                <span class="pct-kpi-num">0</span>
+                <span class="pct-kpi-unit">min</span>
+                {% else %}
+                <span class="pct-kpi-num" style="color: var(--pct-slate-400);">—</span>
+                {% endif %}
+            </div>
         </div>
-        <div class="mono"
-            style="font-size: 2.25rem; font-weight: 800; color: var(--text-primary); margin-top: 0.25rem;">
-            {% if total_served > 0 and overall_avg_actual > 0 %}{{ overall_avg_actual }} <span
-                style="font-size: 1rem; font-weight: normal;">min</span>{% elif total_served > 0 %}0 <span
-                style="font-size: 1rem; font-weight: normal;">min</span>{% else %}<span
-                style="color: var(--text-muted);">—</span>{% endif %}
+        <div class="pct-kpi-footer">
+            <span>Counter service turnaround</span>
+            <span style="color: var(--pct-slate-600); font-weight: 600;">Service duration</span>
         </div>
-        <div style="font-size: 0.8rem; color: var(--text-muted);">Counter service duration</div>
     </div>
 
-    <div class="card" style="padding: 1.25rem; margin-bottom: 0;">
-        <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-            Skipped Count
+    <!-- Skipped / No-Shows -->
+    <div class="pct-kpi-card">
+        <div>
+            <div class="pct-kpi-header">
+                <span class="pct-kpi-title">Skipped / No-Show</span>
+                <div class="pct-kpi-icon pct-kpi-icon-slate">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="8.5" cy="7" r="4"></circle>
+                        <line x1="18" y1="8" x2="23" y2="13"></line>
+                        <line x1="23" y1="8" x2="18" y2="13"></line>
+                    </svg>
+                </div>
+            </div>
+            <div class="pct-kpi-value-row">
+                <span class="pct-kpi-num" style="color: {% if total_skipped > 0 %}var(--pct-slate-700){% else %}var(--pct-slate-400){% endif %};">{{ total_skipped }}</span>
+                <span class="pct-kpi-unit">tickets</span>
+            </div>
         </div>
-        <div class="mono" style="font-size: 2.25rem; font-weight: 800; color: var(--text-muted); margin-top: 0.25rem;">
-            {{ total_skipped }}
+        <div class="pct-kpi-footer">
+            <span>Client no-shows or canceled</span>
+            <span style="color: var(--pct-slate-500);">Unattended</span>
         </div>
-        <div style="font-size: 0.8rem; color: var(--text-muted);">No-show / canceled tickets</div>
     </div>
 </div>
 
-<!-- Detailed Table per Service -->
-<div class="card">
-    <div class="card-header">
-        <h3 style="margin: 0; font-size: 1.15rem;">Service Performance Breakdown</h3>
-        <span style="font-size: 0.85rem; color: var(--text-muted);">
-            {{ report_rows|length }} Service{% if report_rows|length != 1 %}s{% endif %} with transaction records
-        </span>
+<!-- Detailed Service Performance Breakdown Table Card -->
+<div class="pct-table-card">
+    <div class="pct-table-header">
+        <div class="pct-table-title-group">
+            <h3>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color: var(--pct-navy);">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+                <span>Service Performance Breakdown</span>
+                <span style="font-size: 0.75rem; font-weight: 700; background: var(--pct-navy-subtle); color: var(--pct-navy); padding: 0.2rem 0.55rem; border-radius: 9999px;">
+                    {{ report_rows|length }} Service{% if report_rows|length != 1 %}s{% endif %}
+                </span>
+            </h3>
+            <p>Individual performance compliance against Citizen's Charter standards under RA 11032.</p>
+        </div>
+
+        <div class="pct-table-tools no-print">
+            <!-- Filter Tabs -->
+            <div class="pct-status-tabs" role="tablist">
+                <button type="button" class="pct-tab-btn active" onclick="filterTableRows('all', this)">All ({{ report_rows|length }})</button>
+                <button type="button" class="pct-tab-btn" onclick="filterTableRows('compliant', this)">Compliant ≥85%</button>
+                <button type="button" class="pct-tab-btn" onclick="filterTableRows('attention', this)">Needs Review</button>
+            </div>
+
+            <!-- Instant Search Input -->
+            <div class="pct-search-box">
+                <svg class="pct-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="service-search-input" class="pct-search-input" placeholder="Search service name, unit, or code..." onkeyup="searchServiceTable()">
+            </div>
+        </div>
     </div>
 
-    <div class="data-table-container">
-        <table class="data-table">
+    <div class="pct-table-wrapper">
+        <table class="pct-data-table" id="pct-report-table">
             <thead>
                 <tr>
-                    <th>Service Name</th>
-                    <th>Unit / Division</th>
-                    <th>Target PCT</th>
-                    <th>Tickets Served</th>
-                    <th>Avg Wait Time</th>
-                    <th>Avg Actual PCT</th>
-                    <th>Within Target %</th>
-                    <th>Skipped</th>
+                    <th style="min-width: 240px;">Service Name &amp; Classification</th>
+                    <th style="min-width: 180px;">Operating Unit</th>
+                    <th style="text-align: right; min-width: 110px;">Target PCT</th>
+                    <th style="text-align: right; min-width: 110px;">Tickets Served</th>
+                    <th style="text-align: right; min-width: 120px;">Avg Wait Time</th>
+                    <th style="text-align: right; min-width: 125px;">Avg Actual PCT</th>
+                    <th style="min-width: 170px;">Target Compliance</th>
+                    <th style="text-align: right; min-width: 90px;">Skipped</th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in report_rows %}
-                <tr>
+                <tr class="service-table-row" data-compliance="{{ row.compliance_pct }}" data-served="{{ row.served_count }}" data-search="{{ row.service.name|lower }} {{ row.service.unit.name|lower }} {{ row.service.unit.office.code|lower }} {{ row.service.get_classification_display|lower }}">
+                    <!-- Service Details -->
                     <td>
-                        <strong>{{ row.service.name }}</strong>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">
-                            {{ row.service.get_classification_display }}
-                        </div>
-                    </td>
-                    <td>{{ row.service.unit.name }} ({{ row.service.unit.office.code }})</td>
-                    <td class="mono"><strong>{{ row.target_pct }} min</strong></td>
-                    <td class="mono" style="font-weight: 700;">{{ row.served_count }}</td>
-                    <td class="mono">
-                        {% if row.served_count > 0 %}
-                        {{ row.avg_wait_minutes }} min
-                        {% else %}
-                        <span style="color: var(--text-muted);">—</span>
-                        {% endif %}
-                    </td>
-                    <td class="mono">
-                        {% if row.served_count > 0 %}
-                        {{ row.avg_actual_minutes }} min
-                        {% else %}
-                        <span style="color: var(--text-muted);">—</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if row.served_count > 0 %}
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span class="mono"
-                                style="font-weight: 800; color: {% if row.compliance_pct >= 85 %}var(--dole-green){% elif row.compliance_pct >= 70 %}#d97706{% else %}var(--dole-red){% endif %};">
-                                {{ row.compliance_pct }}%
+                        <div class="pct-service-name">{{ row.service.name }}</div>
+                        <div class="pct-meta-row">
+                            {% with c=row.service.get_classification_display %}
+                            <span class="pct-class-badge {% if 'Simple' in c %}pct-class-simple{% elif 'Complex' in c %}pct-class-complex{% else %}pct-class-tech{% endif %}">
+                                {{ c }}
                             </span>
+                            {% endwith %}
                         </div>
+                    </td>
+
+                    <!-- Unit / Office -->
+                    <td>
+                        <div class="pct-unit-badge">
+                            <span class="pct-office-tag">{{ row.service.unit.office.code }}</span>
+                            <span style="font-weight: 600; color: var(--pct-slate-800);">{{ row.service.unit.name }}</span>
+                        </div>
+                    </td>
+
+                    <!-- Target PCT -->
+                    <td style="text-align: right;">
+                        <span class="pct-target-pill">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <span class="mono">{{ row.target_pct }} min</span>
+                        </span>
+                    </td>
+
+                    <!-- Tickets Served -->
+                    <td style="text-align: right;">
+                        <span class="mono" style="font-weight: 800; font-size: 1rem; color: var(--pct-slate-900);">
+                            {{ row.served_count }}
+                        </span>
+                    </td>
+
+                    <!-- Avg Wait Time -->
+                    <td style="text-align: right;">
+                        {% if row.served_count > 0 %}
+                        <span class="mono" style="font-weight: 700; color: var(--pct-slate-800);">
+                            {{ row.avg_wait_minutes }} <span style="font-size: 0.775rem; color: var(--pct-slate-500); font-weight: normal;">min</span>
+                        </span>
                         {% else %}
-                        <span style="color: var(--text-muted);">—</span>
+                        <span style="color: var(--pct-slate-400);">—</span>
                         {% endif %}
                     </td>
-                    <td class="mono">{{ row.skipped_count }}</td>
+
+                    <!-- Avg Actual PCT with benchmark status -->
+                    <td style="text-align: right;">
+                        {% if row.served_count > 0 %}
+                        <div>
+                            <span class="mono" style="font-weight: 700; color: var(--pct-slate-900);">
+                                {{ row.avg_actual_minutes }} <span style="font-size: 0.775rem; color: var(--pct-slate-500); font-weight: normal;">min</span>
+                            </span>
+                            {% if row.avg_actual_minutes <= row.target_pct %}
+                            <span class="pct-comp-indicator pct-comp-good">
+                                &check; Within Target
+                            </span>
+                            {% else %}
+                            <span class="pct-comp-indicator pct-comp-warn">
+                                &excl; Over Target
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <span style="color: var(--pct-slate-400);">—</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Target Compliance with visual progress bar -->
+                    <td>
+                        {% if row.served_count > 0 %}
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.25rem;">
+                                <span class="mono" style="font-weight: 800; font-size: 0.95rem; color: {% if row.compliance_pct >= 85 %}#059669{% elif row.compliance_pct >= 70 %}#d97706{% else %}#dc2626{% endif %};">
+                                    {{ row.compliance_pct }}%
+                                </span>
+                                {% if row.compliance_pct >= 85 %}
+                                <span class="pct-compliance-pill pct-compliance-high" style="font-size: 0.675rem;">Compliant</span>
+                                {% elif row.compliance_pct >= 70 %}
+                                <span class="pct-compliance-pill pct-compliance-mid" style="font-size: 0.675rem;">Moderate</span>
+                                {% else %}
+                                <span class="pct-compliance-pill pct-compliance-low" style="font-size: 0.675rem;">Needs Review</span>
+                                {% endif %}
+                            </div>
+                            <div class="pct-table-progress-wrap">
+                                <div class="pct-table-progress-bar">
+                                    <div class="pct-table-progress-fill" style="width: {{ row.compliance_pct }}%; background-color: {% if row.compliance_pct >= 85 %}#059669{% elif row.compliance_pct >= 70 %}#d97706{% else %}#dc2626{% endif %};"></div>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <span style="color: var(--pct-slate-400); font-size: 0.85rem;">No completed service</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Skipped Count -->
+                    <td style="text-align: right;">
+                        <span class="mono" style="font-weight: 600; color: {% if row.skipped_count > 0 %}var(--pct-slate-700){% else %}var(--pct-slate-400){% endif %};">
+                            {{ row.skipped_count }}
+                        </span>
+                    </td>
                 </tr>
                 {% empty %}
-                <tr>
-                    <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2.5rem 1rem;">
-                        <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem;">No transaction data
-                            found</div>
-                        <p style="font-size: 0.85rem; margin: 0;">Try adjusting the date range, office, or unit filters
-                            above.</p>
+                <tr id="empty-row">
+                    <td colspan="8" class="pct-empty-state">
+                        <div class="pct-empty-icon">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="9" y1="9" x2="15" y2="15"></line>
+                                <line x1="15" y1="9" x2="9" y2="15"></line>
+                            </svg>
+                        </div>
+                        <div style="font-size: 1.15rem; font-weight: 700; color: var(--pct-slate-800); margin-bottom: 0.35rem;">
+                            No transaction records found
+                        </div>
+                        <p style="font-size: 0.875rem; color: var(--pct-slate-500); max-width: 480px; margin: 0 auto 1.25rem auto;">
+                            There are no completed or queued transactions for the selected timeframe and office parameters.
+                        </p>
+                        <button type="button" class="pct-btn pct-btn-outline" onclick="setDateRange('month'); document.getElementById('filter-form').submit();">
+                            <span>Expand Search to This Month</span>
+                        </button>
                     </td>
                 </tr>
                 {% endfor %}
+                <tr id="no-search-results" style="display: none;">
+                    <td colspan="8" class="pct-empty-state" style="padding: 2.5rem 1rem;">
+                        <div style="font-size: 1rem; font-weight: 700; color: var(--pct-slate-700);">No matching services found</div>
+                        <p style="font-size: 0.85rem; color: var(--pct-slate-500); margin-top: 0.25rem;">
+                            No rows matched your search keyword. Clear the search box to view all services.
+                        </p>
+                    </td>
+                </tr>
             </tbody>
         </table>
+    </div>
+</div>
+
+<!-- Citizen's Charter Statutory Reference & ARTA Audit Standards -->
+<div class="pct-charter-legend no-print">
+    <div class="pct-legend-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color: var(--pct-navy);">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>Citizen's Charter &amp; ARTA Compliance Standards (RA 11032 Reference Guide)</span>
+    </div>
+    <div class="pct-legend-grid">
+        <div class="pct-legend-item">
+            <div class="pct-legend-item-title">
+                <span class="pct-class-badge pct-class-simple">Simple</span>
+                <span>Simple Transactions</span>
+            </div>
+            <div>
+                Applications or requests submitted by clients requiring ministerial actions with max turnaround of <strong>3 working days</strong> (or counter processing time per Citizen's Charter).
+            </div>
+        </div>
+
+        <div class="pct-legend-item">
+            <div class="pct-legend-item-title">
+                <span class="pct-class-badge pct-class-complex">Complex</span>
+                <span>Complex Transactions</span>
+            </div>
+            <div>
+                Applications requiring evaluation or resolution involving technical knowledge or specialized assessment, with statutory max turnaround of <strong>7 working days</strong>.
+            </div>
+        </div>
+
+        <div class="pct-legend-item">
+            <div class="pct-legend-item-title">
+                <span class="pct-class-badge pct-class-tech">Highly Technical</span>
+                <span>Highly Technical Transactions</span>
+            </div>
+            <div>
+                Multi-stage regulatory or legal proceedings requiring specialized evaluation or collegiate body review, with max statutory turnaround of <strong>20 working days</strong>.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Official Signatory Block (Visible only in Print / PDF Mode) -->
+<div class="print-signatories" style="display: none; margin-top: 3.5rem; page-break-inside: avoid; justify-content: space-between; gap: 2rem;">
+    <div style="flex: 1; text-align: center;">
+        <div style="font-size: 8.5pt; color: #475569; margin-bottom: 2.75rem;">Prepared By:</div>
+        <div style="border-top: 1px solid #0f172a; padding-top: 0.35rem; font-weight: 700; font-size: 9.5pt; text-transform: uppercase;">
+            PACD Officer / Records Custodian
+        </div>
+        <div style="font-size: 8pt; color: #64748b;">Public Assistance &amp; Complaints Desk</div>
+    </div>
+
+    <div style="flex: 1; text-align: center;">
+        <div style="font-size: 8.5pt; color: #475569; margin-bottom: 2.75rem;">Reviewed By:</div>
+        <div style="border-top: 1px solid #0f172a; padding-top: 0.35rem; font-weight: 700; font-size: 9.5pt; text-transform: uppercase;">
+            Division Chief / Head of Unit
+        </div>
+        <div style="font-size: 8pt; color: #64748b;">Internal Management Services Division</div>
+    </div>
+
+    <div style="flex: 1; text-align: center;">
+        <div style="font-size: 8.5pt; color: #475569; margin-bottom: 2.75rem;">Approved By:</div>
+        <div style="border-top: 1px solid #0f172a; padding-top: 0.35rem; font-weight: 700; font-size: 9.5pt; text-transform: uppercase;">
+            Regional Director
+        </div>
+        <div style="font-size: 8pt; color: #64748b;">DOLE Regional Office No. III</div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    // Dynamic filtering: show only units belonging to the selected office
+    // =========================================================================
+    // Dynamic Office -> Unit Dropdown Filtering
+    // =========================================================================
     (function () {
         const officeSelect = document.getElementById('office_id');
         const unitSelect = document.getElementById('unit_id');
@@ -358,7 +1540,7 @@
             let selectedOptionHidden = false;
 
             options.forEach(opt => {
-                if (!opt.value) return; // Always keep "All Units"
+                if (!opt.value) return; // Keep "All Units" always available
                 const optOffice = opt.getAttribute('data-office');
                 if (!selectedOffice || optOffice === selectedOffice) {
                     opt.hidden = false;
@@ -381,7 +1563,9 @@
         syncUnits();
     })();
 
-    // Quick date range presets
+    // =========================================================================
+    // Quick Date Range Presets & Active Pill Highlighting
+    // =========================================================================
     function setDateRange(range) {
         const startInput = document.getElementById('start_date');
         const endInput = document.getElementById('end_date');
@@ -414,6 +1598,159 @@
             startInput.value = fmt(firstDay);
             endInput.value = todayStr;
         }
+
+        highlightActivePreset();
+    }
+
+    function highlightActivePreset() {
+        const startInput = document.getElementById('start_date');
+        const endInput = document.getElementById('end_date');
+        if (!startInput || !endInput) return;
+
+        const sVal = startInput.value;
+        const eVal = endInput.value;
+
+        const pad = (n) => String(n).padStart(2, '0');
+        const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        const now = new Date();
+        const todayStr = fmt(now);
+
+        const y = new Date(now);
+        y.setDate(y.getDate() - 1);
+        const yesterdayStr = fmt(y);
+
+        const dayOfWeek = now.getDay();
+        const distToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - distToMonday);
+        const weekStartStr = fmt(monday);
+
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthStartStr = fmt(firstDay);
+
+        const pills = document.querySelectorAll('.pct-preset-pill');
+        pills.forEach(p => p.classList.remove('active'));
+
+        if (sVal === todayStr && eVal === todayStr) {
+            document.getElementById('preset-today')?.classList.add('active');
+        } else if (sVal === yesterdayStr && eVal === yesterdayStr) {
+            document.getElementById('preset-yesterday')?.classList.add('active');
+        } else if (sVal === weekStartStr && eVal === todayStr) {
+            document.getElementById('preset-week')?.classList.add('active');
+        } else if (sVal === monthStartStr && eVal === todayStr) {
+            document.getElementById('preset-month')?.classList.add('active');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', highlightActivePreset);
+
+    // =========================================================================
+    // Client-Side Live Search in Table
+    // =========================================================================
+    function searchServiceTable() {
+        const input = document.getElementById('service-search-input');
+        const filter = input.value.trim().toLowerCase();
+        const rows = document.querySelectorAll('.service-table-row');
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const text = row.getAttribute('data-search') || '';
+            const matchesSearch = !filter || text.includes(filter);
+            const matchesTab = row.dataset.tabMatch !== 'false';
+
+            if (matchesSearch && matchesTab) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        const noResultsRow = document.getElementById('no-search-results');
+        if (noResultsRow) {
+            noResultsRow.style.display = (visibleCount === 0 && rows.length > 0) ? '' : 'none';
+        }
+    }
+
+    // =========================================================================
+    // Tab Filter (All, Compliant, Needs Attention)
+    // =========================================================================
+    function filterTableRows(type, btn) {
+        document.querySelectorAll('.pct-tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const rows = document.querySelectorAll('.service-table-row');
+        rows.forEach(row => {
+            const comp = parseFloat(row.getAttribute('data-compliance') || '0');
+            const served = parseInt(row.getAttribute('data-served') || '0', 10);
+
+            let matches = true;
+            if (type === 'compliant') {
+                matches = (served > 0 && comp >= 85);
+            } else if (type === 'attention') {
+                matches = (served > 0 && comp < 85);
+            }
+
+            row.dataset.tabMatch = matches ? 'true' : 'false';
+        });
+
+        searchServiceTable();
+    }
+
+    // =========================================================================
+    // One-Click Export Table to CSV
+    // =========================================================================
+    function exportReportToCSV() {
+        const table = document.getElementById('pct-report-table');
+        if (!table) return;
+
+        const rows = [];
+        const titleRow = ["Service Name", "Classification", "Operating Unit", "Target PCT (min)", "Tickets Served", "Avg Wait (min)", "Avg Actual PCT (min)", "Compliance Rate (%)", "Skipped Count"];
+        rows.push(titleRow);
+
+        const dataRows = table.querySelectorAll('tbody tr.service-table-row');
+        dataRows.forEach(tr => {
+            if (tr.style.display === 'none') return; // only export filtered/visible rows
+
+            const sName = tr.querySelector('.pct-service-name')?.innerText.trim() || '';
+            const sClass = tr.querySelector('.pct-class-badge')?.innerText.trim() || '';
+            const sUnit = tr.querySelector('.pct-unit-badge')?.innerText.trim().replace(/\s+/g, ' ') || '';
+            const targetPct = tr.querySelector('.pct-target-pill .mono')?.innerText.replace('min', '').trim() || '';
+            const served = tr.children[3]?.innerText.trim() || '0';
+            const waitTime = tr.children[4]?.innerText.replace('min', '').trim() || '0';
+            const actualPct = tr.children[5]?.querySelector('.mono')?.innerText.replace('min', '').trim() || '0';
+            const compRate = tr.children[6]?.querySelector('.mono')?.innerText.replace('%', '').trim() || '0';
+            const skipped = tr.children[7]?.innerText.trim() || '0';
+
+            rows.push([
+                `"${sName.replace(/"/g, '""')}"`,
+                `"${sClass}"`,
+                `"${sUnit.replace(/"/g, '""')}"`,
+                targetPct,
+                served,
+                waitTime,
+                actualPct,
+                compRate,
+                skipped
+            ]);
+        });
+
+        if (rows.length <= 1) {
+            alert("No data available to export for the current filters.");
+            return;
+        }
+
+        const csvContent = "\uFEFF" + rows.map(e => Array.isArray(e) ? e.join(",") : e).join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const startDate = document.getElementById('start_date')?.value || 'report';
+        const endDate = document.getElementById('end_date')?.value || 'report';
+        link.setAttribute("href", url);
+        link.setAttribute("download", `DOLE_RO3_PCT_Report_${startDate}_to_${endDate}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 </script>
 {% endblock %}
