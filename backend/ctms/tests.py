@@ -343,3 +343,50 @@ class CtmsCoreTestCase(TestCase):
         self.assertEqual(res_me.status_code, status.HTTP_200_OK)
         self.assertFalse(res_me.data["must_change_password"])
 
+    def test_transactions_list_division_and_assigned_personnel(self):
+        div_tssd1 = CsmDivision.objects.create(name="TSSD 1")
+        div_imsd = CsmDivision.objects.create(name="IMSD")
+
+        srv1 = CsmService.objects.create(name="Labor Standards", division=div_tssd1, is_active=True, sort_order=10)
+        srv2 = CsmService.objects.create(name="Records Management", division=div_imsd, is_active=True, sort_order=11)
+
+        tx1 = create_transaction(self.office, srv1, client_name="Maria Santos", is_priority=False)
+        tx1.assigned_personnel = "Officer Pedro"
+        tx1.save()
+
+        tx2 = create_transaction(self.office, srv2, client_name="Carlos Reyes", is_priority=False)
+        tx2.assigned_personnel = "Officer Ana"
+        tx2.save()
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        # 1. Fetch transactions list and verify division_name & assigned_personnel are present
+        res = self.client.get("/api/staff/transactions/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        tx1_data = next((t for t in res.data if t["id"] == tx1.id), None)
+        self.assertIsNotNone(tx1_data)
+        self.assertEqual(tx1_data["division_name"], "TSSD 1")
+        self.assertEqual(tx1_data["assigned_personnel"], "Officer Pedro")
+
+        # 2. Filter by division name
+        res_filter = self.client.get("/api/staff/transactions/?division=TSSD 1")
+        self.assertEqual(res_filter.status_code, status.HTTP_200_OK)
+        ids = [t["id"] for t in res_filter.data]
+        self.assertIn(tx1.id, ids)
+        self.assertNotIn(tx2.id, ids)
+
+        # 3. Filter by personnel name
+        res_psn = self.client.get("/api/staff/transactions/?personnel=Pedro")
+        self.assertEqual(res_psn.status_code, status.HTTP_200_OK)
+        ids_psn = [t["id"] for t in res_psn.data]
+        self.assertIn(tx1.id, ids_psn)
+        self.assertNotIn(tx2.id, ids_psn)
+
+        # 4. Search query (q) matching assigned personnel
+        res_q = self.client.get("/api/staff/transactions/?q=Pedro")
+        self.assertEqual(res_q.status_code, status.HTTP_200_OK)
+        ids_q = [t["id"] for t in res_q.data]
+        self.assertIn(tx1.id, ids_q)
+        self.assertNotIn(tx2.id, ids_q)
+
+

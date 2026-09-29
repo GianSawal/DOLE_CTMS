@@ -562,11 +562,25 @@ class StaffTransactionsListView(APIView):
         else:
             qs = CtmsTransaction.objects.filter(office__in=allowed_offices)
 
-        qs = qs.select_related('office', 'service', 'counter', 'served_by')
+        qs = qs.select_related('office', 'service', 'service__division', 'counter', 'served_by')
 
         service_id = request.query_params.get('service')
         if service_id:
             qs = qs.filter(service_id=service_id)
+
+        division_param = request.query_params.get('division')
+        if division_param:
+            if division_param.isdigit():
+                qs = qs.filter(service__division_id=int(division_param))
+            else:
+                qs = qs.filter(
+                    models.Q(service__division__name__iexact=division_param) |
+                    models.Q(service__division__name__icontains=division_param)
+                )
+
+        personnel_param = request.query_params.get('personnel')
+        if personnel_param:
+            qs = qs.filter(assigned_personnel__icontains=personnel_param)
 
         status_param = request.query_params.get('status')
         if status_param:
@@ -585,7 +599,9 @@ class StaffTransactionsListView(APIView):
             qs = qs.filter(
                 models.Q(transaction_no__icontains=q) |
                 models.Q(queue_no__icontains=q) |
-                models.Q(client_name__icontains=q)
+                models.Q(client_name__icontains=q) |
+                models.Q(assigned_personnel__icontains=q) |
+                models.Q(service__division__name__icontains=q)
             )
 
         # Pagination / limit

@@ -51,9 +51,19 @@ export default function PrintSlip({ transaction, onClose }) {
         </div>
 
         <div style={{ textAlign: 'left', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '1rem' }}>
+          {transaction.division_name && (
+            <div>
+              <strong>Division:</strong> {transaction.division_name}
+            </div>
+          )}
           <div>
             <strong>Service:</strong> {transaction.service_name}
           </div>
+          {transaction.assigned_personnel && (
+            <div>
+              <strong>Assigned Personnel:</strong> {transaction.assigned_personnel}
+            </div>
+          )}
           {transaction.client_name && (
             <div>
               <strong>Client:</strong> {transaction.client_name}
