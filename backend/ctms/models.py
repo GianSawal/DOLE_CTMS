@@ -131,6 +131,34 @@ class CtmsStaffOffice(models.Model):
         return f"{self.user.username} -> {self.office.name}"
 
 
+class CtmsEmployee(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='employee_profile')
+    employee_id = models.CharField(max_length=50, unique=True, db_index=True)
+    first_name = models.CharField(max_length=100)
+    middle_name = models.CharField(max_length=100, blank=True, default='')
+    last_name = models.CharField(max_length=100)
+    position = models.CharField(max_length=150, blank=True, default='')
+    office = models.ForeignKey(CsmOffice, on_delete=models.PROTECT, related_name='employees')
+    divisions = models.ManyToManyField(CsmDivision, blank=True, related_name='employees', db_table='ctms_employee_divisions')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ctms_employee'
+        verbose_name = 'CTMS Employee'
+        verbose_name_plural = 'CTMS Employees'
+        ordering = ['last_name', 'first_name']
+
+    def __str__(self):
+        return f"{self.employee_id} - {self.last_name}, {self.first_name}"
+
+    @property
+    def full_name(self):
+        mid = f" {self.middle_name}" if self.middle_name else ""
+        return f"{self.first_name}{mid} {self.last_name}"
+
+
 class CtmsDisplayConfig(models.Model):
     id = models.BigAutoField(primary_key=True)
     office = models.OneToOneField(CsmOffice, on_delete=models.CASCADE, related_name='display_config')

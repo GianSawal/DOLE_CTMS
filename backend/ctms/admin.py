@@ -6,6 +6,7 @@ from .models import (
     CsmResponse,
     CtmsCounter,
     CtmsStaffOffice,
+    CtmsEmployee,
     CtmsDisplayConfig,
     CtmsTransaction,
 )
@@ -48,6 +49,22 @@ class CtmsStaffOfficeAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'office')
     list_filter = ('office',)
     search_fields = ('user__username', 'office__name')
+
+
+@admin.register(CtmsEmployee)
+class CtmsEmployeeAdmin(admin.ModelAdmin):
+    list_display = ('employee_id', 'last_name', 'first_name', 'position', 'office', 'get_divisions', 'is_active', 'created_at')
+    search_fields = ('employee_id', 'first_name', 'last_name', 'position', 'office__name')
+    list_filter = ('office', 'divisions', 'user__is_active')
+    filter_horizontal = ('divisions',)
+
+    def is_active(self, obj):
+        return obj.user.is_active
+    is_active.boolean = True
+
+    def get_divisions(self, obj):
+        return ", ".join([d.name for d in obj.divisions.all()])
+    get_divisions.short_description = 'Divisions'
 
 @admin.register(CtmsTransaction)
 class CtmsTransactionAdmin(admin.ModelAdmin):

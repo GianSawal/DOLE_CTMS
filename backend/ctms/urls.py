@@ -21,13 +21,17 @@ from .views import (
     PublicFolderVideosView,
     PublicStreamLocalVideoView,
     CsmDivisionListView,
+    CsmOfficeListView,
     CtmsCounterViewSet,
     CtmsStaffOfficeViewSet,
+    StaffEmployeeViewSet,
 )
 
 router = DefaultRouter()
 router.register(r'staff/counters', CtmsCounterViewSet, basename='staff-counters')
 router.register(r'staff/staff-offices', CtmsStaffOfficeViewSet, basename='staff-offices')
+router.register(r'staff/users', StaffEmployeeViewSet, basename='staff-users')
+router.register(r'staff/employees', StaffEmployeeViewSet, basename='staff-employees')
 
 urlpatterns = [
     # Public endpoints
@@ -56,6 +60,7 @@ urlpatterns = [
     path('staff/qr/<int:office_id>/', StaffQrCodeView.as_view(), name='staff-qr-code'),
     path('staff/display-video/', StaffDisplayVideoView.as_view(), name='staff-display-video'),
     path('staff/divisions/', CsmDivisionListView.as_view(), name='staff-divisions'),
+    path('staff/offices/', CsmOfficeListView.as_view(), name='staff-offices-list'),
 
     # Routers (Counters & Staff-Offices)
     path('', include(router.urls)),

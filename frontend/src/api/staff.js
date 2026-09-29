@@ -76,5 +76,39 @@ export const staffApi = {
     method: 'POST',
     body: JSON.stringify({ office: officeId, arta_video_url: '', clear_file: true, is_active: false }),
   }),
+
+  // Employee & User Management (Admin Only)
+  getOffices: () => apiRequest('/staff/offices/'),
+
+  getEmployees: (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== '' && v !== null && v !== undefined) params.append(k, v);
+    });
+    return apiRequest(`/staff/users/?${params.toString()}`);
+  },
+
+  createEmployee: (data) => apiRequest('/staff/users/', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  updateEmployee: (id, data) => apiRequest(`/staff/users/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+
+  deleteEmployee: (id) => apiRequest(`/staff/users/${id}/`, {
+    method: 'DELETE',
+  }),
+
+  resetEmployeePassword: (id, password = null) => apiRequest(`/staff/users/${id}/reset-password/`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  }),
+
+  toggleEmployeeActive: (id) => apiRequest(`/staff/users/${id}/toggle-active/`, {
+    method: 'POST',
+  }),
 };
 

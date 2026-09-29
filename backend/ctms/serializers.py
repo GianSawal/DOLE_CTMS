@@ -7,6 +7,7 @@ from .models import (
     CsmService,
     CtmsCounter,
     CtmsStaffOffice,
+    CtmsEmployee,
     CtmsTransaction,
 )
 
@@ -48,6 +49,48 @@ class CtmsStaffOfficeSerializer(serializers.ModelSerializer):
     class Meta:
         model = CtmsStaffOffice
         fields = ['id', 'user', 'username', 'office', 'office_name']
+
+
+class CtmsEmployeeSerializer(serializers.ModelSerializer):
+    username = serializers.ReadOnlyField(source='user.username')
+    office_name = serializers.ReadOnlyField(source='office.name')
+    office_code = serializers.ReadOnlyField(source='office.code')
+    divisions_detail = CsmDivisionSerializer(source='divisions', many=True, read_only=True)
+    division_names = serializers.SerializerMethodField()
+    division_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=CsmDivision.objects.all(),
+        source='divisions',
+        required=False
+    )
+    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
+
+    class Meta:
+        model = CtmsEmployee
+        fields = [
+            'id',
+            'user',
+            'username',
+            'employee_id',
+            'first_name',
+            'middle_name',
+            'last_name',
+            'full_name',
+            'position',
+            'office',
+            'office_name',
+            'office_code',
+            'division_ids',
+            'division_names',
+            'divisions_detail',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
+    def get_division_names(self, obj):
+        return [d.name for d in obj.divisions.all()]
 
 
 class CheckinRequestSerializer(serializers.Serializer):
@@ -162,13 +205,25 @@ class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
             CtmsStaffOffice.objects.filter(user=self.user).values('office_id', 'office__name', 'office__code')
         )
 
+        assigned_divisions = []
+        try:
+            profile = self.user.employee_profile
+            assigned_divisions = [
+                {'id': d.id, 'name': d.name} for d in profile.divisions.all()
+            ]
+        except Exception:
+            pass
+
         data['user'] = {
             'id': self.user.id,
             'username': self.user.username,
+            'first_name': self.user.first_name,
+            'last_name': self.user.last_name,
             'is_superuser': self.user.is_superuser,
             'assigned_offices': [
                 {'id': o['office_id'], 'name': o['office__name'], 'code': o['office__code']}
                 for o in assigned_offices
             ],
+            'assigned_divisions': assigned_divisions,
         }
         return data

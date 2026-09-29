@@ -192,3 +192,98 @@ class CtmsCoreTestCase(TestCase):
         self.assertEqual(called2.id, tx2.id)
         self.assertEqual(called2.counter, cnt_tssd2)
 
+    def test_user_management_crud_by_admin(self):
+        admin_user = User.objects.create_superuser(username="adminuser", password="adminpassword")
+        div_tssd1 = CsmDivision.objects.create(name="TSSD 1")
+        div_malsu = CsmDivision.objects.create(name="MALSU")
+
+        # Regular staff should get 403
+        self.client.force_authenticate(user=self.staff_user)
+        res_forbidden = self.client.get("/api/staff/users/")
+        self.assertEqual(res_forbidden.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Admin user should get 200
+        self.client.force_authenticate(user=admin_user)
+        res_list = self.client.get("/api/staff/users/")
+        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
+
+        # Admin creates new employee
+        create_payload = {
+            "employee_id": "EMP-1001",
+            "first_name": "Juan",
+            "middle_name": "Santos",
+            "last_name": "Dela Cruz",
+            "position": "Labor and Employment Officer III",
+            "office": self.office.id,
+            "division_ids": [div_tssd1.id, div_malsu.id],
+            "temporary_password": "EMP-1001",
+        }
+        res_create = self.client.post("/api/staff/users/", data=create_payload, format='json')
+        self.assertEqual(res_create.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res_create.data["employee_id"], "EMP-1001")
+        self.assertEqual(len(res_create.data["division_ids"]), 2)
+
+        # Verify created User in database
+        created_user = User.objects.get(username="EMP-1001")
+        self.assertTrue(created_user.is_staff)
+        self.assertFalse(created_user.is_superuser)
+        self.assertTrue(created_user.check_password("EMP-1001"))
+
+        # Verify CtmsEmployee in database
+        from .models import CtmsEmployee
+        emp = CtmsEmployee.objects.get(employee_id="EMP-1001")
+        self.assertEqual(emp.full_name, "Juan Santos Dela Cruz")
+        self.assertEqual(emp.position, "Labor and Employment Officer III")
+        self.assertEqual(emp.office, self.office)
+        self.assertEqual(emp.divisions.count(), 2)
+
+        # Test reset password endpoint
+        res_reset = self.client.post(f"/api/staff/users/{emp.id}/reset-password/", data={"password": "NewTempPassword123"}, format='json')
+        self.assertEqual(res_reset.status_code, status.HTTP_200_OK)
+        created_user.refresh_from_db()
+        self.assertTrue(created_user.check_password("NewTempPassword123"))
+
+    def test_employee_division_queue_restriction(self):
+        from .models import CtmsEmployee
+        div_tssd1 = CsmDivision.objects.create(name="TSSD 1")
+        div_tssd2 = CsmDivision.objects.create(name="TSSD 2")
+
+        svc1 = CsmService.objects.create(name="Service TSSD 1", division=div_tssd1, is_active=True, sort_order=10)
+        svc2 = CsmService.objects.create(name="Service TSSD 2", division=div_tssd2, is_active=True, sort_order=11)
+
+        # Employee assigned ONLY to TSSD 1
+        emp_user = User.objects.create_user(username="emp_tssd1", password="password", is_staff=True)
+        CtmsStaffOffice.objects.create(user=emp_user, office=self.office)
+        emp = CtmsEmployee.objects.create(
+            user=emp_user,
+            employee_id="EMP-TSSD1",
+            first_name="Jane",
+            last_name="Doe",
+            office=self.office
+        )
+        emp.divisions.set([div_tssd1])
+
+        # Create transactions for each division
+        tx1 = create_transaction(self.office, svc1, client_name="Client 1")
+        tx2 = create_transaction(self.office, svc2, client_name="Client 2")
+
+        # Authenticate as emp_tssd1
+        self.client.force_authenticate(user=emp_user)
+
+        # In StaffQueueView, emp_tssd1 ONLY sees tx1 in waiting
+        res = self.client.get(f"/api/staff/queue/?office={self.office.id}")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        waiting_ids = [item['id'] for item in res.data['waiting']]
+        self.assertIn(tx1.id, waiting_ids)
+        self.assertNotIn(tx2.id, waiting_ids)
+
+        # Counters list only includes TSSD 1
+        counter_names = [c['name'] for c in res.data['counters']]
+        self.assertIn("TSSD 1", counter_names)
+        self.assertNotIn("TSSD 2", counter_names)
+
+        # Employee cannot call or act on tx2 from TSSD 2
+        cnt_tssd2, _ = CtmsCounter.objects.get_or_create(office=self.office, name="TSSD 2", defaults={'is_active': True})
+        res_forbidden_call = self.client.post(f"/api/staff/transactions/{tx2.id}/call/", data={"counter": cnt_tssd2.id, "personnel": "Jane Doe"})
+        self.assertEqual(res_forbidden_call.status_code, status.HTTP_403_FORBIDDEN)
+

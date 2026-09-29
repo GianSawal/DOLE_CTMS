@@ -62,6 +62,11 @@ export default function Navbar() {
           <NavLink to="/staff/qr" style={navLinkStyle}>
             🖨️ Check-in QR
           </NavLink>
+          {user?.is_superuser && (
+            <NavLink to="/staff/users" style={navLinkStyle} id="nav-user-management">
+              👥 User Management
+            </NavLink>
+          )}
           <button
             type="button"
             onClick={() => setShowArtaModal(true)}

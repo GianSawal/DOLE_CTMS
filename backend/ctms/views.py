@@ -7,7 +7,8 @@ import mimetypes
 import qrcode
 from datetime import timedelta
 from django.conf import settings
-from django.db import models
+from django.contrib.auth import get_user_model
+from django.db import models, transaction
 from django.db.models import Avg, F, ExpressionWrapper, fields
 from django.http import HttpResponse, FileResponse, Http404
 from django.shortcuts import get_object_or_404
@@ -15,8 +16,11 @@ from django.utils import timezone
 from rest_framework import status, viewsets, permissions, exceptions
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+User = get_user_model()
 
 from .models import (
     CsmDivision,
@@ -25,6 +29,7 @@ from .models import (
     CsmResponse,
     CtmsCounter,
     CtmsStaffOffice,
+    CtmsEmployee,
     CtmsDisplayConfig,
     CtmsTransaction,
 )
@@ -34,6 +39,7 @@ from .serializers import (
     CsmServiceSerializer,
     CtmsCounterSerializer,
     CtmsStaffOfficeSerializer,
+    CtmsEmployeeSerializer,
     CheckinRequestSerializer,
     TicketPublicSerializer,
     StaffTransactionSerializer,
@@ -61,11 +67,23 @@ class StaffMeView(APIView):
             return Response({"detail": "Forbidden: Staff account required."}, status=status.HTTP_403_FORBIDDEN)
 
         assigned_offices = get_staff_offices(user)
+        assigned_divisions = get_staff_divisions(user)
+        employee_data = None
+        try:
+            profile = user.employee_profile
+            employee_data = CtmsEmployeeSerializer(profile).data
+        except Exception:
+            pass
+
         return Response({
             "id": user.id,
             "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
             "is_superuser": user.is_superuser,
             "assigned_offices": CsmOfficeSerializer(assigned_offices, many=True).data,
+            "assigned_divisions": CsmDivisionSerializer(assigned_divisions, many=True).data,
+            "employee_profile": employee_data,
         })
 
 
@@ -82,9 +100,34 @@ def get_staff_offices(user):
     return CsmOffice.objects.none()
 
 
+def get_staff_divisions(user):
+    """
+    Returns queryset of CsmDivision the staff user is allowed to access.
+    Superusers have access to all divisions.
+    Staff members with employee profiles have access to their assigned divisions.
+    """
+    if not user or not user.is_authenticated or not user.is_staff:
+        return CsmDivision.objects.none()
+    if user.is_superuser:
+        return CsmDivision.objects.all().order_by('id')
+    try:
+        profile = getattr(user, 'employee_profile', None)
+        if profile:
+            return profile.divisions.all().order_by('id')
+    except Exception:
+        pass
+    return CsmDivision.objects.all().order_by('id')
+
+
 class IsStaffUser(permissions.BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and request.user.is_staff)
+
+
+class IsAdminUserOnly(permissions.BasePermission):
+    """Allows access only to superuser admin accounts."""
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.is_superuser)
 
 
 # =====================================================================
@@ -297,6 +340,8 @@ class StaffQueueView(APIView):
             office = allowed_offices.first()
 
         today = timezone.localdate()
+        allowed_divisions = get_staff_divisions(request.user)
+        allowed_div_names = list(allowed_divisions.values_list('name', flat=True))
 
         # Waiting list: priority first, then FIFO
         waiting_qs = CtmsTransaction.objects.filter(
@@ -312,9 +357,16 @@ class StaffQueueView(APIView):
             queue_date=today
         ).select_related('office', 'service', 'service__division', 'counter', 'served_by').order_by('-called_at')
 
+        # If not superuser, restrict waiting and serving queues to the user's assigned divisions
+        if not request.user.is_superuser:
+            waiting_qs = waiting_qs.filter(service__division__in=allowed_divisions)
+            serving_qs = serving_qs.filter(service__division__in=allowed_divisions)
+
         if counter_id:
             counter = CtmsCounter.objects.filter(pk=counter_id, office=office, is_active=True).first()
             if counter:
+                if not request.user.is_superuser and counter.name not in allowed_div_names:
+                    return Response({"detail": "Forbidden: You are not authorized to access this counter / division queue."}, status=status.HTTP_403_FORBIDDEN)
                 serving_qs = serving_qs.filter(counter=counter)
                 division = CsmDivision.objects.filter(name=counter.name).first()
                 if division:
@@ -323,12 +375,12 @@ class StaffQueueView(APIView):
         waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
 
         # Retrieve divisions directly from csm_division table
-        divisions = CsmDivision.objects.all().order_by('id')
-        division_names = [d.name for d in divisions]
+        all_divisions = CsmDivision.objects.all().order_by('id')
+        all_division_names = [d.name for d in all_divisions]
 
-        if division_names:
+        if all_division_names:
             # Ensure an active counter exists for each division in csm_division
-            for div_name in division_names:
+            for div_name in all_division_names:
                 cnt, created = CtmsCounter.objects.get_or_create(
                     office=office,
                     name=div_name,
@@ -339,16 +391,23 @@ class StaffQueueView(APIView):
                     cnt.save(update_fields=['is_active'])
 
             # Deactivate obsolete counters that do not match csm_division (e.g. Window 1, Window 2)
-            CtmsCounter.objects.filter(office=office).exclude(name__in=division_names).update(is_active=False)
+            CtmsCounter.objects.filter(office=office).exclude(name__in=all_division_names).update(is_active=False)
 
         counters_qs = CtmsCounter.objects.filter(office=office, is_active=True).order_by('id')
+
+        # If regular staff (non-superuser), restrict counters and divisions to only assigned divisions
+        if not request.user.is_superuser:
+            counters_qs = counters_qs.filter(name__in=allowed_div_names)
+            divisions_data = allowed_divisions
+        else:
+            divisions_data = all_divisions
 
         return Response({
             "office": CsmOfficeSerializer(office).data,
             "waiting": StaffTransactionSerializer(waiting_qs, many=True).data,
             "serving": StaffTransactionSerializer(serving_qs, many=True).data,
             "counters": CtmsCounterSerializer(counters_qs, many=True).data,
-            "divisions": CsmDivisionSerializer(divisions, many=True).data,
+            "divisions": CsmDivisionSerializer(divisions_data, many=True).data,
         })
 
 
@@ -393,12 +452,20 @@ class StaffCallNextView(APIView):
         except CsmOffice.DoesNotExist:
             return Response({"detail": "Forbidden: You are not authorized to call clients for this office."}, status=status.HTTP_403_FORBIDDEN)
 
+        allowed_divs = get_staff_divisions(request.user)
+        allowed_div_names = list(allowed_divs.values_list('name', flat=True))
+
         if counter_id:
             counter = get_object_or_404(CtmsCounter, pk=counter_id, office=office, is_active=True)
+            if not request.user.is_superuser and counter.name not in allowed_div_names:
+                return Response({"detail": "Forbidden: You are not authorized to call clients for this counter / division."}, status=status.HTTP_403_FORBIDDEN)
         else:
-            counter = CtmsCounter.objects.filter(office=office, is_active=True).first()
+            counter_candidates = CtmsCounter.objects.filter(office=office, is_active=True)
+            if not request.user.is_superuser:
+                counter_candidates = counter_candidates.filter(name__in=allowed_div_names)
+            counter = counter_candidates.first()
             if not counter:
-                first_div = CsmDivision.objects.first()
+                first_div = allowed_divs.first() or CsmDivision.objects.first()
                 default_name = first_div.name if first_div else "General"
                 counter, _ = CtmsCounter.objects.get_or_create(office=office, name=default_name, defaults={'is_active': True})
 
@@ -420,6 +487,11 @@ class StaffTransactionActionView(APIView):
         allowed_offices = get_staff_offices(request.user)
         if not allowed_offices.filter(pk=tx.office_id).exists():
             return Response({"detail": "Forbidden: Not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
+
+        if not request.user.is_superuser:
+            allowed_divs = get_staff_divisions(request.user)
+            if tx.service and tx.service.division and not allowed_divs.filter(pk=tx.service.division_id).exists():
+                return Response({"detail": "Forbidden: You are not authorized to access transactions for this division."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             if action == 'assign':
@@ -719,6 +791,191 @@ class CtmsStaffOfficeViewSet(viewsets.ModelViewSet):
     serializer_class = CtmsStaffOfficeSerializer
     permission_classes = [permissions.IsAdminUser]
     queryset = CtmsStaffOffice.objects.all().select_related('user', 'office')
+
+
+class StaffEmployeeViewSet(viewsets.ModelViewSet):
+    """
+    CRUD ViewSet for managing DOLE staff employees.
+    Accessible only by superuser administrators.
+    """
+    serializer_class = CtmsEmployeeSerializer
+    permission_classes = [IsAdminUserOnly]
+    queryset = CtmsEmployee.objects.all().select_related('user', 'office').prefetch_related('divisions').order_by('-id')
+
+    def get_queryset(self):
+        qs = CtmsEmployee.objects.all().select_related('user', 'office').prefetch_related('divisions').order_by('-id')
+        office_id = self.request.query_params.get('office')
+        if office_id:
+            qs = qs.filter(office_id=office_id)
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(
+                models.Q(employee_id__icontains=search) |
+                models.Q(first_name__icontains=search) |
+                models.Q(last_name__icontains=search) |
+                models.Q(position__icontains=search)
+            )
+        return qs
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        employee_id = str(data.get('employee_id', '')).strip()
+        first_name = str(data.get('first_name', '')).strip()
+        middle_name = str(data.get('middle_name', '')).strip()
+        last_name = str(data.get('last_name', '')).strip()
+        position = str(data.get('position', '')).strip()
+        office_id = data.get('office')
+        division_ids = data.get('division_ids', [])
+        temporary_password = str(data.get('temporary_password', '')).strip() or employee_id
+
+        if not employee_id:
+            return Response({"detail": "Employee ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not first_name or not last_name:
+            return Response({"detail": "First name and last name are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not office_id:
+            return Response({"detail": "Office is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check unique employee_id in User and CtmsEmployee
+        if User.objects.filter(username__iexact=employee_id).exists():
+            return Response({"detail": f"A user with username/Employee ID '{employee_id}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        if CtmsEmployee.objects.filter(employee_id__iexact=employee_id).exists():
+            return Response({"detail": f"An employee with Employee ID '{employee_id}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+        office = get_object_or_404(CsmOffice, pk=office_id)
+
+        # Create Django User
+        user = User.objects.create(
+            username=employee_id,
+            first_name=first_name,
+            last_name=last_name,
+            is_staff=True,
+            is_superuser=False,
+            is_active=True,
+        )
+        user.set_password(temporary_password)
+        user.save()
+
+        # Create Employee profile
+        employee = CtmsEmployee.objects.create(
+            user=user,
+            employee_id=employee_id,
+            first_name=first_name,
+            middle_name=middle_name,
+            last_name=last_name,
+            position=position,
+            office=office,
+        )
+
+        # Set divisions
+        if division_ids:
+            id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
+            name_filters = models.Q(name__in=[str(x) for x in division_ids])
+            normalized_names = []
+            for d in division_ids:
+                ds = str(d).strip().upper()
+                if ds == 'TSSD1':
+                    normalized_names.append('TSSD 1')
+                elif ds == 'TSSD2':
+                    normalized_names.append('TSSD 2')
+            if normalized_names:
+                name_filters |= models.Q(name__in=normalized_names)
+
+            divs = CsmDivision.objects.filter(id_filters | name_filters)
+            employee.divisions.set(divs)
+
+        # Assign CtmsStaffOffice
+        CtmsStaffOffice.objects.get_or_create(user=user, office=office)
+
+        serializer = self.get_serializer(employee)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        employee = self.get_object()
+        data = request.data
+
+        if 'first_name' in data:
+            employee.first_name = str(data['first_name']).strip()
+            employee.user.first_name = employee.first_name
+        if 'middle_name' in data:
+            employee.middle_name = str(data['middle_name']).strip()
+        if 'last_name' in data:
+            employee.last_name = str(data['last_name']).strip()
+            employee.user.last_name = employee.last_name
+        if 'position' in data:
+            employee.position = str(data['position']).strip()
+        if 'office' in data and data['office']:
+            office = get_object_or_404(CsmOffice, pk=data['office'])
+            employee.office = office
+            CtmsStaffOffice.objects.filter(user=employee.user).delete()
+            CtmsStaffOffice.objects.create(user=employee.user, office=office)
+        if 'is_active' in data:
+            employee.user.is_active = bool(data['is_active'])
+
+        employee.user.save()
+        employee.save()
+
+        if 'division_ids' in data:
+            division_ids = data.get('division_ids', [])
+            id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
+            name_filters = models.Q(name__in=[str(x) for x in division_ids])
+            normalized_names = []
+            for d in division_ids:
+                ds = str(d).strip().upper()
+                if ds == 'TSSD1':
+                    normalized_names.append('TSSD 1')
+                elif ds == 'TSSD2':
+                    normalized_names.append('TSSD 2')
+            if normalized_names:
+                name_filters |= models.Q(name__in=normalized_names)
+
+            divs = CsmDivision.objects.filter(id_filters | name_filters)
+            employee.divisions.set(divs)
+
+        serializer = self.get_serializer(employee)
+        return Response(serializer.data)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        employee = self.get_object()
+        user = employee.user
+        employee.delete()
+        if user:
+            user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='reset-password')
+    def reset_password(self, request, pk=None):
+        employee = self.get_object()
+        new_pwd = str(request.data.get('password', '')).strip() or employee.employee_id
+        employee.user.set_password(new_pwd)
+        employee.user.save()
+        return Response({
+            "status": "success",
+            "message": f"Password for {employee.employee_id} ({employee.full_name}) has been reset to '{new_pwd}'."
+        })
+
+    @action(detail=True, methods=['post'], url_path='toggle-active')
+    def toggle_active(self, request, pk=None):
+        employee = self.get_object()
+        employee.user.is_active = not employee.user.is_active
+        employee.user.save()
+        return Response({
+            "status": "success",
+            "is_active": employee.user.is_active
+        })
+
+
+class CsmOfficeListView(APIView):
+    """
+    Returns list of active DOLE offices for dropdown selection.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        offices = CsmOffice.objects.filter(is_active=True).order_by('name')
+        return Response(CsmOfficeSerializer(offices, many=True).data)
 
 
 # =====================================================================

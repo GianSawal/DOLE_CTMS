@@ -13,6 +13,7 @@ import StaffQueue from './pages/staff/StaffQueue';
 import StaffTransactions from './pages/staff/StaffTransactions';
 import StaffReports from './pages/staff/StaffReports';
 import StaffQr from './pages/staff/StaffQr';
+import StaffUsers from './pages/staff/StaffUsers';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -27,6 +28,28 @@ function ProtectedRoute({ children }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/staff/login" replace />;
+  }
+
+  return children;
+}
+
+function AdminRoute({ children }) {
+  const { user, isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: 'var(--text-muted)' }}>Verifying credentials...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/staff/login" replace />;
+  }
+
+  if (!user?.is_superuser) {
+    return <Navigate to="/staff/queue" replace />;
   }
 
   return children;
@@ -74,6 +97,14 @@ export default function App() {
               <ProtectedRoute>
                 <StaffQr />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/staff/users"
+            element={
+              <AdminRoute>
+                <StaffUsers />
+              </AdminRoute>
             }
           />
 
