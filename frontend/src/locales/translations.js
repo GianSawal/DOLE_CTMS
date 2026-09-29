@@ -48,6 +48,8 @@ export const translations = {
     proceed_to_registration: "Agree & Proceed to Registration",
     view_terms_btn: "View Terms & Conditions",
     switch_lang: "Filipino",
+    search_services: "Search service name or division...",
+    no_services_found: "No services found matching",
   },
   fil: {
     system_title: "Sistema ng Pagsubaybay sa Transaksyon ng Kliyente",
@@ -56,6 +58,8 @@ export const translations = {
     office_label: "Tanggapan ng DOLE",
     service_label: "Serbisyong Kailangan",
     select_service: "-- Pumili ng Serbisyo --",
+    search_services: "Maghanap ng serbisyo o dibisyon...",
+    no_services_found: "Walang serbisyong tumutugma sa",
     name_label: "Pangalan (Opsyonal)",
     name_placeholder: "Juan Dela Cruz",
     priority_label: "Priority Lane (Senior Citizen / PWD / Buntis)",

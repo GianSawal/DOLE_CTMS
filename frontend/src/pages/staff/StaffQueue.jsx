@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
 import Modal from '../../components/Modal';
 import PrintSlip from '../../components/PrintSlip';
+import SearchableServiceSelect from '../../components/SearchableServiceSelect';
 import { broadcastQueueCall } from '../../utils/airportChime';
 
 export default function StaffQueue() {
@@ -741,16 +742,14 @@ export default function StaffQueue() {
         <form onSubmit={handleWalkinSubmit}>
           <div style={{ marginBottom: '1rem' }}>
             <label>Select Service *</label>
-            <select
+            <SearchableServiceSelect
               required
+              services={officeServices || []}
               value={walkinService}
-              onChange={(e) => setWalkinService(e.target.value)}
-            >
-              <option value="">-- Select Service --</option>
-              {officeServices.map(svc => (
-                <option key={svc.id} value={svc.id}>{svc.name}</option>
-              ))}
-            </select>
+              onChange={(val) => setWalkinService(val)}
+              placeholder="-- Select Service --"
+              searchPlaceholder="Search services or division..."
+            />
           </div>
 
           <div style={{ marginBottom: '1rem' }}>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { publicApi } from '../../api/public';
 import Header from '../../components/Header';
+import SearchableServiceSelect from '../../components/SearchableServiceSelect';
 import { translations } from '../../locales/translations';
 
 export default function CheckIn() {
@@ -254,19 +255,16 @@ export default function CheckIn() {
 
               <div style={{ marginBottom: '1.25rem' }}>
                 <label htmlFor="service-select">{t.service_label} *</label>
-                <select
+                <SearchableServiceSelect
                   id="service-select"
                   required
+                  services={officeData?.services || []}
                   value={serviceId}
-                  onChange={(e) => setServiceId(e.target.value)}
-                >
-                  <option value="">{t.select_service}</option>
-                  {officeData?.services?.map((svc) => (
-                    <option key={svc.id} value={svc.id}>
-                      {svc.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setServiceId(val)}
+                  placeholder={t.select_service}
+                  searchPlaceholder={t.search_services}
+                  noResultsText={t.no_services_found}
+                />
               </div>
 
               <div style={{ marginBottom: '1.25rem' }}>
