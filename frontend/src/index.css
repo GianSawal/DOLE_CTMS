@@ -569,11 +569,12 @@ label {
   }
 }
 
-/* Thermal Slip Print Styles */
+/* Print Styles */
 @media print {
   body * {
     visibility: hidden;
   }
+  /* Thermal Slip Print Styles (Queue Tickets) */
   .print-slip-area, .print-slip-area * {
     visibility: visible;
   }
@@ -585,5 +586,9 @@ label {
     margin: 0;
     padding: 10px;
     font-size: 12px;
+  }
+  /* A4 Poster Print Styles (Office Check-in QR Poster) */
+  .print-poster-card, .print-poster-card * {
+    visibility: visible;
   }
 }
