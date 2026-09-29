@@ -13,16 +13,17 @@ export default function Navbar() {
 
   const navLinkStyle = ({ isActive }) => ({
     padding: '0.45rem 0.85rem',
-    borderRadius: 'var(--radius-md)',
+    borderRadius: '8px',
     textDecoration: 'none',
-    fontSize: '0.86rem',
-    fontWeight: 600,
-    color: isActive ? 'var(--dole-blue)' : 'var(--text-secondary)',
-    backgroundColor: isActive ? 'var(--dole-blue-light)' : 'transparent',
-    borderBottom: isActive ? '2px solid var(--dole-blue)' : '2px solid transparent',
+    fontSize: '0.85rem',
+    fontWeight: isActive ? 700 : 600,
+    color: isActive ? 'var(--dole-blue)' : '#475569',
+    backgroundColor: isActive ? 'rgba(3, 5, 186, 0.08)' : 'transparent',
+    border: isActive ? '1px solid rgba(3, 5, 186, 0.2)' : '1px solid transparent',
+    boxShadow: isActive ? '0 1px 2px rgba(3, 5, 186, 0.08)' : 'none',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: '0.35rem',
+    gap: '0.45rem',
     whiteSpace: 'nowrap',
     transition: 'all 0.15s ease',
   });
@@ -49,24 +50,63 @@ export default function Navbar() {
         {/* Center: Navigation Links centered on computer view */}
         <div className="staff-navbar-center">
           <NavLink to="/staff/queue" style={navLinkStyle}>
-            📋 Queue
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+            <span>Queue</span>
           </NavLink>
+
           <NavLink to="/staff/transactions" style={navLinkStyle}>
-            📊 Transactions
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+            <span>Transactions</span>
           </NavLink>
+
           <NavLink to="/staff/reports" style={navLinkStyle}>
-            📈 Reports &amp; Rate
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            <span>Reports &amp; Rate</span>
           </NavLink>
+
           <NavLink to="/staff/qr" style={navLinkStyle}>
-            🖨️ Check-in QR
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>Check-in QR</span>
           </NavLink>
+
           {user?.is_superuser && (
             <>
               <NavLink to="/staff/users" style={navLinkStyle} id="nav-user-management">
-                👥 User Management
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                <span>User Management</span>
               </NavLink>
+
               <NavLink to="/staff/personnel" style={navLinkStyle} id="nav-personnel">
-                👤 Personnel
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                <span>Personnel</span>
               </NavLink>
             </>
           )}
@@ -74,20 +114,44 @@ export default function Navbar() {
 
         {/* Right: User Profile & Sign Out on Top Right */}
         <div className="staff-navbar-right">
-          <div className="staff-user-info">
-            <div className="staff-user-name">{user?.username}</div>
-            <div className="staff-user-office">
-              {user?.is_superuser
-                ? 'DOLE Admin'
-                : (user?.assigned_offices?.[0]?.code || 'Staff')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              backgroundColor: 'var(--dole-blue)',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontSize: '0.75rem',
+              letterSpacing: '-0.02em',
+              boxShadow: '0 1px 3px rgba(3, 5, 186, 0.25)',
+            }}>
+              {user?.username ? user.username.slice(0, 2).toUpperCase() : 'ST'}
+            </div>
+            <div className="staff-user-info">
+              <div className="staff-user-name">{user?.username}</div>
+              <div className="staff-user-office">
+                {user?.is_superuser
+                  ? 'DOLE Admin'
+                  : (user?.assigned_offices?.[0]?.code || 'Staff')}
+              </div>
             </div>
           </div>
+
           <button
             onClick={handleLogout}
             className="btn btn-outline btn-sm staff-signout-btn"
             title="Sign out of staff portal"
           >
-            Sign Out
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Sign Out</span>
           </button>
         </div>
       </nav>

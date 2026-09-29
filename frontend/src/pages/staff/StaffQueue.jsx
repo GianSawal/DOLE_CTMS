@@ -387,22 +387,100 @@ export default function StaffQueue() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-ground)' }}>
       <Navbar />
 
-      <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
-        {/* Top Control Bar: Office & Counter Selectors + Call Next + Walkin */}
-        <div className="card" style={{ marginBottom: '1.5rem', padding: '1.25rem 1.5rem' }}>
-          <div style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1rem',
-          }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1rem' }}>
-              <div>
-                <label style={{ fontSize: '0.8rem' }}>Assigned Office</label>
+      <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1440px', margin: '0 auto', width: '100%' }}>
+        {/* Top Console Card: Office & Counter Selectors + Call Next + Walk-in */}
+        <div className="staff-console-card">
+          {/* Top Banner Row: Console Title + Live Sync Status + Mini Stats */}
+          <div className="staff-console-top">
+            <div>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--dole-blue)',
+                backgroundColor: 'rgba(3, 5, 186, 0.06)',
+                padding: '0.2rem 0.55rem',
+                borderRadius: '9999px',
+                marginBottom: '0.35rem',
+              }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                <span>Counter Dispatch Console</span>
+              </div>
+              <h1 style={{
+                fontSize: '1.4rem',
+                fontWeight: 800,
+                color: '#0f172a',
+                lineHeight: 1.2,
+                margin: 0,
+                letterSpacing: '-0.02em',
+              }}>
+                Service Counter Queue
+              </h1>
+              <p style={{
+                margin: '0.2rem 0 0 0',
+                fontSize: '0.85rem',
+                color: 'var(--text-muted)',
+              }}>
+                Frontline counter service delivery, live ticket calling, and turnaround monitoring.
+              </p>
+            </div>
+
+            {/* Live Status and Quick Overview Pills */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.775rem',
+                fontWeight: 600,
+                color: '#047857',
+                backgroundColor: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                padding: '0.3rem 0.75rem',
+                borderRadius: '9999px',
+              }}>
+                <span className="pulse-live-dot" />
+                <span>Live Queue Active</span>
+              </div>
+
+              <span className="staff-stat-pill staff-stat-pill-blue">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span>Serving: <strong>{queueData.serving?.length || 0}</strong></span>
+              </span>
+
+              <span className={`staff-stat-pill ${queueData.waiting?.length > 0 ? 'staff-stat-pill-amber' : 'staff-stat-pill-green'}`}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                </svg>
+                <span>Waiting: <strong>{queueData.waiting?.length || 0}</strong></span>
+              </span>
+            </div>
+          </div>
+
+          {/* Bottom Controls Row: Desk Configuration & Dispatch Buttons */}
+          <div className="staff-console-bottom">
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '1rem' }}>
+              <div className="staff-select-wrapper">
+                <label className="staff-control-label">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 21h18"></path>
+                    <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                  </svg>
+                  <span>Assigned Office</span>
+                </label>
                 {user?.assigned_offices?.length === 1 && !user?.is_superuser ? (
                   <div style={{
                     minWidth: '240px',
@@ -415,7 +493,7 @@ export default function StaffQueue() {
                     borderRadius: 'var(--radius-md)',
                     fontWeight: 700,
                     color: 'var(--dole-blue)',
-                    fontSize: '0.92rem',
+                    fontSize: '0.9rem',
                   }}>
                     🔒 {user.assigned_offices[0].name} ({user.assigned_offices[0].code})
                   </div>
@@ -423,7 +501,8 @@ export default function StaffQueue() {
                   <select
                     value={selectedOffice}
                     onChange={handleOfficeChange}
-                    style={{ minWidth: '240px', minHeight: '44px' }}
+                    className="staff-custom-select"
+                    style={{ minWidth: '250px' }}
                   >
                     {user?.assigned_offices?.map(off => (
                       <option key={off.id} value={off.id}>{off.name} ({off.code})</option>
@@ -432,12 +511,20 @@ export default function StaffQueue() {
                 )}
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.8rem' }}>Your Counter / Window</label>
+              <div className="staff-select-wrapper">
+                <label className="staff-control-label">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                  </svg>
+                  <span>Your Counter / Window</span>
+                </label>
                 <select
                   value={selectedCounter}
                   onChange={handleCounterChange}
-                  style={{ minWidth: '200px', minHeight: '44px' }}
+                  className="staff-custom-select"
+                  style={{ minWidth: '220px' }}
                 >
                   <option value="">-- All Counters / Divisions --</option>
                   {queueData.counters?.map(cnt => (
@@ -451,9 +538,24 @@ export default function StaffQueue() {
               <button
                 onClick={() => setShowWalkinModal(true)}
                 className="btn btn-outline"
-                style={{ minHeight: '46px' }}
+                style={{
+                  minHeight: '44px',
+                  borderRadius: '8px',
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  borderColor: '#cbd5e1',
+                  color: '#334155',
+                  backgroundColor: '#ffffff',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                }}
               >
-                ➕ Walk-in Registration
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="8.5" cy="7" r="4"></circle>
+                  <line x1="20" y1="8" x2="20" y2="14"></line>
+                  <line x1="23" y1="11" x2="17" y2="11"></line>
+                </svg>
+                <span>Walk-in Registration</span>
               </button>
 
               {nextWaitingClient && !isNextClientAssigned && (
@@ -462,33 +564,48 @@ export default function StaffQueue() {
                   onClick={() => handleOpenAssignModal(nextWaitingClient)}
                   className="btn btn-sm"
                   style={{
-                    minHeight: '46px',
+                    minHeight: '44px',
                     backgroundColor: '#fffbeb',
                     color: '#92400e',
-                    border: '2px solid #f59e0b',
+                    border: '1.5px solid #f59e0b',
+                    borderRadius: '8px',
                     fontWeight: 700,
-                    padding: '0.5rem 0.9rem',
+                    padding: '0.45rem 0.95rem',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.4rem',
+                    gap: '0.45rem',
+                    boxShadow: '0 1px 2px rgba(245, 158, 11, 0.15)',
                   }}
                   title="Assign personnel to enable Call Next Client"
                 >
-                  <span>⚠️ Next: {nextWaitingClient.queue_no}</span>
-                  <span style={{ textDecoration: 'underline' }}>Assign Personnel</span>
+                  <span style={{ fontSize: '0.95rem' }}>⚠️</span>
+                  <span>Next ({nextWaitingClient.queue_no}): <strong>Assign Officer</strong></span>
                 </button>
               )}
 
               <button
                 onClick={handleCallNext}
                 disabled={actionLoading || !nextWaitingClient || !isNextClientAssigned}
-                className="btn btn-primary btn-lg"
+                className="btn"
                 style={{
-                  minHeight: '46px',
+                  minHeight: '44px',
                   fontWeight: 800,
-                  padding: '0.75rem 1.75rem',
-                  opacity: (!nextWaitingClient || !isNextClientAssigned) ? 0.45 : 1,
+                  fontSize: '0.925rem',
+                  padding: '0.65rem 1.65rem',
+                  borderRadius: '8px',
+                  background: (!nextWaitingClient || !isNextClientAssigned)
+                    ? '#e2e8f0'
+                    : 'linear-gradient(135deg, #0305ba 0%, #1e40af 100%)',
+                  color: (!nextWaitingClient || !isNextClientAssigned) ? '#64748b' : '#ffffff',
+                  boxShadow: (!nextWaitingClient || !isNextClientAssigned)
+                    ? 'none'
+                    : '0 4px 12px rgba(3, 5, 186, 0.28)',
                   cursor: (!nextWaitingClient || !isNextClientAssigned) ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease',
+                  border: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.55rem',
                 }}
                 title={
                   !nextWaitingClient
@@ -498,7 +615,11 @@ export default function StaffQueue() {
                     : `Call next client (${nextWaitingClient.queue_no})`
                 }
               >
-                {actionLoading ? 'Calling...' : '📢 Call Next Client'}
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
+                  <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+                <span>{actionLoading ? 'Calling Client...' : (nextWaitingClient && isNextClientAssigned ? `Call Next (${nextWaitingClient.queue_no})` : 'Call Next Client')}</span>
               </button>
             </div>
           </div>
@@ -506,15 +627,24 @@ export default function StaffQueue() {
 
         {error && (
           <div style={{
-            backgroundColor: 'var(--dole-red-light)',
+            backgroundColor: '#fef2f2',
             border: '1px solid #fecaca',
-            color: 'var(--dole-red)',
+            color: '#991b1b',
             borderRadius: 'var(--radius-md)',
-            padding: '0.75rem 1rem',
+            padding: '0.85rem 1.15rem',
             marginBottom: '1.5rem',
             fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            boxShadow: '0 1px 2px rgba(220, 38, 38, 0.05)',
           }}>
-            {error}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <span>{error}</span>
           </div>
         )}
 
@@ -527,30 +657,54 @@ export default function StaffQueue() {
           {/* Currently Serving Column */}
           <section>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)' }}>
-                🔔 Now Serving ({queueData.serving?.length || 0})
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <h2 style={{ fontSize: '1.18rem', fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ color: 'var(--dole-blue)' }}>
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                  </svg>
+                  <span>Now Serving</span>
+                </h2>
                 {currentCounterName && (
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--dole-blue)', marginLeft: '0.5rem' }}>
-                    · {currentCounterName}
+                  <span style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    color: 'var(--dole-blue)',
+                    backgroundColor: 'rgba(3, 5, 186, 0.08)',
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(3, 5, 186, 0.2)',
+                  }}>
+                    {currentCounterName}
                   </span>
                 )}
-              </h2>
+              </div>
+              <span className="badge" style={{
+                backgroundColor: queueData.serving?.length > 0 ? 'var(--dole-blue-light)' : '#f1f5f9',
+                color: queueData.serving?.length > 0 ? 'var(--dole-blue)' : '#64748b',
+                fontWeight: 700,
+              }}>
+                {queueData.serving?.length || 0} Active
+              </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {queueData.serving?.length > 0 ? (
                 queueData.serving.map(tx => (
                   <div key={tx.id} className="card" style={{
-                    borderLeft: '6px solid var(--dole-blue)',
+                    borderLeft: '5px solid var(--dole-blue)',
                     padding: '1.25rem',
+                    boxShadow: '0 2px 5px rgba(0, 0, 0, 0.05)',
                   }}>
-                    <div className="flex justify-between items-center" style={{ marginBottom: '0.5rem' }}>
+                    <div className="flex justify-between items-center" style={{ marginBottom: '0.65rem' }}>
                       <div className="flex items-center gap-2">
-                        <span className="mono" style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--dole-blue)' }}>
+                        <span className="mono" style={{ fontSize: '2.1rem', fontWeight: 900, color: 'var(--dole-blue)', letterSpacing: '-0.03em' }}>
                           {tx.queue_no}
                         </span>
                         {tx.is_priority && (
-                          <span className="badge badge-priority">Priority</span>
+                          <span className="badge badge-priority">
+                            ★ Priority
+                          </span>
                         )}
                         <span className="badge badge-serving">
                           {tx.counter_name || 'Window'}
@@ -561,51 +715,61 @@ export default function StaffQueue() {
                       </span>
                     </div>
 
-                    <div style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                        <span><strong>Service:</strong> {tx.service_name}</span>
+                    <div style={{ fontSize: '0.9rem', marginBottom: '0.85rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', marginBottom: '0.25rem' }}>
+                        <span style={{ fontWeight: 700, color: '#0f172a' }}>{tx.service_name}</span>
                         {tx.division_name && (
                           <span style={{
                             fontSize: '0.72rem',
                             backgroundColor: 'rgba(3, 5, 186, 0.08)',
                             color: 'var(--dole-blue)',
                             fontWeight: 700,
-                            padding: '0.1rem 0.4rem',
-                            borderRadius: '3px',
+                            padding: '0.15rem 0.45rem',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(3, 5, 186, 0.15)',
                           }}>
                             {tx.division_name}
                           </span>
                         )}
                       </div>
                       {tx.client_name && (
-                        <div><strong>Client:</strong> {tx.client_name}</div>
+                        <div style={{ color: '#475569', fontSize: '0.875rem' }}>
+                          Client: <strong>{tx.client_name}</strong>
+                        </div>
                       )}
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                        Called at: {tx.called_at ? new Date(tx.called_at).toLocaleTimeString() : '--'}
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <span>Called at: {tx.called_at ? new Date(tx.called_at).toLocaleTimeString() : '--'}</span>
                       </div>
                     </div>
 
                     {/* Assigned Personnel Badge / Edit */}
                     <div style={{
-                      marginBottom: '0.75rem',
-                      padding: '0.45rem 0.8rem',
-                      borderRadius: '6px',
-                      backgroundColor: tx.assigned_personnel ? 'rgba(3, 5, 186, 0.06)' : '#fffbeb',
-                      border: tx.assigned_personnel ? '1px solid rgba(3, 5, 186, 0.2)' : '1.5px solid #f59e0b',
+                      marginBottom: '0.85rem',
+                      padding: '0.55rem 0.85rem',
+                      borderRadius: '8px',
+                      backgroundColor: tx.assigned_personnel ? 'rgba(3, 5, 186, 0.05)' : '#fffbeb',
+                      border: tx.assigned_personnel ? '1px solid rgba(3, 5, 186, 0.18)' : '1.5px solid #f59e0b',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       gap: '0.5rem',
                     }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
-                        <span>👤</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                          <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
                         {tx.assigned_personnel ? (
                           <span style={{ color: 'var(--dole-blue)' }}>
-                            Assigned Personnel: <strong style={{ color: '#0f172a' }}>{tx.assigned_personnel}</strong>
+                            Assigned Officer: <strong style={{ color: '#0f172a' }}>{tx.assigned_personnel}</strong>
                           </span>
                         ) : (
                           <span style={{ color: '#b45309', fontWeight: 700 }}>
-                            ⚠️ No personnel assigned
+                            ⚠️ No officer assigned yet
                           </span>
                         )}
                       </div>
@@ -691,10 +855,34 @@ export default function StaffQueue() {
                   </div>
                 ))
               ) : (
-                <div className="card text-center" style={{ padding: '3rem 1.5rem', color: 'var(--text-muted)' }}>
-                  <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>☕</div>
-                  <p style={{ fontWeight: 600 }}>No clients currently being served.</p>
-                  <p style={{ fontSize: '0.85rem' }}>Select your counter and click <strong>Call Next Client</strong> above.</p>
+                <div className="staff-empty-card">
+                  <div className="staff-empty-icon-circle staff-empty-circle-blue">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                      <line x1="8" y1="21" x2="16" y2="21"></line>
+                      <line x1="12" y1="17" x2="12" y2="21"></line>
+                      <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                  </div>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1e293b', margin: '0 0 0.35rem 0' }}>
+                    Counter Ready for Service
+                  </h3>
+                  <p style={{ fontSize: '0.875rem', color: '#64748b', maxWidth: '360px', margin: '0 auto 0.75rem auto' }}>
+                    No client is currently being served at <strong>{currentCounterName || 'this counter'}</strong>.
+                  </p>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    fontSize: '0.785rem',
+                    color: 'var(--dole-blue)',
+                    backgroundColor: 'rgba(3, 5, 186, 0.05)',
+                    padding: '0.35rem 0.85rem',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(3, 5, 186, 0.15)',
+                  }}>
+                    <span>💡 Click <strong>Call Next Client</strong> above to dispatch the next ticket</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -703,30 +891,65 @@ export default function StaffQueue() {
           {/* Waiting Queue Column */}
           <section>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)' }}>
-                ⏳ Waiting in Line ({queueData.waiting?.length || 0})
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <h2 style={{ fontSize: '1.18rem', fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ color: '#d97706' }}>
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                  <span>Waiting in Line</span>
+                </h2>
                 {currentCounterName && (
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--dole-blue)', marginLeft: '0.5rem' }}>
-                    · {currentCounterName}
+                  <span style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    color: '#64748b',
+                    backgroundColor: '#f1f5f9',
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: '6px',
+                    border: '1px solid #e2e8f0',
+                  }}>
+                    {currentCounterName}
                   </span>
                 )}
-              </h2>
+              </div>
+              <span className="badge" style={{
+                backgroundColor: queueData.waiting?.length > 0 ? '#fffbeb' : '#f1f5f9',
+                color: queueData.waiting?.length > 0 ? '#b45309' : '#64748b',
+                border: queueData.waiting?.length > 0 ? '1px solid #fde68a' : '1px solid #e2e8f0',
+                fontWeight: 700,
+              }}>
+                {queueData.waiting?.length || 0} Waiting
+              </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {queueData.waiting?.length > 0 ? (
-                queueData.waiting.map(tx => (
+                queueData.waiting.map((tx, idx) => (
                   <div key={tx.id} className="card" style={{
-                    padding: '1rem',
+                    padding: '1rem 1.15rem',
                     borderLeft: tx.is_priority ? '5px solid var(--dole-gold)' : '5px solid #cbd5e1',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
                   }}>
                     <div className="flex justify-between items-center" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
                       <div className="flex items-center gap-2">
-                        <span className="mono" style={{ fontSize: '1.4rem', fontWeight: 800 }}>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          color: '#64748b',
+                          backgroundColor: '#f1f5f9',
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '4px',
+                        }}>
+                          #{idx + 1}
+                        </span>
+                        <span className="mono" style={{ fontSize: '1.45rem', fontWeight: 900, color: '#0f172a' }}>
                           {tx.queue_no}
                         </span>
                         {tx.is_priority && (
-                          <span className="badge badge-priority">Priority</span>
+                          <span className="badge badge-priority">
+                            ★ Priority
+                          </span>
                         )}
                       </div>
 
@@ -738,10 +961,10 @@ export default function StaffQueue() {
                               backgroundColor: 'rgba(3, 5, 186, 0.08)',
                               border: '1px solid rgba(3, 5, 186, 0.25)',
                               color: 'var(--dole-blue)',
-                              padding: '0.2rem 0.5rem',
-                              borderRadius: '4px',
+                              padding: '0.25rem 0.55rem',
+                              borderRadius: '6px',
                               fontWeight: 700,
-                              maxWidth: '135px',
+                              maxWidth: '145px',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
@@ -753,7 +976,7 @@ export default function StaffQueue() {
                               onClick={() => handleOpenAssignModal(tx)}
                               className="btn btn-ghost btn-xs"
                               title="Edit assigned personnel"
-                              style={{ padding: '0.1rem 0.3rem', fontSize: '0.75rem' }}
+                              style={{ padding: '0.15rem 0.35rem', fontSize: '0.75rem' }}
                             >
                               ✏️
                             </button>
@@ -769,11 +992,12 @@ export default function StaffQueue() {
                               border: '1px solid #f59e0b',
                               fontWeight: 700,
                               fontSize: '0.8rem',
-                              padding: '0.25rem 0.6rem',
+                              padding: '0.25rem 0.65rem',
+                              borderRadius: '6px',
                             }}
                             title="Assign personnel to enable Call"
                           >
-                            👤 Assign
+                            👤 Assign Officer
                           </button>
                         )}
 
@@ -783,20 +1007,23 @@ export default function StaffQueue() {
                           disabled={actionLoading || !tx.assigned_personnel}
                           className="btn btn-primary btn-sm"
                           style={{
-                            minHeight: '32px',
+                            minHeight: '34px',
+                            borderRadius: '6px',
+                            fontWeight: 700,
+                            padding: '0.35rem 0.85rem',
                             opacity: !tx.assigned_personnel ? 0.45 : 1,
                             cursor: !tx.assigned_personnel ? 'not-allowed' : 'pointer',
                           }}
                           title={!tx.assigned_personnel ? 'Help desk officer must assign a personnel to this queue number before calling' : 'Call this client'}
                         >
-                          Call
+                          📢 Call
                         </button>
                       </div>
                     </div>
 
-                    <div style={{ fontSize: '0.85rem', marginTop: '0.4rem', color: 'var(--text-secondary)' }}>
+                    <div style={{ fontSize: '0.85rem', marginTop: '0.45rem', color: 'var(--text-secondary)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                        <strong>{tx.service_name}</strong>
+                        <strong style={{ color: '#0f172a' }}>{tx.service_name}</strong>
                         {tx.division_name && (
                           <span style={{
                             fontSize: '0.72rem',
@@ -810,19 +1037,45 @@ export default function StaffQueue() {
                           </span>
                         )}
                       </div>
-                      {tx.client_name && <div>Client: {tx.client_name}</div>}
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                        Checked in: {new Date(tx.checked_in_at).toLocaleTimeString()}
+                      {tx.client_name && <div style={{ marginTop: '0.2rem', color: '#475569' }}>Client: <strong>{tx.client_name}</strong></div>}
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <span>Checked in: {new Date(tx.checked_in_at).toLocaleTimeString()}</span>
                       </div>
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="card text-center" style={{ padding: '2.5rem 1.5rem', color: 'var(--text-muted)' }}>
-                  <p style={{ fontWeight: 600 }}>Queue is clear!</p>
-                  <p style={{ fontSize: '0.85rem' }}>
-                    {currentCounterName ? `No clients waiting for ${currentCounterName} right now.` : 'No clients waiting in line right now.'}
+                <div className="staff-empty-card">
+                  <div className="staff-empty-icon-circle staff-empty-circle-green">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                  </div>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1e293b', margin: '0 0 0.35rem 0' }}>
+                    Queue is Clear
+                  </h3>
+                  <p style={{ fontSize: '0.875rem', color: '#64748b', margin: '0 0 0.75rem 0' }}>
+                    {currentCounterName ? `No clients currently waiting for ${currentCounterName}.` : 'No clients waiting in line right now.'}
                   </p>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    fontSize: '0.785rem',
+                    color: '#059669',
+                    backgroundColor: '#ecfdf5',
+                    padding: '0.35rem 0.85rem',
+                    borderRadius: '6px',
+                    border: '1px solid #a7f3d0',
+                  }}>
+                    <span className="pulse-live-dot" />
+                    <span>Real-time listener active • Auto-refreshes on check-in</span>
+                  </div>
                 </div>
               )}
             </div>
