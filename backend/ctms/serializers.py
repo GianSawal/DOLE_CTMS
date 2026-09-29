@@ -84,6 +84,7 @@ class CtmsEmployeeSerializer(serializers.ModelSerializer):
             'division_names',
             'divisions_detail',
             'is_active',
+            'must_change_password',
             'created_at',
             'updated_at',
         ]
@@ -214,12 +215,20 @@ class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
         except Exception:
             pass
 
+        must_change_password = False
+        try:
+            profile = self.user.employee_profile
+            must_change_password = bool(profile.must_change_password)
+        except Exception:
+            pass
+
         data['user'] = {
             'id': self.user.id,
             'username': self.user.username,
             'first_name': self.user.first_name,
             'last_name': self.user.last_name,
             'is_superuser': self.user.is_superuser,
+            'must_change_password': must_change_password,
             'assigned_offices': [
                 {'id': o['office_id'], 'name': o['office__name'], 'code': o['office__code']}
                 for o in assigned_offices

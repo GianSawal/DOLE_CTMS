@@ -287,3 +287,59 @@ class CtmsCoreTestCase(TestCase):
         res_forbidden_call = self.client.post(f"/api/staff/transactions/{tx2.id}/call/", data={"counter": cnt_tssd2.id, "personnel": "Jane Doe"})
         self.assertEqual(res_forbidden_call.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_first_time_login_password_change(self):
+        from .models import CtmsEmployee
+        admin_user = User.objects.create_superuser(username="admin_sec", password="adminpassword")
+
+        # Admin creates new employee
+        self.client.force_authenticate(user=admin_user)
+        res_create = self.client.post("/api/staff/users/", data={
+            "employee_id": "EMP-9999",
+            "first_name": "Pedro",
+            "last_name": "Penduko",
+            "office": self.office.id,
+            "temporary_password": "EMP-9999",
+        }, format='json')
+        self.assertEqual(res_create.status_code, status.HTTP_201_CREATED)
+
+        emp = CtmsEmployee.objects.get(employee_id="EMP-9999")
+        self.assertTrue(emp.must_change_password)
+
+        # Login as new employee
+        self.client.logout()
+        res_login = self.client.post("/api/staff/auth/login/", data={
+            "username": "EMP-9999",
+            "password": "EMP-9999",
+        }, format='json', HTTP_HOST='localhost')
+        self.assertEqual(res_login.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_login.data["user"]["must_change_password"])
+
+        # Change password via endpoint
+        token = res_login.data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        # Reusing same password should fail
+        res_same = self.client.post("/api/staff/auth/change-password/", data={
+            "current_password": "EMP-9999",
+            "new_password": "EMP-9999",
+            "confirm_password": "EMP-9999",
+        }, format='json')
+        self.assertEqual(res_same.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Set new valid password
+        res_change = self.client.post("/api/staff/auth/change-password/", data={
+            "current_password": "EMP-9999",
+            "new_password": "SecurePassword2026!",
+            "confirm_password": "SecurePassword2026!",
+        }, format='json')
+        self.assertEqual(res_change.status_code, status.HTTP_200_OK)
+        self.assertFalse(res_change.data["must_change_password"])
+
+        emp.refresh_from_db()
+        self.assertFalse(emp.must_change_password)
+
+        # Check me endpoint now returns must_change_password = False
+        res_me = self.client.get("/api/staff/auth/me/")
+        self.assertEqual(res_me.status_code, status.HTTP_200_OK)
+        self.assertFalse(res_me.data["must_change_password"])
+

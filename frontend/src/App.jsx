@@ -14,9 +14,10 @@ import StaffTransactions from './pages/staff/StaffTransactions';
 import StaffReports from './pages/staff/StaffReports';
 import StaffQr from './pages/staff/StaffQr';
 import StaffUsers from './pages/staff/StaffUsers';
+import StaffChangePassword from './pages/staff/StaffChangePassword';
 
 function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
 
   if (loading) {
     return (
@@ -28,6 +29,10 @@ function ProtectedRoute({ children }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/staff/login" replace />;
+  }
+
+  if (user?.must_change_password) {
+    return <Navigate to="/staff/change-password" replace />;
   }
 
   return children;
@@ -48,7 +53,33 @@ function AdminRoute({ children }) {
     return <Navigate to="/staff/login" replace />;
   }
 
+  if (user?.must_change_password) {
+    return <Navigate to="/staff/change-password" replace />;
+  }
+
   if (!user?.is_superuser) {
+    return <Navigate to="/staff/queue" replace />;
+  }
+
+  return children;
+}
+
+function ChangePasswordRoute({ children }) {
+  const { user, isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: 'var(--text-muted)' }}>Verifying credentials...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/staff/login" replace />;
+  }
+
+  if (!user?.must_change_password) {
     return <Navigate to="/staff/queue" replace />;
   }
 
@@ -105,6 +136,14 @@ export default function App() {
               <AdminRoute>
                 <StaffUsers />
               </AdminRoute>
+            }
+          />
+          <Route
+            path="/staff/change-password"
+            element={
+              <ChangePasswordRoute>
+                <StaffChangePassword />
+              </ChangePasswordRoute>
             }
           />
 

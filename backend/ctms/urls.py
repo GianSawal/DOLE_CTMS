@@ -10,6 +10,7 @@ from .views import (
     PublicDisplayBoardView,
     StaffLoginView,
     StaffMeView,
+    StaffChangePasswordView,
     StaffQueueView,
     StaffCreateWalkinView,
     StaffCallNextView,
@@ -47,6 +48,7 @@ urlpatterns = [
     path('staff/auth/login/', StaffLoginView.as_view(), name='staff-login'),
     path('staff/auth/refresh/', TokenRefreshView.as_view(), name='staff-refresh'),
     path('staff/auth/me/', StaffMeView.as_view(), name='staff-me'),
+    path('staff/auth/change-password/', StaffChangePasswordView.as_view(), name='staff-change-password'),
 
     # Staff queue operations
     path('staff/queue/', StaffQueueView.as_view(), name='staff-queue'),

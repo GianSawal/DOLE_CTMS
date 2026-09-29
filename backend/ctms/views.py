@@ -69,9 +69,11 @@ class StaffMeView(APIView):
         assigned_offices = get_staff_offices(user)
         assigned_divisions = get_staff_divisions(user)
         employee_data = None
+        must_change_password = False
         try:
             profile = user.employee_profile
             employee_data = CtmsEmployeeSerializer(profile).data
+            must_change_password = bool(profile.must_change_password)
         except Exception:
             pass
 
@@ -81,6 +83,7 @@ class StaffMeView(APIView):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "is_superuser": user.is_superuser,
+            "must_change_password": must_change_password,
             "assigned_offices": CsmOfficeSerializer(assigned_offices, many=True).data,
             "assigned_divisions": CsmDivisionSerializer(assigned_divisions, many=True).data,
             "employee_profile": employee_data,
@@ -954,9 +957,11 @@ class StaffEmployeeViewSet(viewsets.ModelViewSet):
         new_pwd = str(request.data.get('password', '')).strip() or employee.employee_id
         employee.user.set_password(new_pwd)
         employee.user.save()
+        employee.must_change_password = True
+        employee.save(update_fields=['must_change_password'])
         return Response({
             "status": "success",
-            "message": f"Password for {employee.employee_id} ({employee.full_name}) has been reset to '{new_pwd}'."
+            "message": f"Password for {employee.employee_id} ({employee.full_name}) has been reset to '{new_pwd}'. They will be required to change it on their next login."
         })
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
@@ -967,6 +972,55 @@ class StaffEmployeeViewSet(viewsets.ModelViewSet):
         return Response({
             "status": "success",
             "is_active": employee.user.is_active
+        })
+
+
+class StaffChangePasswordView(APIView):
+    """
+    Allows authenticated staff to change their temporary password.
+    Clears must_change_password flag upon successful change.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        current_password = request.data.get('current_password', '').strip()
+        new_password = request.data.get('new_password', '').strip()
+        confirm_password = request.data.get('confirm_password', '').strip()
+
+        if not new_password:
+            return Response({"detail": "New password cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(new_password) < 6:
+            return Response({"detail": "Password must be at least 6 characters long."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if confirm_password and new_password != confirm_password:
+            return Response({"detail": "New passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # If current_password is provided, verify it
+        if current_password:
+            if not user.check_password(current_password):
+                return Response({"detail": "Current temporary password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Disallow setting new password to the exact same temporary password / employee_id
+        if user.check_password(new_password):
+            return Response({"detail": "New password cannot be the same as your current temporary password."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+
+        # Clear must_change_password flag on employee profile
+        try:
+            profile = user.employee_profile
+            profile.must_change_password = False
+            profile.save(update_fields=['must_change_password'])
+        except Exception:
+            pass
+
+        return Response({
+            "status": "success",
+            "message": "Password updated successfully. You can now access the staff portal.",
+            "must_change_password": False,
         })
 
 

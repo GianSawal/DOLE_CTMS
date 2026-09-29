@@ -110,5 +110,14 @@ export const staffApi = {
   toggleEmployeeActive: (id) => apiRequest(`/staff/users/${id}/toggle-active/`, {
     method: 'POST',
   }),
+
+  changePassword: (newPassword, confirmPassword, currentPassword = '') => apiRequest('/staff/auth/change-password/', {
+    method: 'POST',
+    body: JSON.stringify({
+      new_password: newPassword,
+      confirm_password: confirmPassword,
+      current_password: currentPassword,
+    }),
+  }),
 };
 

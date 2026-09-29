@@ -141,6 +141,7 @@ class CtmsEmployee(models.Model):
     position = models.CharField(max_length=150, blank=True, default='')
     office = models.ForeignKey(CsmOffice, on_delete=models.PROTECT, related_name='employees')
     divisions = models.ManyToManyField(CsmDivision, blank=True, related_name='employees', db_table='ctms_employee_divisions')
+    must_change_password = models.BooleanField(default=True, help_text="Requires password change on first login or after reset")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
