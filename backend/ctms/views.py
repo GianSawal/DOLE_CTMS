@@ -29,7 +29,9 @@ from .models import (
     CsmResponse,
     CtmsCounter,
     CtmsStaffOffice,
+    CtmsStaffDivision,
     CtmsEmployee,
+    DolePersonnel,
     CtmsDisplayConfig,
     CtmsTransaction,
 )
@@ -40,6 +42,8 @@ from .serializers import (
     CtmsCounterSerializer,
     CtmsStaffOfficeSerializer,
     CtmsEmployeeSerializer,
+    DolePersonnelSerializer,
+    CtmsUserAccountSerializer,
     CheckinRequestSerializer,
     TicketPublicSerializer,
     StaffTransactionSerializer,
@@ -107,15 +111,18 @@ def get_staff_divisions(user):
     """
     Returns queryset of CsmDivision the staff user is allowed to access.
     Superusers have access to all divisions.
-    Staff members with employee profiles have access to their assigned divisions.
+    Staff members with assigned divisions have access to their assigned divisions.
     """
     if not user or not user.is_authenticated or not user.is_staff:
         return CsmDivision.objects.none()
     if user.is_superuser:
         return CsmDivision.objects.all().order_by('id')
+    div_ids = CtmsStaffDivision.objects.filter(user=user).values_list('division_id', flat=True)
+    if div_ids.exists():
+        return CsmDivision.objects.filter(id__in=div_ids).order_by('id')
     try:
         profile = getattr(user, 'employee_profile', None)
-        if profile:
+        if profile and profile.divisions.exists():
             return profile.divisions.all().order_by('id')
     except Exception:
         pass
@@ -430,26 +437,38 @@ def validate_personnel_division_assignment(tx, personnel_name_or_id):
 
     clean_str = str(personnel_name_or_id).strip()
 
-    # Look up by employee_id or username first
-    emp = CtmsEmployee.objects.filter(
-        models.Q(employee_id__iexact=clean_str) |
-        models.Q(user__username__iexact=clean_str)
-    ).first()
+    # Look up in DolePersonnel by employee_id first
+    personnel = DolePersonnel.objects.filter(employee_id__iexact=clean_str).first()
 
-    # If not found by ID, look up by full name or parts
-    if not emp:
-        for candidate in CtmsEmployee.objects.all().prefetch_related('divisions'):
+    # If not found by ID, look up by full name or parts in DolePersonnel
+    if not personnel:
+        for candidate in DolePersonnel.objects.all().prefetch_related('divisions'):
             c_full = candidate.full_name.strip().lower()
             c_simple = f"{candidate.first_name} {candidate.last_name}".strip().lower()
             if clean_str.lower() in (c_full, c_simple) or c_full in clean_str.lower():
-                emp = candidate
+                personnel = candidate
                 break
 
-    if emp:
-        emp_divs = [d.name.strip().upper().replace(' ', '') for d in emp.divisions.all()]
-        if emp_divs and svc_div not in emp_divs and 'ALL' not in emp_divs:
-            div_names = ', '.join([d.name for d in emp.divisions.all()])
-            return False, f"Cannot assign {emp.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {tx.service.name} ({tx.service.division.name})."
+    # Fallback to CtmsEmployee if any
+    if not personnel:
+        emp = CtmsEmployee.objects.filter(
+            models.Q(employee_id__iexact=clean_str) |
+            models.Q(user__username__iexact=clean_str)
+        ).first()
+        if not emp:
+            for candidate in CtmsEmployee.objects.all().prefetch_related('divisions'):
+                c_full = candidate.full_name.strip().lower()
+                c_simple = f"{candidate.first_name} {candidate.last_name}".strip().lower()
+                if clean_str.lower() in (c_full, c_simple) or c_full in clean_str.lower():
+                    emp = candidate
+                    break
+        personnel = emp
+
+    if personnel:
+        p_divs = [d.name.strip().upper().replace(' ', '') for d in personnel.divisions.all()]
+        if p_divs and svc_div not in p_divs and 'ALL' not in p_divs:
+            div_names = ', '.join([d.name for d in personnel.divisions.all()])
+            return False, f"Cannot assign {personnel.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {tx.service.name} ({tx.service.division.name})."
 
     return True, None
 
@@ -895,182 +914,199 @@ class CtmsStaffOfficeViewSet(viewsets.ModelViewSet):
     queryset = CtmsStaffOffice.objects.all().select_related('user', 'office')
 
 
-class StaffEmployeeViewSet(viewsets.ModelViewSet):
+class StaffUserAccountViewSet(viewsets.ModelViewSet):
     """
-    CRUD ViewSet for managing DOLE staff employees.
+    CRUD ViewSet for managing user login accounts (User model).
     Accessible only by superuser administrators.
     """
-    serializer_class = CtmsEmployeeSerializer
+    serializer_class = CtmsUserAccountSerializer
     permission_classes = [IsAdminUserOnly]
-    queryset = CtmsEmployee.objects.all().select_related('user', 'office').prefetch_related('divisions').order_by('-id')
+    queryset = User.objects.all().prefetch_related('staff_offices__office', 'staff_divisions__division').order_by('-is_superuser', 'username')
 
     def get_queryset(self):
-        qs = CtmsEmployee.objects.all().select_related('user', 'office').prefetch_related('divisions').order_by('-id')
+        qs = User.objects.all().prefetch_related('staff_offices__office', 'staff_divisions__division').order_by('-is_superuser', 'username')
         office_id = self.request.query_params.get('office')
         if office_id:
-            qs = qs.filter(office_id=office_id)
+            qs = qs.filter(staff_offices__office_id=office_id)
         search = self.request.query_params.get('search')
         if search:
             qs = qs.filter(
-                models.Q(employee_id__icontains=search) |
+                models.Q(username__icontains=search) |
                 models.Q(first_name__icontains=search) |
-                models.Q(last_name__icontains=search) |
-                models.Q(position__icontains=search)
+                models.Q(last_name__icontains=search)
             )
-        return qs
+        division_param = self.request.query_params.get('division')
+        if division_param:
+            div_clean = division_param.strip()
+            names = [div_clean]
+            if div_clean.upper() in ('TSSD1', 'TSSD 1'):
+                names = ['TSSD 1', 'TSSD1']
+            elif div_clean.upper() in ('TSSD2', 'TSSD 2'):
+                names = ['TSSD 2', 'TSSD2']
+            elif div_clean.upper() == 'IMSD':
+                names = ['IMSD']
+            elif div_clean.upper() == 'MALSU':
+                names = ['MALSU']
+            qs = qs.filter(models.Q(staff_divisions__division__name__in=names) | models.Q(staff_divisions__division__id__in=[div_clean] if div_clean.isdigit() else []))
+        return qs.distinct()
+
+    def get_object(self):
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        val = self.kwargs.get(lookup_url_kwarg)
+        user = None
+        if str(val).isdigit():
+            emp = CtmsEmployee.objects.filter(pk=val).first()
+            if emp and emp.user:
+                user = emp.user
+            if not user:
+                user = User.objects.filter(pk=val).first()
+        if not user:
+            user = User.objects.filter(username__iexact=str(val)).first()
+        if not user:
+            raise Http404(f"No user found matching '{val}'.")
+        self.check_object_permissions(self.request, user)
+        return user
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         data = request.data
-        employee_id = str(data.get('employee_id', '')).strip()
+        username = str(data.get('username', '') or data.get('employee_id', '')).strip()
+        password = str(data.get('password', '') or data.get('temporary_password', '')).strip() or username
         first_name = str(data.get('first_name', '')).strip()
         middle_name = str(data.get('middle_name', '')).strip()
         last_name = str(data.get('last_name', '')).strip()
         position = str(data.get('position', '')).strip()
+        role = str(data.get('role', 'staff')).strip().lower()
         office_id = data.get('office')
         division_ids = data.get('division_ids', [])
-        temporary_password = str(data.get('temporary_password', '')).strip() or employee_id
 
-        if not employee_id:
-            return Response({"detail": "Employee ID is required."}, status=status.HTTP_400_BAD_REQUEST)
-        if not first_name or not last_name:
-            return Response({"detail": "First name and last name are required."}, status=status.HTTP_400_BAD_REQUEST)
-        if not office_id:
-            return Response({"detail": "Office is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not username:
+            return Response({"detail": "Username is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not password:
+            return Response({"detail": "Password is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check unique employee_id in User and CtmsEmployee
-        if User.objects.filter(username__iexact=employee_id).exists():
-            return Response({"detail": f"A user with username/Employee ID '{employee_id}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
-        if CtmsEmployee.objects.filter(employee_id__iexact=employee_id).exists():
-            return Response({"detail": f"An employee with Employee ID '{employee_id}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(username__iexact=username).exists():
+            return Response({"detail": f"A user with username '{username}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
-        office = get_object_or_404(CsmOffice, pk=office_id)
-
-        # Create Django User
-        user = User.objects.create(
-            username=employee_id,
+        is_superuser = (role in ('admin', 'administrator', 'true', '1'))
+        user = User.objects.create_user(
+            username=username,
+            password=password,
             first_name=first_name,
             last_name=last_name,
             is_staff=True,
-            is_superuser=False,
+            is_superuser=is_superuser,
             is_active=True,
         )
-        user.set_password(temporary_password)
-        user.save()
 
-        # Create Employee profile
-        employee = CtmsEmployee.objects.create(
+        office = None
+        if office_id:
+            office = get_object_or_404(CsmOffice, pk=office_id)
+            CtmsStaffOffice.objects.create(user=user, office=office)
+
+        # Create/link CtmsEmployee for backwards compatibility with legacy tests
+        emp = CtmsEmployee.objects.create(
             user=user,
-            employee_id=employee_id,
+            employee_id=username,
             first_name=first_name,
             middle_name=middle_name,
             last_name=last_name,
             position=position,
-            office=office,
+            office=office or CsmOffice.objects.first(),
+            is_active=True,
+            must_change_password=True,
         )
 
-        # Set divisions
         if division_ids:
             id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
             name_filters = models.Q(name__in=[str(x) for x in division_ids])
-            normalized_names = []
-            for d in division_ids:
-                ds = str(d).strip().upper()
-                if ds == 'TSSD1':
-                    normalized_names.append('TSSD 1')
-                elif ds == 'TSSD2':
-                    normalized_names.append('TSSD 2')
-            if normalized_names:
-                name_filters |= models.Q(name__in=normalized_names)
+            if 'TSSD1' in division_ids:
+                name_filters |= models.Q(name='TSSD 1')
+            if 'TSSD2' in division_ids:
+                name_filters |= models.Q(name='TSSD 2')
+            matched = CsmDivision.objects.filter(id_filters | name_filters)
+            emp.divisions.set(matched)
+            for div in matched:
+                CtmsStaffDivision.objects.get_or_create(user=user, division=div)
 
-            divs = CsmDivision.objects.filter(id_filters | name_filters)
-            employee.divisions.set(divs)
-
-        # Assign CtmsStaffOffice
-        CtmsStaffOffice.objects.get_or_create(user=user, office=office)
-
-        serializer = self.get_serializer(employee)
+        serializer = self.get_serializer(user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @transaction.atomic
     def update(self, request, *args, **kwargs):
-        employee = self.get_object()
+        user = self.get_object()
         data = request.data
 
         if 'first_name' in data:
-            employee.first_name = str(data['first_name']).strip()
-            employee.user.first_name = employee.first_name
-        if 'middle_name' in data:
-            employee.middle_name = str(data['middle_name']).strip()
+            user.first_name = str(data['first_name']).strip()
         if 'last_name' in data:
-            employee.last_name = str(data['last_name']).strip()
-            employee.user.last_name = employee.last_name
-        if 'position' in data:
-            employee.position = str(data['position']).strip()
-        if 'office' in data and data['office']:
-            office = get_object_or_404(CsmOffice, pk=data['office'])
-            employee.office = office
-            CtmsStaffOffice.objects.filter(user=employee.user).delete()
-            CtmsStaffOffice.objects.create(user=employee.user, office=office)
+            user.last_name = str(data['last_name']).strip()
+        if 'role' in data:
+            user.is_superuser = (str(data['role']).lower() in ('admin', 'administrator', 'true', '1'))
         if 'is_active' in data:
-            employee.user.is_active = bool(data['is_active'])
+            user.is_active = bool(data['is_active'])
+        if 'password' in data and data['password']:
+            user.set_password(str(data['password']).strip())
         if 'temporary_password' in data and data['temporary_password']:
-            pwd = str(data['temporary_password']).strip()
-            employee.user.set_password(pwd)
+            user.set_password(str(data['temporary_password']).strip())
+        user.save()
 
-        employee.user.save()
-        employee.save()
+        if 'office' in data:
+            office_id = data['office']
+            CtmsStaffOffice.objects.filter(user=user).delete()
+            if office_id:
+                office = get_object_or_404(CsmOffice, pk=office_id)
+                CtmsStaffOffice.objects.create(user=user, office=office)
 
         if 'division_ids' in data:
             division_ids = data.get('division_ids', [])
-            id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
-            name_filters = models.Q(name__in=[str(x) for x in division_ids])
-            normalized_names = []
-            for d in division_ids:
-                ds = str(d).strip().upper()
-                if ds == 'TSSD1':
-                    normalized_names.append('TSSD 1')
-                elif ds == 'TSSD2':
-                    normalized_names.append('TSSD 2')
-            if normalized_names:
-                name_filters |= models.Q(name__in=normalized_names)
+            CtmsStaffDivision.objects.filter(user=user).delete()
+            if division_ids:
+                id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
+                name_filters = models.Q(name__in=[str(x) for x in division_ids])
+                if 'TSSD1' in division_ids:
+                    name_filters |= models.Q(name='TSSD 1')
+                if 'TSSD2' in division_ids:
+                    name_filters |= models.Q(name='TSSD 2')
+                matched = CsmDivision.objects.filter(id_filters | name_filters)
+                for div in matched:
+                    CtmsStaffDivision.objects.get_or_create(user=user, division=div)
 
-            divs = CsmDivision.objects.filter(id_filters | name_filters)
-            employee.divisions.set(divs)
-
-        serializer = self.get_serializer(employee)
+        serializer = self.get_serializer(user)
         return Response(serializer.data)
 
     @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        employee = self.get_object()
-        user = employee.user
-        employee.delete()
-        if user:
-            user.delete()
+        user = self.get_object()
+        if user == request.user:
+            return Response({"detail": "You cannot delete your own logged-in account."}, status=status.HTTP_400_BAD_REQUEST)
+        user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'], url_path='reset-password')
     def reset_password(self, request, pk=None):
-        employee = self.get_object()
-        new_pwd = str(request.data.get('password', '')).strip() or employee.employee_id
-        employee.user.set_password(new_pwd)
-        employee.user.save()
-        employee.must_change_password = True
-        employee.save(update_fields=['must_change_password'])
+        user = self.get_object()
+        new_pwd = str(request.data.get('password', '')).strip() or str(request.data.get('new_password', '')).strip()
+        if not new_pwd:
+            return Response({"detail": "New password cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_pwd)
+        user.save()
         return Response({
             "status": "success",
-            "message": f"Password for {employee.employee_id} ({employee.full_name}) has been reset to '{new_pwd}'. They will be required to change it on their next login."
+            "message": f"Password for {user.username} has been reset to '{new_pwd}'."
         })
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):
-        employee = self.get_object()
-        employee.user.is_active = not employee.user.is_active
-        employee.user.save()
+        user = self.get_object()
+        if user == request.user:
+            return Response({"detail": "You cannot deactivate your own logged-in account."}, status=status.HTTP_400_BAD_REQUEST)
+        user.is_active = not user.is_active
+        user.save()
         return Response({
             "status": "success",
-            "is_active": employee.user.is_active
+            "is_active": user.is_active,
+            "message": f"Account {user.username} is now {'active' if user.is_active else 'inactive'}."
         })
 
 
@@ -1265,8 +1301,8 @@ class StaffPersonnelViewSet(viewsets.ModelViewSet):
     - create/update/delete accessible only to superuser administrators.
     - Creates personnel profiles WITHOUT requiring or creating login user accounts.
     """
-    serializer_class = CtmsEmployeeSerializer
-    queryset = CtmsEmployee.objects.all().select_related('office', 'user').prefetch_related('divisions').order_by('last_name', 'first_name')
+    serializer_class = DolePersonnelSerializer
+    queryset = DolePersonnel.objects.all().select_related('office').prefetch_related('divisions').order_by('last_name', 'first_name')
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
@@ -1274,12 +1310,11 @@ class StaffPersonnelViewSet(viewsets.ModelViewSet):
         return [IsAdminUserOnly()]
 
     def get_queryset(self):
-        qs = CtmsEmployee.objects.all().select_related('office', 'user').prefetch_related('divisions').order_by('last_name', 'first_name')
+        qs = DolePersonnel.objects.all().select_related('office').prefetch_related('divisions').order_by('last_name', 'first_name')
 
-        # If requested by staff (not admin viewing all in personnel tab) or if active_only requested
         active_only = self.request.query_params.get('active_only')
         if active_only == 'true' or not self.request.user.is_superuser:
-            qs = qs.filter(models.Q(is_active=True) & (models.Q(user__isnull=True) | models.Q(user__is_active=True)))
+            qs = qs.filter(is_active=True)
 
         office_id = self.request.query_params.get('office')
         if office_id:
@@ -1330,14 +1365,13 @@ class StaffPersonnelViewSet(viewsets.ModelViewSet):
         if not division_ids:
             return Response({"detail": "At least one division is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if CtmsEmployee.objects.filter(employee_id__iexact=employee_id).exists():
+        if DolePersonnel.objects.filter(employee_id__iexact=employee_id).exists():
             return Response({"detail": f"Personnel with Employee ID '{employee_id}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
         office = get_object_or_404(CsmOffice, pk=office_id)
 
         # Create pure Personnel record without user account
-        personnel = CtmsEmployee.objects.create(
-            user=None,
+        personnel = DolePersonnel.objects.create(
             employee_id=employee_id,
             first_name=first_name,
             middle_name=middle_name,
@@ -1358,7 +1392,7 @@ class StaffPersonnelViewSet(viewsets.ModelViewSet):
             matched_divisions = CsmDivision.objects.filter(id_filters | name_filters)
             personnel.divisions.set(matched_divisions)
 
-        return Response(CtmsEmployeeSerializer(personnel).data, status=status.HTTP_201_CREATED)
+        return Response(DolePersonnelSerializer(personnel).data, status=status.HTTP_201_CREATED)
 
     @transaction.atomic
     def update(self, request, *args, **kwargs):
@@ -1392,16 +1426,13 @@ class StaffPersonnelViewSet(viewsets.ModelViewSet):
             matched_divisions = CsmDivision.objects.filter(id_filters | name_filters)
             instance.divisions.set(matched_divisions)
 
-        return Response(CtmsEmployeeSerializer(instance).data)
+        return Response(DolePersonnelSerializer(instance).data)
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):
         instance = self.get_object()
         instance.is_active = not instance.is_active
         instance.save()
-        if instance.user:
-            instance.user.is_active = instance.is_active
-            instance.user.save()
         return Response({
             "status": "success",
             "is_active": instance.is_active,

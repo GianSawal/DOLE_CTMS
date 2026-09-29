@@ -10,7 +10,7 @@ const TARGET_DIVISIONS = [
 ];
 
 export default function StaffUsers() {
-  const [employees, setEmployees] = useState([]);
+  const [users, setUsers] = useState([]);
   const [offices, setOffices] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,24 +31,22 @@ export default function StaffUsers() {
   const [editingId, setEditingId] = useState(null);
 
   // Form Fields
+  const [username, setUsername] = useState('');
   const [firstName, setFirstName] = useState('');
-  const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [employeeId, setEmployeeId] = useState('');
-  const [position, setPosition] = useState('');
+  const [role, setRole] = useState('staff'); // 'staff' | 'admin'
   const [officeId, setOfficeId] = useState('');
   const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
-  const [temporaryPassword, setTemporaryPassword] = useState('');
-  const [passwordEdited, setPasswordEdited] = useState(false);
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // Reset Password Modal
-  const [resetModalEmployee, setResetModalEmployee] = useState(null);
+  const [resetModalUser, setResetModalUser] = useState(null);
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [resetSubmitting, setResetSubmitting] = useState(false);
 
   // Delete Confirmation Modal
-  const [deleteModalEmployee, setDeleteModalEmployee] = useState(null);
+  const [deleteModalUser, setDeleteModalUser] = useState(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const showToast = (message, type = 'success') => {
@@ -59,14 +57,14 @@ export default function StaffUsers() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [empRes, offRes, divRes] = await Promise.allSettled([
+      const [uRes, offRes, divRes] = await Promise.allSettled([
         staffApi.getEmployees(),
         staffApi.getOffices(),
         staffApi.getDivisions(),
       ]);
 
-      if (empRes.status === 'fulfilled') {
-        setEmployees(Array.isArray(empRes.value) ? empRes.value : []);
+      if (uRes.status === 'fulfilled') {
+        setUsers(Array.isArray(uRes.value) ? uRes.value : []);
       }
       if (offRes.status === 'fulfilled') {
         setOffices(Array.isArray(offRes.value) ? offRes.value : []);
@@ -75,7 +73,7 @@ export default function StaffUsers() {
         setDivisions(Array.isArray(divRes.value) ? divRes.value : []);
       }
     } catch (err) {
-      showToast(err.message || 'Failed to load user management data', 'error');
+      showToast(err.message || 'Failed to load user accounts data', 'error');
     } finally {
       setLoading(false);
     }
@@ -101,45 +99,32 @@ export default function StaffUsers() {
   const openCreateModal = () => {
     setModalMode('create');
     setEditingId(null);
+    setUsername('');
     setFirstName('');
-    setMiddleName('');
     setLastName('');
-    setEmployeeId('');
-    setPosition('');
+    setRole('staff');
     setOfficeId(offices[0]?.id || '');
     setSelectedDivisionIds([]);
-    setTemporaryPassword('');
-    setPasswordEdited(false);
+    setPassword('');
     setShowPassword(false);
     setShowModal(true);
   };
 
   // Open Edit Modal
-  const openEditModal = (emp) => {
+  const openEditModal = (u) => {
     setModalMode('edit');
-    setEditingId(emp.id);
-    setFirstName(emp.first_name || '');
-    setMiddleName(emp.middle_name || '');
-    setLastName(emp.last_name || '');
-    setEmployeeId(emp.employee_id || '');
-    setPosition(emp.position || '');
-    setOfficeId(emp.office || '');
+    setEditingId(u.id);
+    setUsername(u.username || '');
+    setFirstName(u.first_name || '');
+    setLastName(u.last_name || '');
+    setRole(u.is_superuser ? 'admin' : 'staff');
+    setOfficeId(u.office || '');
 
-    const currentDivIds = emp.division_ids || [];
+    const currentDivIds = u.division_ids || [];
     setSelectedDivisionIds(currentDivIds);
-    setTemporaryPassword('');
-    setPasswordEdited(false);
+    setPassword('');
     setShowPassword(false);
     setShowModal(true);
-  };
-
-  // Sync temporary password with employee ID when typing in create mode
-  const handleEmployeeIdChange = (e) => {
-    const val = e.target.value.toUpperCase().replace(/\s+/g, '');
-    setEmployeeId(val);
-    if (modalMode === 'create' && !passwordEdited) {
-      setTemporaryPassword(val);
-    }
   };
 
   // Toggle division selection
@@ -166,64 +151,55 @@ export default function StaffUsers() {
   // Submit Add / Edit Form
   const handleSubmitForm = async (e) => {
     e.preventDefault();
-    if (!firstName.trim() || !lastName.trim()) {
-      showToast('First Name and Last Name are required.', 'error');
+    if (!username.trim()) {
+      showToast('Username is required.', 'error');
       return;
     }
-    if (!employeeId.trim()) {
-      showToast('Employee ID is required.', 'error');
+    if (modalMode === 'create' && !password.trim()) {
+      showToast('Password is required for creating a new user account.', 'error');
       return;
     }
     if (!officeId) {
       showToast('Please select an Office.', 'error');
       return;
     }
-    if (selectedDivisionIds.length === 0) {
-      if (!window.confirm('No division selected. The employee will not be able to access division queue lines. Continue?')) {
-        return;
-      }
-    }
 
     setSubmitting(true);
     try {
-      const finalTemporaryPassword = temporaryPassword.trim() || employeeId.trim();
-
       if (modalMode === 'create') {
         const payload = {
+          username: username.trim(),
+          password: password.trim(),
           first_name: firstName.trim(),
-          middle_name: middleName.trim(),
           last_name: lastName.trim(),
-          employee_id: employeeId.trim(),
-          position: position.trim(),
+          role: role,
           office: officeId,
           division_ids: selectedDivisionIds,
-          temporary_password: finalTemporaryPassword,
         };
         await staffApi.createEmployee(payload);
 
-        // Show prominent account creation confirmation
         setCreatedAccountInfo({
-          name: `${firstName.trim()} ${lastName.trim()}`,
-          username: employeeId.trim(),
-          password: finalTemporaryPassword,
+          name: `${firstName.trim()} ${lastName.trim()}`.trim() || username.trim(),
+          username: username.trim(),
+          password: password.trim(),
+          role: role === 'admin' ? 'Administrator' : 'Staff',
           office: offices.find((o) => String(o.id) === String(officeId))?.name || 'Assigned Office',
         });
 
-        showToast(`Account successfully created on database! Username: ${employeeId.trim()}`);
+        showToast(`User account '${username.trim()}' created successfully!`);
       } else {
         const payload = {
           first_name: firstName.trim(),
-          middle_name: middleName.trim(),
           last_name: lastName.trim(),
-          position: position.trim(),
+          role: role,
           office: officeId,
           division_ids: selectedDivisionIds,
         };
-        if (temporaryPassword.trim()) {
-          payload.temporary_password = temporaryPassword.trim();
+        if (password.trim()) {
+          payload.password = password.trim();
         }
         await staffApi.updateEmployee(editingId, payload);
-        showToast(`Employee ${employeeId} updated successfully.`);
+        showToast(`User account '${username}' updated successfully.`);
       }
       setShowModal(false);
       loadData();
@@ -234,20 +210,23 @@ export default function StaffUsers() {
     }
   };
 
-  // Trigger Reset Password Modal
-  const openResetPasswordModal = (emp) => {
-    setResetModalEmployee(emp);
-    setNewPasswordInput(emp.employee_id);
+  // Reset Password Modal
+  const openResetPasswordModal = (u) => {
+    setResetModalUser(u);
+    setNewPasswordInput('');
   };
 
   const handleConfirmResetPassword = async () => {
-    if (!resetModalEmployee) return;
+    if (!resetModalUser) return;
+    if (!newPasswordInput.trim()) {
+      showToast('Please enter a new password.', 'error');
+      return;
+    }
     setResetSubmitting(true);
     try {
-      const pwd = newPasswordInput.trim() || resetModalEmployee.employee_id;
-      const res = await staffApi.resetEmployeePassword(resetModalEmployee.id, pwd);
-      showToast(res.message || `Password for ${resetModalEmployee.employee_id} has been reset.`);
-      setResetModalEmployee(null);
+      const res = await staffApi.resetEmployeePassword(resetModalUser.id, newPasswordInput.trim());
+      showToast(res.message || `Password for ${resetModalUser.username} has been reset.`);
+      setResetModalUser(null);
     } catch (err) {
       showToast(err.message || 'Failed to reset password', 'error');
     } finally {
@@ -256,64 +235,64 @@ export default function StaffUsers() {
   };
 
   // Toggle Active Status
-  const handleToggleActive = async (emp) => {
+  const handleToggleActive = async (u) => {
     try {
-      const res = await staffApi.toggleEmployeeActive(emp.id);
-      showToast(`User ${emp.employee_id} is now ${res.is_active ? 'Active' : 'Inactive'}.`);
-      setEmployees((prev) =>
-        prev.map((item) => (item.id === emp.id ? { ...item, is_active: res.is_active } : item))
+      const res = await staffApi.toggleEmployeeActive(u.id);
+      showToast(`Account ${u.username} is now ${res.is_active ? 'Active' : 'Inactive'}.`);
+      setUsers((prev) =>
+        prev.map((item) => (item.id === u.id ? { ...item, is_active: res.is_active } : item))
       );
     } catch (err) {
       showToast(err.message || 'Failed to toggle account status', 'error');
     }
   };
 
-  // Trigger Delete Confirmation
-  const openDeleteModal = (emp) => {
-    setDeleteModalEmployee(emp);
+  // Delete Confirmation Modal
+  const openDeleteModal = (u) => {
+    setDeleteModalUser(u);
   };
 
   const handleConfirmDelete = async () => {
-    if (!deleteModalEmployee) return;
+    if (!deleteModalUser) return;
     setDeleteSubmitting(true);
     try {
-      await staffApi.deleteEmployee(deleteModalEmployee.id);
-      showToast(`Employee ${deleteModalEmployee.employee_id} deleted.`);
-      setDeleteModalEmployee(null);
-      setEmployees((prev) => prev.filter((item) => item.id !== deleteModalEmployee.id));
+      await staffApi.deleteEmployee(deleteModalUser.id);
+      showToast(`Account ${deleteModalUser.username} deleted.`);
+      setDeleteModalUser(null);
+      setUsers((prev) => prev.filter((item) => item.id !== deleteModalUser.id));
     } catch (err) {
-      showToast(err.message || 'Failed to delete employee', 'error');
+      showToast(err.message || 'Failed to delete account', 'error');
     } finally {
       setDeleteSubmitting(false);
     }
   };
 
-  // Filtered employees list
-  const filteredEmployees = useMemo(() => {
-    return employees.filter((emp) => {
+  // Filtered users list
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
-        (emp.employee_id && emp.employee_id.toLowerCase().includes(q)) ||
-        (emp.first_name && emp.first_name.toLowerCase().includes(q)) ||
-        (emp.last_name && emp.last_name.toLowerCase().includes(q)) ||
-        (emp.position && emp.position.toLowerCase().includes(q)) ||
-        (emp.office_name && emp.office_name.toLowerCase().includes(q));
+        (u.username && u.username.toLowerCase().includes(q)) ||
+        (u.first_name && u.first_name.toLowerCase().includes(q)) ||
+        (u.last_name && u.last_name.toLowerCase().includes(q)) ||
+        (u.office_name && u.office_name.toLowerCase().includes(q));
 
-      const matchesOffice = !officeFilter || String(emp.office) === String(officeFilter);
+      const matchesOffice = !officeFilter || String(u.office) === String(officeFilter);
 
       const matchesDivision =
         !divisionFilter ||
-        (emp.division_names && emp.division_names.some((d) => d.toLowerCase().includes(divisionFilter.toLowerCase())));
+        (u.division_names && u.division_names.some((d) => d.toLowerCase().includes(divisionFilter.toLowerCase())));
 
       return matchesSearch && matchesOffice && matchesDivision;
     });
-  }, [employees, searchQuery, officeFilter, divisionFilter]);
+  }, [users, searchQuery, officeFilter, divisionFilter]);
 
   // Summary counts
-  const totalEmployees = employees.length;
-  const activeCount = employees.filter((e) => e.is_active).length;
-  const officeCount = new Set(employees.map((e) => e.office)).size;
+  const totalUsers = users.length;
+  const activeCount = users.filter((u) => u.is_active).length;
+  const adminCount = users.filter((u) => u.is_superuser).length;
+  const staffCount = users.filter((u) => !u.is_superuser).length;
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-ground)', display: 'flex', flexDirection: 'column' }}>
@@ -392,36 +371,44 @@ export default function StaffUsers() {
           >
             <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🎉</div>
             <h3 style={{ fontSize: '1.3rem', color: 'var(--dole-green)', margin: '0 0 0.5rem 0', fontWeight: 800 }}>
-              Account Created Successfully!
+              User Account Created!
             </h3>
             <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-              An account for <strong>{createdAccountInfo.name}</strong> was saved to the database. They can now log in using these credentials:
+              The login account for <strong>{createdAccountInfo.name}</strong> was created. They can now log in using these credentials:
             </p>
 
             <div
               style={{
                 backgroundColor: 'var(--bg-ground)',
-                padding: '1.1rem 1.25rem',
-                borderRadius: 'var(--radius-md)',
                 border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)',
+                padding: '1rem 1.25rem',
                 textAlign: 'left',
                 marginBottom: '1.5rem',
               }}
             >
-              <div style={{ marginBottom: '0.75rem' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
-                  Username
-                </span>
-                <span className="mono" style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--dole-blue)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Username:</span>
+                <span className="mono" style={{ fontWeight: 800, color: 'var(--dole-blue)', fontSize: '0.95rem' }}>
                   {createdAccountInfo.username}
                 </span>
               </div>
-              <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
-                  Temporary Password
-                </span>
-                <span className="mono" style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--dole-green)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Password:</span>
+                <span className="mono" style={{ fontWeight: 800, color: 'var(--dole-red)', fontSize: '0.95rem' }}>
                   {createdAccountInfo.password}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Role:</span>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                  {createdAccountInfo.role}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Office:</span>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                  {createdAccountInfo.office}
                 </span>
               </div>
             </div>
@@ -430,62 +417,50 @@ export default function StaffUsers() {
               type="button"
               onClick={() => setCreatedAccountInfo(null)}
               className="btn btn-primary"
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                fontWeight: 700,
-                fontSize: '0.95rem',
-                backgroundColor: 'var(--dole-blue)',
-                color: '#fff',
-                borderRadius: 'var(--radius-md)',
-              }}
+              style={{ width: '100%', padding: '0.75rem', fontWeight: 700 }}
             >
-              Done &amp; Close
+              Done & Return to User List
             </button>
           </div>
         </div>
       )}
 
-      <main style={{ flex: 1, padding: '1.75rem 2rem', maxWidth: '1440px', width: '100%', margin: '0 auto' }}>
-        {/* Top Header Banner */}
+      {/* Main Content */}
+      <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+        {/* Page Header */}
         <div
           style={{
             display: 'flex',
+            flexWrap: 'wrap',
             justifyContent: 'space-between',
             alignItems: 'center',
-            flexWrap: 'wrap',
             gap: '1rem',
             marginBottom: '1.5rem',
-            backgroundColor: 'var(--bg-card)',
-            padding: '1.25rem 1.5rem',
-            borderRadius: 'var(--radius-lg)',
-            boxShadow: 'var(--shadow-sm)',
-            border: '1px solid var(--border-color)',
           }}
         >
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <span style={{ fontSize: '1.6rem' }}>👥</span>
-              <h1 style={{ fontSize: '1.45rem', color: 'var(--text-primary)', margin: 0 }}>
-                User &amp; Employee Management
+              <span style={{ fontSize: '1.75rem' }}>👥</span>
+              <h1 style={{ fontSize: '1.6rem', color: 'var(--text-primary)', margin: 0, fontWeight: 800 }}>
+                User Accounts Management
               </h1>
               <span
                 style={{
-                  fontSize: '0.72rem',
+                  fontSize: '0.75rem',
                   fontWeight: 700,
-                  backgroundColor: 'var(--dole-blue-light)',
-                  color: 'var(--dole-blue)',
-                  padding: '0.2rem 0.55rem',
+                  padding: '0.2rem 0.6rem',
                   borderRadius: 'var(--radius-full)',
+                  backgroundColor: 'var(--dole-red-light)',
+                  color: 'var(--dole-red)',
+                  border: '1px solid #fecaca',
                   textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
                 }}
               >
                 Admin Only
               </span>
             </div>
-            <p style={{ margin: '0.3rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-              Create and manage staff accounts, assign field offices, and restrict queue line access by division.
+            <p style={{ margin: '0.35rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+              Manage login accounts, credentials, and office access for DOLE staff. Personnel who assist clients are managed in the <strong>Personnel</strong> tab.
             </p>
           </div>
 
@@ -506,7 +481,7 @@ export default function StaffUsers() {
               boxShadow: 'var(--shadow-md)',
             }}
           >
-            <span>➕</span> Add New Employee
+            <span>➕</span> Create User Account
           </button>
         </div>
 
@@ -529,10 +504,10 @@ export default function StaffUsers() {
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Total Employees
+              Total User Accounts
             </div>
             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
-              {totalEmployees}
+              {totalUsers}
             </div>
           </div>
 
@@ -546,7 +521,7 @@ export default function StaffUsers() {
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Active Accounts
+              Active Logins
             </div>
             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--dole-green)', marginTop: '0.2rem' }}>
               {activeCount}
@@ -563,10 +538,10 @@ export default function StaffUsers() {
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Offices Assigned
+              Administrators
             </div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--dole-blue)', marginTop: '0.2rem' }}>
-              {officeCount}
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.2rem' }}>
+              {adminCount}
             </div>
           </div>
 
@@ -580,10 +555,10 @@ export default function StaffUsers() {
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Active Divisions
+              Staff Accounts
             </div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--dole-gold-dark)', marginTop: '0.2rem' }}>
-              {TARGET_DIVISIONS.length}
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--dole-blue)', marginTop: '0.2rem' }}>
+              {staffCount}
             </div>
           </div>
         </div>
@@ -598,27 +573,18 @@ export default function StaffUsers() {
             boxShadow: 'var(--shadow-sm)',
             display: 'flex',
             flexWrap: 'wrap',
-            gap: '0.85rem',
             alignItems: 'center',
-            marginBottom: '1.25rem',
+            gap: '1rem',
+            marginBottom: '1.5rem',
           }}
         >
-          <div style={{ flex: '1 1 260px', position: 'relative' }}>
-            <span
-              style={{
-                position: 'absolute',
-                left: '0.75rem',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--text-muted)',
-                fontSize: '0.9rem',
-              }}
-            >
+          <div style={{ flex: '1 1 240px', position: 'relative' }}>
+            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
               🔍
             </span>
             <input
               type="text"
-              placeholder="Search by ID, name, position..."
+              placeholder="Search by username or account name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -700,7 +666,7 @@ export default function StaffUsers() {
           </button>
         </div>
 
-        {/* Employees Table */}
+        {/* Users Table */}
         <div
           style={{
             backgroundColor: 'var(--bg-card)',
@@ -713,16 +679,16 @@ export default function StaffUsers() {
           {loading ? (
             <div style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
               <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>⏳</div>
-              <p>Loading employee directory...</p>
+              <p>Loading user accounts...</p>
             </div>
-          ) : filteredEmployees.length === 0 ? (
+          ) : filteredUsers.length === 0 ? (
             <div style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📂</div>
-              <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No employees found</p>
+              <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No user accounts found</p>
               <p style={{ fontSize: '0.88rem', marginTop: '0.25rem' }}>
                 {searchQuery || officeFilter || divisionFilter
                   ? 'Try adjusting your search filters.'
-                  : 'Get started by clicking "+ Add New Employee" above.'}
+                  : 'Get started by clicking "+ Create User Account" above.'}
               </p>
             </div>
           ) : (
@@ -730,10 +696,10 @@ export default function StaffUsers() {
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'var(--bg-ground)', borderBottom: '1px solid var(--border-color)' }}>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Employee ID</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Full Name</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Position</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Office</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Login Username</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Account Name</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Role</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Assigned Office</th>
                     <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                       Assigned Division(s)
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', fontWeight: 400 }}>
@@ -747,10 +713,10 @@ export default function StaffUsers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredEmployees.map((emp) => {
+                  {filteredUsers.map((u) => {
                     return (
                       <tr
-                        key={emp.id}
+                        key={u.id}
                         style={{
                           borderBottom: '1px solid var(--border-color)',
                           transition: 'background-color 0.15s',
@@ -758,7 +724,7 @@ export default function StaffUsers() {
                         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--dole-blue-subtle)')}
                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                       >
-                        {/* Employee ID */}
+                        {/* Username */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <span
                             className="mono"
@@ -768,52 +734,78 @@ export default function StaffUsers() {
                               borderRadius: 'var(--radius-sm)',
                               fontWeight: 700,
                               color: 'var(--dole-blue)',
-                              fontSize: '0.84rem',
+                              fontSize: '0.86rem',
                               border: '1px solid var(--border-color)',
                             }}
                           >
-                            {emp.employee_id}
+                            {u.username}
                           </span>
                         </td>
 
                         {/* Full Name */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                            {emp.full_name || `${emp.first_name} ${emp.last_name}`}
-                          </div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            Username: <code className="mono">{emp.username || emp.employee_id}</code>
+                            {u.full_name || (u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.username)}
                           </div>
                         </td>
 
-                        {/* Position */}
-                        <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)' }}>
-                          {emp.position || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>— None —</span>}
-                        </td>
-
-                        {/* Office */}
+                        {/* Role */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.office_name}</div>
-                          {emp.office_code && (
+                          {u.is_superuser ? (
                             <span
                               style={{
-                                fontSize: '0.72rem',
-                                color: 'var(--text-muted)',
-                                backgroundColor: 'var(--bg-ground)',
-                                padding: '0.1rem 0.4rem',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                padding: '0.2rem 0.55rem',
                                 borderRadius: 'var(--radius-sm)',
+                                backgroundColor: '#f5f3ff',
+                                color: '#7c3aed',
+                                border: '1px solid #ddd6fe',
                               }}
                             >
-                              {emp.office_code}
+                              👑 Administrator
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: '#eff6ff',
+                                color: '#1d4ed8',
+                                border: '1px solid #bfdbfe',
+                              }}
+                            >
+                              👤 Staff User
                             </span>
                           )}
                         </td>
 
+                        {/* Office */}
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.office_name}</div>
+                        </td>
+
                         {/* Assigned Divisions */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          {emp.division_names && emp.division_names.length > 0 ? (
+                          {u.is_superuser ? (
+                            <span
+                              style={{
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: '#ecfdf5',
+                                color: '#047857',
+                                border: '1px solid #a7f3d0',
+                              }}
+                            >
+                              🌟 All Divisions Access
+                            </span>
+                          ) : u.division_names && u.division_names.length > 0 ? (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                              {emp.division_names.map((divName) => {
+                              {u.division_names.map((divName) => {
                                 const targetDiv = TARGET_DIVISIONS.find(
                                   (t) => t.key.toLowerCase() === divName.toLowerCase() || t.alias.toLowerCase() === divName.toLowerCase()
                                 );
@@ -859,7 +851,7 @@ export default function StaffUsers() {
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <button
                             type="button"
-                            onClick={() => handleToggleActive(emp)}
+                            onClick={() => handleToggleActive(u)}
                             title="Click to toggle active status"
                             style={{
                               fontSize: '0.75rem',
@@ -868,12 +860,12 @@ export default function StaffUsers() {
                               borderRadius: 'var(--radius-full)',
                               border: 'none',
                               cursor: 'pointer',
-                              backgroundColor: emp.is_active ? 'var(--dole-green-light)' : 'var(--dole-red-light)',
-                              color: emp.is_active ? 'var(--dole-green)' : 'var(--dole-red)',
+                              backgroundColor: u.is_active ? 'var(--dole-green-light)' : 'var(--dole-red-light)',
+                              color: u.is_active ? 'var(--dole-green)' : 'var(--dole-red)',
                               minHeight: 'auto',
                             }}
                           >
-                            {emp.is_active ? '● Active' : '○ Inactive'}
+                            {u.is_active ? '● Active' : '○ Inactive'}
                           </button>
                         </td>
 
@@ -882,9 +874,9 @@ export default function StaffUsers() {
                           <div style={{ display: 'inline-flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
                             <button
                               type="button"
-                              onClick={() => openEditModal(emp)}
+                              onClick={() => openEditModal(u)}
                               className="btn btn-outline"
-                              title="Edit employee details"
+                              title="Edit user account"
                               style={{
                                 minHeight: 'auto',
                                 padding: '0.35rem 0.65rem',
@@ -899,9 +891,9 @@ export default function StaffUsers() {
 
                             <button
                               type="button"
-                              onClick={() => openResetPasswordModal(emp)}
+                              onClick={() => openResetPasswordModal(u)}
                               className="btn btn-outline"
-                              title="Reset temporary password"
+                              title="Reset account password"
                               style={{
                                 minHeight: 'auto',
                                 padding: '0.35rem 0.65rem',
@@ -916,9 +908,9 @@ export default function StaffUsers() {
 
                             <button
                               type="button"
-                              onClick={() => openDeleteModal(emp)}
+                              onClick={() => openDeleteModal(u)}
                               className="btn btn-outline"
-                              title="Delete employee account"
+                              title="Delete user account"
                               style={{
                                 minHeight: 'auto',
                                 padding: '0.35rem 0.65rem',
@@ -942,9 +934,7 @@ export default function StaffUsers() {
         </div>
       </main>
 
-      {/* ========================================================= */}
-      {/* Modal: Add / Edit Employee                                 */}
-      {/* ========================================================= */}
+      {/* Modal: Add / Edit User Account */}
       {showModal && (
         <div
           style={{
@@ -966,7 +956,7 @@ export default function StaffUsers() {
             style={{
               backgroundColor: 'var(--bg-card)',
               borderRadius: 'var(--radius-lg)',
-              maxWidth: '680px',
+              maxWidth: '600px',
               width: '100%',
               maxHeight: '92vh',
               overflowY: 'auto',
@@ -991,12 +981,12 @@ export default function StaffUsers() {
             >
               <div>
                 <h2 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', margin: 0 }}>
-                  {modalMode === 'create' ? '➕ Add New Employee' : `✏️ Edit Employee (${employeeId})`}
+                  {modalMode === 'create' ? '➕ Create User Account' : `✏️ Edit Account (${username})`}
                 </h2>
                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                   {modalMode === 'create'
-                    ? 'Fill in the fields below. Saving will automatically create the user account on the database.'
-                    : 'Update employee information and division queue permissions.'}
+                    ? 'Configure login credentials, role, office, and division queue access.'
+                    : 'Update account details, role, and division queue permissions.'}
                 </p>
               </div>
               <button
@@ -1018,78 +1008,19 @@ export default function StaffUsers() {
 
             {/* Modal Form */}
             <form onSubmit={handleSubmitForm} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Row 1: Name Fields (First, Middle, Last) */}
-              <div>
-                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                  Employee Full Name <span style={{ color: 'var(--dole-red)' }}>*</span>
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem' }}>
-                  <div>
-                    <input
-                      type="text"
-                      required
-                      placeholder="First Name *"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.6rem 0.8rem',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--border-color)',
-                        fontSize: '0.88rem',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="text"
-                      placeholder="Middle Name (Optional)"
-                      value={middleName}
-                      onChange={(e) => setMiddleName(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.6rem 0.8rem',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--border-color)',
-                        fontSize: '0.88rem',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Last Name *"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.6rem 0.8rem',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--border-color)',
-                        fontSize: '0.88rem',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 2: Employee ID & Position */}
+              {/* Row 1: Username & Role */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem' }}>
                 <div>
                   <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                    Employee ID <span style={{ color: 'var(--dole-red)' }}>*</span>
+                    Login Username <span style={{ color: 'var(--dole-red)' }}>*</span>
                   </label>
                   <input
                     type="text"
                     required
                     disabled={modalMode === 'edit'}
-                    placeholder="e.g. EMP-2026-001"
-                    value={employeeId}
-                    onChange={handleEmployeeIdChange}
+                    placeholder="e.g. staff_pampanga"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.replace(/\s+/g, ''))}
                     className="mono"
                     style={{
                       width: '100%',
@@ -1103,19 +1034,58 @@ export default function StaffUsers() {
                     }}
                   />
                   <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    {modalMode === 'create' ? 'This Employee ID will be the account username.' : 'Employee ID cannot be edited.'}
+                    {modalMode === 'create' ? 'Unique login ID used to sign in.' : 'Username cannot be modified.'}
                   </span>
                 </div>
 
                 <div>
                   <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                    Position / Designation
+                    Account Role <span style={{ color: 'var(--dole-red)' }}>*</span>
                   </label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.8rem',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-color)',
+                      fontSize: '0.88rem',
+                      outline: 'none',
+                      backgroundColor: '#fff',
+                    }}
+                  >
+                    <option value="staff">👤 Staff User (Queue & Counter Access)</option>
+                    <option value="admin">👑 Administrator (Full System Access)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 2: Account Owner Name */}
+              <div>
+                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
+                  Account Owner / Full Name (Optional)
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                   <input
                     type="text"
-                    placeholder="e.g. Labor and Employment Officer III"
-                    value={position}
-                    onChange={(e) => setPosition(e.target.value)}
+                    placeholder="First Name"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.8rem',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-color)',
+                      fontSize: '0.88rem',
+                      outline: 'none',
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Last Name"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
                     style={{
                       width: '100%',
                       padding: '0.6rem 0.8rem',
@@ -1131,7 +1101,7 @@ export default function StaffUsers() {
               {/* Row 3: Office Field */}
               <div>
                 <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                  DOLE Office <span style={{ color: 'var(--dole-red)' }}>*</span>
+                  DOLE Office Assignment <span style={{ color: 'var(--dole-red)' }}>*</span>
                 </label>
                 <select
                   required
@@ -1150,233 +1120,163 @@ export default function StaffUsers() {
                   <option value="" disabled>-- Select DOLE Office --</option>
                   {offices.map((off) => (
                     <option key={off.id} value={off.id}>
-                      {off.name} ({off.code})
+                      {off.name} {off.code ? `(${off.code})` : ''}
                     </option>
                   ))}
                 </select>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Regional Office No. 3, Pampanga, Clark, Tarlac, Bulacan, Nueva Ecija, Aurora, Bataan, Zambales
-                </span>
               </div>
 
-              {/* Row 4: Division Field (Checkboxes for TSSD 1, TSSD 2, IMSD, MALSU) */}
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-ground)',
-                  padding: '1.1rem 1.25rem',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Division Queue Access (Checkboxes) <span style={{ color: 'var(--dole-red)' }}>*</span>
-                  </label>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
-                    Select one or more
-                  </span>
-                </div>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-                  The division(s) selected determine which <strong>Waiting in Line / Queue tickets</strong> this employee is allowed to view and call.
-                </p>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.65rem' }}>
-                  {TARGET_DIVISIONS.map((tDiv) => {
-                    const mappedId = divisionMap[tDiv.key] || divisionMap[tDiv.alias];
-                    const isChecked = mappedId ? selectedDivisionIds.includes(mappedId) : false;
-
-                    return (
-                      <label
-                        key={tDiv.key}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '0.75rem',
-                          padding: '0.75rem 0.85rem',
-                          borderRadius: 'var(--radius-sm)',
-                          backgroundColor: isChecked ? tDiv.bg : '#fff',
-                          border: isChecked ? `2px solid ${tDiv.color}` : '1px solid var(--border-color)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                          boxShadow: isChecked ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleToggleDivision(tDiv.key, tDiv.alias)}
-                          style={{
-                            width: '18px',
-                            height: '18px',
-                            cursor: 'pointer',
-                            marginTop: '2px',
-                            accentColor: tDiv.color,
-                          }}
-                        />
-                        <div>
-                          <div style={{ fontWeight: 800, fontSize: '0.88rem', color: tDiv.color }}>
-                            {tDiv.label}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
-                            {tDiv.fullName}
-                          </div>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Row 5: Temporary Password Field */}
-              <div
-                style={{
-                  backgroundColor: 'var(--dole-gold-light)',
-                  padding: '1.1rem 1.25rem',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--dole-gold)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                  <label
-                    style={{
-                      fontSize: '0.84rem',
-                      fontWeight: 700,
-                      color: 'var(--dole-gold-dark)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                    }}
-                  >
-                    <span>🔑</span> Temporary Password <span style={{ color: 'var(--dole-red)' }}>*</span>
-                  </label>
-                  {modalMode === 'create' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTemporaryPassword(employeeId);
-                        setPasswordEdited(false);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--dole-blue)',
-                        fontSize: '0.76rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        padding: 0,
-                        minHeight: 'auto',
-                      }}
-                    >
-                      ↺ Match Employee ID
-                    </button>
-                  )}
-                </div>
-
+              {/* Row 4: Password Field (Required for create, optional for edit) */}
+              <div>
+                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
+                  {modalMode === 'create' ? 'Initial Login Password *' : 'Change Password (Leave blank to keep current)'}
+                </label>
                 <div style={{ position: 'relative' }}>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required={modalMode === 'create'}
-                    placeholder={modalMode === 'create' ? (employeeId || 'Will match Employee ID') : 'Leave blank to keep unchanged'}
-                    value={temporaryPassword}
-                    onChange={(e) => {
-                      setTemporaryPassword(e.target.value);
-                      setPasswordEdited(true);
-                    }}
+                    placeholder={modalMode === 'create' ? 'Enter login password...' : 'Enter new password to change...'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     className="mono"
                     style={{
                       width: '100%',
-                      padding: '0.65rem 2.5rem 0.65rem 0.85rem',
+                      padding: '0.65rem 2.5rem 0.65rem 0.8rem',
                       borderRadius: 'var(--radius-sm)',
                       border: '1px solid var(--border-color)',
-                      fontSize: '0.92rem',
-                      fontWeight: 700,
-                      backgroundColor: '#fff',
+                      fontSize: '0.88rem',
                       outline: 'none',
                     }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    title={showPassword ? 'Hide password' : 'Show password'}
                     style={{
                       position: 'absolute',
-                      right: '0.75rem',
+                      right: '10px',
                       top: '50%',
                       transform: 'translateY(-50%)',
-                      background: 'none',
                       border: 'none',
+                      background: 'none',
                       cursor: 'pointer',
                       fontSize: '1rem',
-                      padding: 0,
-                      minHeight: 'auto',
+                      padding: '0.2rem',
                     }}
                   >
-                    {showPassword ? '👁️' : '🙈'}
+                    {showPassword ? '🙈' : '👁️'}
                   </button>
                 </div>
+              </div>
 
-                {/* Account Credentials Live Preview Badge */}
+              {/* Row 5: Division Queue Access Checklist */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', margin: 0 }}>
+                    Assigned Division(s) & Queue Counter Lines
+                  </label>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    Dictates which division queue services this staff can serve
+                  </span>
+                </div>
+
                 <div
                   style={{
-                    marginTop: '0.75rem',
-                    padding: '0.65rem 0.85rem',
-                    backgroundColor: '#fff',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px dashed var(--dole-gold)',
-                    fontSize: '0.8rem',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                    gap: '0.65rem',
                   }}
                 >
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-                    ⚡ Automatic Account Creation Summary:
-                  </div>
-                  <div style={{ color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div>
-                      Username: <strong className="mono" style={{ color: 'var(--dole-blue)' }}>{employeeId || '(enter employee ID)'}</strong>
-                    </div>
-                    <div>
-                      Password: <strong className="mono" style={{ color: 'var(--dole-green)' }}>{(temporaryPassword.trim() || employeeId.trim()) || '(matches employee ID)'}</strong>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                    Upon clicking <strong>Save Changes</strong>, an account is automatically saved on our database so the employee can immediately log into the staff portal.
-                  </div>
+                  {TARGET_DIVISIONS.map((tDiv) => {
+                    const targetId = divisionMap[tDiv.key] || divisionMap[tDiv.alias];
+                    const isChecked = Boolean(targetId && selectedDivisionIds.includes(targetId));
+
+                    return (
+                      <div
+                        key={tDiv.key}
+                        onClick={() => handleToggleDivision(tDiv.key, tDiv.alias)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.65rem',
+                          padding: '0.65rem 0.85rem',
+                          borderRadius: 'var(--radius-md)',
+                          border: isChecked ? `2px solid ${tDiv.color}` : '1px solid var(--border-color)',
+                          backgroundColor: isChecked ? tDiv.bg : 'var(--bg-ground)',
+                          cursor: 'pointer',
+                          userSelect: 'none',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}} // Handled by card click
+                          style={{
+                            width: '16px',
+                            height: '16px',
+                            accentColor: tDiv.color,
+                            cursor: 'pointer',
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, color: isChecked ? tDiv.color : 'var(--text-primary)', fontSize: '0.84rem' }}>
+                            {tDiv.label}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '0.72rem',
+                              color: 'var(--text-muted)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                            title={tDiv.fullName}
+                          >
+                            {tDiv.fullName}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: '0.75rem',
+                  marginTop: '0.5rem',
+                  paddingTop: '1rem',
+                  borderTop: '1px solid var(--border-color)',
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
                   className="btn btn-outline"
-                  style={{
-                    padding: '0.65rem 1.2rem',
-                    fontSize: '0.9rem',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-secondary)',
-                    minHeight: 'auto',
-                  }}
+                  disabled={submitting}
+                  style={{ padding: '0.65rem 1.25rem' }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
                   className="btn btn-primary"
+                  disabled={submitting}
                   style={{
-                    padding: '0.65rem 1.6rem',
-                    fontSize: '0.92rem',
-                    fontWeight: 800,
-                    borderRadius: 'var(--radius-md)',
+                    padding: '0.65rem 1.5rem',
                     backgroundColor: 'var(--dole-blue)',
                     color: '#fff',
-                    minHeight: 'auto',
-                    boxShadow: 'var(--shadow-md)',
-                    opacity: submitting ? 0.7 : 1,
+                    fontWeight: 700,
                   }}
                 >
-                  {submitting ? 'Saving to Database...' : '💾 Save Changes'}
+                  {submitting
+                    ? 'Saving...'
+                    : modalMode === 'create'
+                    ? '💾 Create Account'
+                    : '💾 Save Changes'}
                 </button>
               </div>
             </form>
@@ -1384,126 +1284,8 @@ export default function StaffUsers() {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* Modal: Reset Password                                     */}
-      {/* ========================================================= */}
-      {resetModalEmployee && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(17, 24, 39, 0.6)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '1rem',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: 'var(--radius-lg)',
-              maxWidth: '460px',
-              width: '100%',
-              padding: '1.5rem',
-              boxShadow: '0 20px 45px rgba(0,0,0,0.22)',
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '1.5rem' }}>🔑</span>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-primary)' }}>
-                Reset Temporary Password
-              </h3>
-            </div>
-            <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.4 }}>
-              Set a new temporary password for <strong>{resetModalEmployee.full_name}</strong> ({resetModalEmployee.employee_id}).
-            </p>
-
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
-                New Temporary Password:
-              </label>
-              <input
-                type="text"
-                value={newPasswordInput}
-                onChange={(e) => setNewPasswordInput(e.target.value)}
-                className="mono"
-                placeholder={resetModalEmployee.employee_id}
-                style={{
-                  width: '100%',
-                  padding: '0.6rem 0.8rem',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border-color)',
-                  fontSize: '0.9rem',
-                  fontWeight: 700,
-                  outline: 'none',
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setNewPasswordInput(resetModalEmployee.employee_id)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--dole-blue)',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  padding: '0.3rem 0 0 0',
-                  minHeight: 'auto',
-                }}
-              >
-                ↺ Reset to Employee ID ({resetModalEmployee.employee_id})
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
-              <button
-                type="button"
-                onClick={() => setResetModalEmployee(null)}
-                className="btn btn-outline"
-                style={{
-                  padding: '0.5rem 1rem',
-                  fontSize: '0.86rem',
-                  borderRadius: 'var(--radius-md)',
-                  minHeight: 'auto',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={resetSubmitting}
-                onClick={handleConfirmResetPassword}
-                className="btn btn-primary"
-                style={{
-                  padding: '0.5rem 1.15rem',
-                  fontSize: '0.86rem',
-                  fontWeight: 700,
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--dole-gold-dark)',
-                  color: '#fff',
-                  minHeight: 'auto',
-                  opacity: resetSubmitting ? 0.7 : 1,
-                }}
-              >
-                {resetSubmitting ? 'Updating...' : 'Set Password'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* Modal: Delete Confirmation                                */}
-      {/* ========================================================= */}
-      {deleteModalEmployee && (
+      {/* Modal: Reset Password */}
+      {resetModalUser && (
         <div
           style={{
             position: 'fixed',
@@ -1531,48 +1313,131 @@ export default function StaffUsers() {
               border: '1px solid var(--border-color)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '1.5rem' }}>⚠️</span>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--dole-red)' }}>
-                Delete Employee Account?
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.85rem' }}>
+              <span style={{ fontSize: '1.4rem' }}>🔑</span>
+              <h3 style={{ fontSize: '1.15rem', color: 'var(--text-primary)', margin: 0, fontWeight: 800 }}>
+                Reset Password
               </h3>
             </div>
-            <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.4 }}>
-              Are you sure you want to delete <strong>{deleteModalEmployee.full_name}</strong> ({deleteModalEmployee.employee_id})?
-              This will permanently revoke their access to the CTMS staff portal and queue management.
+
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+              Set a new password for account <strong>{resetModalUser.username}</strong> ({resetModalUser.full_name}):
             </p>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
+                New Password
+              </label>
+              <input
+                type="text"
+                value={newPasswordInput}
+                onChange={(e) => setNewPasswordInput(e.target.value)}
+                placeholder="Enter new password..."
+                className="mono"
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.8rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-color)',
+                  fontSize: '0.9rem',
+                  fontWeight: 700,
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.65rem' }}>
               <button
                 type="button"
-                onClick={() => setDeleteModalEmployee(null)}
+                onClick={() => setResetModalUser(null)}
                 className="btn btn-outline"
-                style={{
-                  padding: '0.5rem 1rem',
-                  fontSize: '0.86rem',
-                  borderRadius: 'var(--radius-md)',
-                  minHeight: 'auto',
-                }}
+                disabled={resetSubmitting}
+                style={{ padding: '0.55rem 1rem' }}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={deleteSubmitting}
-                onClick={handleConfirmDelete}
-                className="btn"
+                onClick={handleConfirmResetPassword}
+                className="btn btn-primary"
+                disabled={resetSubmitting || !newPasswordInput.trim()}
                 style={{
-                  padding: '0.5rem 1.15rem',
-                  fontSize: '0.86rem',
-                  fontWeight: 700,
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--dole-red)',
+                  padding: '0.55rem 1.25rem',
+                  backgroundColor: 'var(--dole-gold-dark)',
                   color: '#fff',
-                  minHeight: 'auto',
-                  opacity: deleteSubmitting ? 0.7 : 1,
+                  fontWeight: 700,
                 }}
               >
-                {deleteSubmitting ? 'Deleting...' : 'Yes, Delete'}
+                {resetSubmitting ? 'Resetting...' : 'Confirm Reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Delete Confirmation */}
+      {deleteModalUser && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(17, 24, 39, 0.6)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '1rem',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              borderRadius: 'var(--radius-lg)',
+              maxWidth: '440px',
+              width: '100%',
+              padding: '1.5rem',
+              boxShadow: '0 20px 45px rgba(0,0,0,0.22)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.85rem' }}>
+              <span style={{ fontSize: '1.4rem' }}>🗑️</span>
+              <h3 style={{ fontSize: '1.15rem', color: 'var(--dole-red)', margin: 0, fontWeight: 800 }}>
+                Delete User Account
+              </h3>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+              Are you sure you want to delete user account <strong>{deleteModalUser.username}</strong> ({deleteModalUser.full_name})? This will permanently remove their login access.
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.65rem' }}>
+              <button
+                type="button"
+                onClick={() => setDeleteModalUser(null)}
+                className="btn btn-outline"
+                disabled={deleteSubmitting}
+                style={{ padding: '0.55rem 1rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="btn btn-primary"
+                disabled={deleteSubmitting}
+                style={{
+                  padding: '0.55rem 1.25rem',
+                  backgroundColor: 'var(--dole-red)',
+                  color: '#fff',
+                  fontWeight: 700,
+                }}
+              >
+                {deleteSubmitting ? 'Deleting...' : 'Yes, Delete Account'}
               </button>
             </div>
           </div>

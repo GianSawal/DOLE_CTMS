@@ -26,14 +26,14 @@ from .views import (
     StaffPersonnelViewSet,
     CtmsCounterViewSet,
     CtmsStaffOfficeViewSet,
-    StaffEmployeeViewSet,
+    StaffUserAccountViewSet,
 )
 
 router = DefaultRouter()
 router.register(r'staff/counters', CtmsCounterViewSet, basename='staff-counters')
 router.register(r'staff/staff-offices', CtmsStaffOfficeViewSet, basename='staff-offices')
-router.register(r'staff/users', StaffEmployeeViewSet, basename='staff-users')
-router.register(r'staff/employees', StaffEmployeeViewSet, basename='staff-employees')
+router.register(r'staff/users', StaffUserAccountViewSet, basename='staff-users')
+router.register(r'staff/employees', StaffUserAccountViewSet, basename='staff-employees')
 router.register(r'staff/personnel', StaffPersonnelViewSet, basename='staff-personnel')
 
 urlpatterns = [

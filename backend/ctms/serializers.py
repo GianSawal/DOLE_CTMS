@@ -7,7 +7,9 @@ from .models import (
     CsmService,
     CtmsCounter,
     CtmsStaffOffice,
+    CtmsStaffDivision,
     CtmsEmployee,
+    DolePersonnel,
     CtmsTransaction,
 )
 
@@ -49,6 +51,100 @@ class CtmsStaffOfficeSerializer(serializers.ModelSerializer):
     class Meta:
         model = CtmsStaffOffice
         fields = ['id', 'user', 'username', 'office', 'office_name']
+
+
+class DolePersonnelSerializer(serializers.ModelSerializer):
+    """Serializer for pure DOLE Personnel directory (no user accounts)."""
+    office_name = serializers.ReadOnlyField(source='office.name')
+    office_code = serializers.ReadOnlyField(source='office.code')
+    divisions_detail = CsmDivisionSerializer(source='divisions', many=True, read_only=True)
+    division_names = serializers.SerializerMethodField()
+    division_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=CsmDivision.objects.all(),
+        source='divisions',
+        required=False
+    )
+    full_name = serializers.ReadOnlyField()
+
+    class Meta:
+        model = DolePersonnel
+        fields = [
+            'id',
+            'employee_id',
+            'first_name',
+            'middle_name',
+            'last_name',
+            'full_name',
+            'position',
+            'office',
+            'office_name',
+            'office_code',
+            'division_ids',
+            'division_names',
+            'divisions_detail',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_division_names(self, obj):
+        return [d.name for d in obj.divisions.all()]
+
+
+class CtmsUserAccountSerializer(serializers.ModelSerializer):
+    """Serializer for login user accounts."""
+    role = serializers.SerializerMethodField()
+    office = serializers.SerializerMethodField()
+    office_name = serializers.SerializerMethodField()
+    division_ids = serializers.SerializerMethodField()
+    division_names = serializers.SerializerMethodField()
+    full_name = serializers.SerializerMethodField()
+    employee_id = serializers.CharField(source='username', read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'username',
+            'employee_id',
+            'first_name',
+            'last_name',
+            'full_name',
+            'role',
+            'is_staff',
+            'is_superuser',
+            'is_active',
+            'office',
+            'office_name',
+            'division_ids',
+            'division_names',
+            'date_joined',
+            'last_login',
+        ]
+        read_only_fields = ['id', 'date_joined', 'last_login']
+
+    def get_role(self, obj):
+        return "Administrator" if obj.is_superuser else "Staff"
+
+    def get_full_name(self, obj):
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        return name if name else obj.username
+
+    def get_office(self, obj):
+        staff_off = obj.staff_offices.select_related('office').first()
+        return staff_off.office_id if staff_off else None
+
+    def get_office_name(self, obj):
+        staff_off = obj.staff_offices.select_related('office').first()
+        return staff_off.office.name if staff_off else ("All Offices" if obj.is_superuser else "Unassigned")
+
+    def get_division_ids(self, obj):
+        return list(obj.staff_divisions.values_list('division_id', flat=True))
+
+    def get_division_names(self, obj):
+        return list(obj.staff_divisions.values_list('division__name', flat=True))
 
 
 class CtmsEmployeeSerializer(serializers.ModelSerializer):

@@ -131,6 +131,21 @@ class CtmsStaffOffice(models.Model):
         return f"{self.user.username} -> {self.office.name}"
 
 
+class CtmsStaffDivision(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='staff_divisions')
+    division = models.ForeignKey(CsmDivision, on_delete=models.CASCADE, related_name='staff_division_assignments')
+
+    class Meta:
+        db_table = 'ctms_staff_division'
+        verbose_name = 'CTMS Staff Division'
+        verbose_name_plural = 'CTMS Staff Divisions'
+        unique_together = ('user', 'division')
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.division.name}"
+
+
 class CtmsEmployee(models.Model):
     id = models.BigAutoField(primary_key=True)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='employee_profile')
@@ -150,6 +165,39 @@ class CtmsEmployee(models.Model):
         db_table = 'ctms_employee'
         verbose_name = 'CTMS Employee'
         verbose_name_plural = 'CTMS Employees'
+        ordering = ['last_name', 'first_name']
+
+    def __str__(self):
+        return f"{self.employee_id} - {self.last_name}, {self.first_name}"
+
+    @property
+    def full_name(self):
+        mid = f" {self.middle_name}" if self.middle_name else ""
+        return f"{self.first_name}{mid} {self.last_name}"
+
+
+class DolePersonnel(models.Model):
+    """
+    Pure personnel directory for DOLE officers and personnel who assist clients.
+    Personnel do NOT have user login accounts or passwords.
+    Used strictly for assigning personnel on queue transactions.
+    """
+    id = models.BigAutoField(primary_key=True)
+    employee_id = models.CharField(max_length=50, unique=True, db_index=True)
+    first_name = models.CharField(max_length=100)
+    middle_name = models.CharField(max_length=100, blank=True, default='')
+    last_name = models.CharField(max_length=100)
+    position = models.CharField(max_length=150, blank=True, default='')
+    office = models.ForeignKey(CsmOffice, on_delete=models.PROTECT, related_name='dole_personnel')
+    divisions = models.ManyToManyField(CsmDivision, blank=True, related_name='dole_personnel', db_table='ctms_dole_personnel_divisions')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ctms_dole_personnel'
+        verbose_name = 'DOLE Personnel'
+        verbose_name_plural = 'DOLE Personnel'
         ordering = ['last_name', 'first_name']
 
     def __str__(self):
