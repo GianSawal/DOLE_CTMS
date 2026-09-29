@@ -1,12 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import ArtaVideoModal from './ArtaVideoModal';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [showArtaModal, setShowArtaModal] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -67,14 +65,6 @@ export default function Navbar() {
               👥 User Management
             </NavLink>
           )}
-          <button
-            type="button"
-            onClick={() => setShowArtaModal(true)}
-            className="staff-nav-arta-btn"
-            title="Configure ARTA / Citizen's Charter Video for TV Display"
-          >
-            🎥 Add ARTA Video
-          </button>
         </div>
 
         {/* Right: User Profile & Sign Out on Top Right */}
@@ -96,13 +86,6 @@ export default function Navbar() {
           </button>
         </div>
       </nav>
-
-      {/* ARTA Video Modal */}
-      <ArtaVideoModal
-        isOpen={showArtaModal}
-        onClose={() => setShowArtaModal(false)}
-        defaultOfficeId={user?.assigned_offices?.[0]?.id}
-      />
     </>
   );
 }

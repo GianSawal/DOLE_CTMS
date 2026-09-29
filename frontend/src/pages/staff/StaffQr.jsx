@@ -2,12 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
-import ArtaVideoModal from '../../components/ArtaVideoModal';
 
 export default function StaffQr() {
   const { user } = useAuth();
   const [selectedOfficeId, setSelectedOfficeId] = useState('');
-  const [showArtaModal, setShowArtaModal] = useState(false);
 
   useEffect(() => {
     if (user?.assigned_offices?.length > 0) {
@@ -72,14 +70,6 @@ export default function StaffQr() {
             )}
             <button onClick={handlePrint} className="btn btn-primary" style={{ minHeight: '44px' }}>
               🖨️ Print Poster
-            </button>
-            <button
-              onClick={() => setShowArtaModal(true)}
-              className="btn btn-outline"
-              style={{ minHeight: '44px', fontWeight: 600, borderColor: 'var(--dole-blue)', color: 'var(--dole-blue)' }}
-              title="Configure ARTA / Citizen's Charter video for TV display"
-            >
-              🎥 Add ARTA Video
             </button>
           </div>
         </div>
@@ -173,12 +163,6 @@ export default function StaffQr() {
           </a>
         </div>
       </main>
-
-      <ArtaVideoModal
-        isOpen={showArtaModal}
-        onClose={() => setShowArtaModal(false)}
-        defaultOfficeId={selectedOfficeId}
-      />
     </div>
   );
 }

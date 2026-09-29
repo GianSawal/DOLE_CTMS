@@ -976,7 +976,7 @@ export default function DisplayBoard() {
                 <button
                   type="button"
                   onClick={() => setShowFolderModal(true)}
-                  title="Configure Local Video Folder or Link"
+                  title="Configure Local Video Folder or Link for ARTA Display"
                   style={{
                     backgroundColor: 'rgba(255,255,255,0.1)',
                     border: '1px solid rgba(255,255,255,0.2)',
@@ -991,8 +991,8 @@ export default function DisplayBoard() {
                     gap: '0.3rem',
                   }}
                 >
-                  <span>📁</span>
-                  <span>Folder Link</span>
+                  <span>🎥</span>
+                  <span>Add ARTA Video</span>
                 </button>
                 <span style={{
                   fontSize: '0.7rem',
