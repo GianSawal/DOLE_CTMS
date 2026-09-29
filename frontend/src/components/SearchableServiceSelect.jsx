@@ -19,8 +19,11 @@ export default function SearchableServiceSelect({
   required = false,
   id = 'searchable-service-select',
   disabled = false,
+  dropDirection = 'auto',
+  maxListHeight = '240px',
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
@@ -45,16 +48,78 @@ export default function SearchableServiceSelect({
     });
   }, [services, searchQuery]);
 
-  // Focus search input when dropdown opens
+  // Calculate optimal drop direction (up vs down)
+  const calculateDirection = useCallback(() => {
+    if (dropDirection === 'up') {
+      setDropUp(true);
+      return;
+    }
+    if (dropDirection === 'down') {
+      setDropUp(false);
+      return;
+    }
+    if (!containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const spaceBelowViewport = window.innerHeight - rect.bottom;
+    const spaceAboveViewport = rect.top;
+
+    // Check if inside a modal or constrained container
+    const modalEl = containerRef.current.closest('[role="dialog"], [style*="position: fixed"], .card, form') || containerRef.current.offsetParent;
+    if (modalEl) {
+      const modalRect = modalEl.getBoundingClientRect();
+      const modalSpaceBelow = modalRect.bottom - rect.bottom;
+      const modalSpaceAbove = rect.top - modalRect.top;
+
+      // If space below inside modal is limited (< 260px) and space above has more room:
+      if (modalSpaceBelow < 260 && modalSpaceAbove > modalSpaceBelow) {
+        setDropUp(true);
+        return;
+      }
+    }
+
+    if (spaceBelowViewport < 300 && spaceAboveViewport > spaceBelowViewport) {
+      setDropUp(true);
+    } else {
+      setDropUp(false);
+    }
+  }, [dropDirection]);
+
+  // Focus search input and detect direction when dropdown opens
   useEffect(() => {
     if (isOpen) {
+      calculateDirection();
       setSearchQuery('');
       setHighlightedIndex(0);
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 50);
     }
-  }, [isOpen]);
+  }, [isOpen, calculateDirection]);
+
+  // Recalculate on window resize or scroll
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleScrollOrResize = () => {
+      calculateDirection();
+    };
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    return () => {
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+    };
+  }, [isOpen, calculateDirection]);
+
+  // Auto-scroll highlighted index into view
+  useEffect(() => {
+    if (isOpen && listRef.current) {
+      const activeEl = listRef.current.children[highlightedIndex];
+      if (activeEl && typeof activeEl.scrollIntoView === 'function') {
+        activeEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [highlightedIndex, isOpen]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -239,13 +304,20 @@ export default function SearchableServiceSelect({
       {isOpen && (
         <div style={{
           position: 'absolute',
-          top: 'calc(100% + 4px)',
+          ...(dropUp ? {
+            bottom: 'calc(100% + 4px)',
+            top: 'auto',
+            boxShadow: '0 -10px 25px -5px rgba(0, 0, 0, 0.15), 0 -8px 10px -6px rgba(0, 0, 0, 0.1)',
+          } : {
+            top: 'calc(100% + 4px)',
+            bottom: 'auto',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+          }),
           left: 0,
           right: 0,
           backgroundColor: '#ffffff',
           border: '1px solid #cbd5e1',
           borderRadius: '10px',
-          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
           zIndex: 9999,
           overflow: 'hidden',
           display: 'flex',
@@ -302,7 +374,7 @@ export default function SearchableServiceSelect({
           <div
             ref={listRef}
             style={{
-              maxHeight: '260px',
+              maxHeight: maxListHeight || '240px',
               overflowY: 'auto',
               padding: '0.35rem 0',
             }}

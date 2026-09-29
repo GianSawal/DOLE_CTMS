@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Modal({ isOpen, onClose, title, children }) {
+export default function Modal({ isOpen, onClose, title, children, maxWidth = '520px' }) {
   if (!isOpen) return null;
 
   return (
@@ -12,17 +12,20 @@ export default function Modal({ isOpen, onClose, title, children }) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 100,
-      padding: '1rem',
+      zIndex: 1000,
+      padding: '1.25rem 1rem',
+      overflowY: 'auto',
     }}>
       <div style={{
         background: '#ffffff',
         borderRadius: 'var(--radius-lg)',
         width: '100%',
-        maxWidth: '520px',
+        maxWidth: maxWidth,
         boxShadow: 'var(--shadow-lg)',
         border: 'var(--border-hairline)',
-        overflow: 'hidden',
+        overflow: 'visible',
+        position: 'relative',
+        margin: 'auto',
       }}>
         <div style={{
           padding: '1rem 1.5rem',
@@ -30,6 +33,9 @@ export default function Modal({ isOpen, onClose, title, children }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          borderTopLeftRadius: 'var(--radius-lg)',
+          borderTopRightRadius: 'var(--radius-lg)',
+          backgroundColor: '#ffffff',
         }}>
           <h2 style={{ fontSize: '1.15rem', margin: 0, color: 'var(--text-primary)' }}>
             {title}
@@ -42,7 +48,7 @@ export default function Modal({ isOpen, onClose, title, children }) {
             ✕
           </button>
         </div>
-        <div style={{ padding: '1.5rem' }}>
+        <div style={{ padding: '1.5rem', overflow: 'visible' }}>
           {children}
         </div>
       </div>
