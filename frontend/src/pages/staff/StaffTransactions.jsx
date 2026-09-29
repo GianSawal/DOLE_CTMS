@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
@@ -19,7 +19,8 @@ export default function StaffTransactions() {
 
   const [transactions, setTransactions] = useState([]);
   const [divisions, setDivisions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState('');
   const [selectedTx, setSelectedTx] = useState(null);
 
@@ -45,33 +46,55 @@ export default function StaffTransactions() {
       .catch(err => console.error('Failed to load divisions:', err));
   }, []);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (query = searchQuery) => {
     try {
-      setLoading(true);
+      setIsFetching(true);
       setError('');
       const data = await staffApi.getTransactions({
         office: officeFilter,
         division: divisionFilter,
         status: statusFilter,
-        q: searchQuery,
+        q: query,
         date_from: dateFrom,
         date_to: dateTo,
       });
-      setTransactions(data);
+      setTransactions(data || []);
     } catch (err) {
       setError(err.message || 'Error fetching transactions.');
     } finally {
-      setLoading(false);
+      setIsFetching(false);
+      setInitialLoading(false);
     }
   };
 
+  // Automatically filter as the user types (with 300ms debounce for backend API sync)
   useEffect(() => {
-    fetchTransactions();
-  }, [officeFilter, divisionFilter, statusFilter, dateFrom, dateTo]);
+    const timer = setTimeout(() => {
+      fetchTransactions(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, officeFilter, divisionFilter, statusFilter, dateFrom, dateTo]);
+
+  // Instant client-side filtering while typing for 0ms response latency
+  const filteredTransactions = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return transactions;
+    return transactions.filter(tx => (
+      (tx.queue_no && tx.queue_no.toLowerCase().includes(q)) ||
+      (tx.transaction_no && tx.transaction_no.toLowerCase().includes(q)) ||
+      (tx.client_name && tx.client_name.toLowerCase().includes(q)) ||
+      (tx.assigned_personnel && tx.assigned_personnel.toLowerCase().includes(q)) ||
+      (tx.division_name && tx.division_name.toLowerCase().includes(q)) ||
+      (tx.service_name && tx.service_name.toLowerCase().includes(q)) ||
+      (tx.counter_name && tx.counter_name.toLowerCase().includes(q)) ||
+      (tx.claim_code && tx.claim_code.toLowerCase().includes(q))
+    ));
+  }, [transactions, searchQuery]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    fetchTransactions();
+    fetchTransactions(searchQuery);
   };
 
   const handleResetFilters = () => {
@@ -90,7 +113,7 @@ export default function StaffTransactions() {
   const handleUndoDone = async (txId) => {
     try {
       await staffApi.transactionAction(txId, 'undo-done');
-      fetchTransactions();
+      fetchTransactions(searchQuery);
     } catch (err) {
       alert(err.message || 'Cannot undo done.');
     }
@@ -153,7 +176,7 @@ export default function StaffTransactions() {
               Search and filter client visits, view queue status, division assignments, and verify CSM survey completion.
             </p>
           </div>
-          <button onClick={fetchTransactions} className="btn btn-outline btn-sm">
+          <button onClick={() => fetchTransactions(searchQuery)} className="btn btn-outline btn-sm">
             🔄 Refresh
           </button>
         </div>
@@ -251,15 +274,48 @@ export default function StaffTransactions() {
               />
             </div>
 
-            <div style={{ flex: '2 1 220px' }}>
-              <label style={{ fontSize: '0.8rem' }}>Search (Tx / Queue / Client / Personnel)</label>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ minHeight: '44px' }}
-              />
+            <div style={{ flex: '2 1 240px' }}>
+              <label style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Search (Tx / Queue / Client / Personnel)</span>
+                {isFetching && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
+                    Searching...
+                  </span>
+                )}
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="Type to filter instantly..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{
+                    minHeight: '44px',
+                    width: '100%',
+                    paddingRight: searchQuery ? '2.25rem' : '0.875rem'
+                  }}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      background: 'none',
+                      border: 'none',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      fontSize: '0.95rem',
+                      padding: '4px',
+                      borderRadius: '50%',
+                    }}
+                    title="Clear search"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -272,7 +328,7 @@ export default function StaffTransactions() {
                   onClick={handleResetFilters}
                   className="btn btn-outline"
                   style={{ minHeight: '44px' }}
-                  title="Clear filters"
+                  title="Clear all filters"
                 >
                   Clear
                 </button>
@@ -313,20 +369,20 @@ export default function StaffTransactions() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
+                {initialLoading ? (
                   <tr>
                     <td colSpan="10" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                       Loading transactions...
                     </td>
                   </tr>
-                ) : transactions.length === 0 ? (
+                ) : filteredTransactions.length === 0 ? (
                   <tr>
                     <td colSpan="10" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                      No transactions found matching your criteria.
+                      {searchQuery ? `No transactions matching "${searchQuery}".` : 'No transactions found matching your criteria.'}
                     </td>
                   </tr>
                 ) : (
-                  transactions.map(tx => (
+                  filteredTransactions.map(tx => (
                     <tr key={tx.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '0.875rem 1rem' }}>
                         <span className="mono" style={{ fontWeight: 800, fontSize: '1.05rem', color: tx.is_priority ? 'var(--dole-gold-dark)' : 'var(--text-primary)' }}>
