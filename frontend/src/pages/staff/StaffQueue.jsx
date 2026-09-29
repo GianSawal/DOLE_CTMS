@@ -25,6 +25,9 @@ export default function StaffQueue() {
   const [walkinService, setWalkinService] = useState('');
   const [walkinName, setWalkinName] = useState('');
   const [walkinPriority, setWalkinPriority] = useState(false);
+  const [walkinIsGroup, setWalkinIsGroup] = useState(false);
+  const [walkinRepName, setWalkinRepName] = useState('');
+  const [walkinGroupSize, setWalkinGroupSize] = useState('2');
 
   // Slip modal state
   const [printedTx, setPrintedTx] = useState(null);
@@ -267,19 +270,35 @@ export default function StaffQueue() {
   const handleWalkinSubmit = async (e) => {
     e.preventDefault();
     if (!walkinService) return;
+
+    let finalClientName = '';
+    if (walkinIsGroup) {
+      const parsedSize = parseInt(walkinGroupSize, 10);
+      const count = isNaN(parsedSize) || parsedSize < 2 ? 2 : parsedSize;
+      const rep = (walkinRepName.trim().toLowerCase() === 'anonymous' || !walkinRepName.trim()) 
+        ? 'Anonymous' 
+        : walkinRepName.trim();
+      finalClientName = `${rep} (Group of ${count})`;
+    } else {
+      finalClientName = walkinName;
+    }
+
     try {
       setActionLoading(true);
       setError('');
       const newTx = await staffApi.createWalkin({
         office: Number(selectedOffice),
         service: Number(walkinService),
-        client_name: walkinName,
+        client_name: finalClientName,
         is_priority: walkinPriority,
       });
       setShowWalkinModal(false);
       setWalkinName('');
       setWalkinService('');
       setWalkinPriority(false);
+      setWalkinIsGroup(false);
+      setWalkinRepName('');
+      setWalkinGroupSize('2');
       setPrintedTx(newTx);
       await fetchQueue();
     } catch (err) {
@@ -740,6 +759,182 @@ export default function StaffQueue() {
         title="Walk-in Client Registration"
       >
         <form onSubmit={handleWalkinSubmit}>
+          {/* Registration Type Segmented Control */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600, fontSize: '0.85rem' }}>
+              Registration Type
+            </label>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '0.4rem',
+              background: '#f1f5f9',
+              padding: '3px',
+              borderRadius: 'var(--radius-md)',
+            }}>
+              <button
+                type="button"
+                onClick={() => setWalkinIsGroup(false)}
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  background: !walkinIsGroup ? '#ffffff' : 'transparent',
+                  color: !walkinIsGroup ? 'var(--dole-blue)' : 'var(--text-secondary)',
+                  fontWeight: !walkinIsGroup ? 700 : 500,
+                  boxShadow: !walkinIsGroup ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem',
+                }}
+              >
+                <span>👤</span>
+                <span>Individual</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setWalkinIsGroup(true)}
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  background: walkinIsGroup ? '#ffffff' : 'transparent',
+                  color: walkinIsGroup ? 'var(--dole-blue)' : 'var(--text-secondary)',
+                  fontWeight: walkinIsGroup ? 700 : 500,
+                  boxShadow: walkinIsGroup ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem',
+                }}
+              >
+                <span>👥</span>
+                <span>Group</span>
+              </button>
+            </div>
+          </div>
+
+          {!walkinIsGroup ? (
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <label style={{ margin: 0 }}>Client Name (Optional)</label>
+                <button
+                  type="button"
+                  onClick={() => setWalkinName(walkinName === 'Anonymous' ? '' : 'Anonymous')}
+                  className="btn btn-sm"
+                  style={{
+                    minHeight: '26px',
+                    padding: '0.15rem 0.55rem',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    borderRadius: '20px',
+                    backgroundColor: walkinName === 'Anonymous' ? 'var(--dole-blue)' : '#f1f5f9',
+                    color: walkinName === 'Anonymous' ? '#ffffff' : 'var(--text-secondary)',
+                    border: walkinName === 'Anonymous' ? '1px solid var(--dole-blue)' : '1px solid #cbd5e1',
+                    cursor: 'pointer',
+                  }}
+                  title={walkinName === 'Anonymous' ? 'Click to clear anonymous' : 'Click to register as Anonymous'}
+                >
+                  {walkinName === 'Anonymous' ? '✓ Anonymous' : '👤 Anonymous'}
+                </button>
+              </div>
+              <input
+                type="text"
+                value={walkinName}
+                onChange={(e) => setWalkinName(e.target.value)}
+                placeholder="e.g. Juan Dela Cruz or Anonymous"
+                style={{
+                  backgroundColor: walkinName === 'Anonymous' ? 'rgba(3, 5, 186, 0.04)' : '#ffffff',
+                  borderColor: walkinName === 'Anonymous' ? 'var(--dole-blue)' : undefined,
+                  fontWeight: walkinName === 'Anonymous' ? 700 : 400,
+                  color: walkinName === 'Anonymous' ? 'var(--dole-blue)' : undefined,
+                }}
+              />
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <label style={{ margin: 0 }}>Representative Name</label>
+                  <button
+                    type="button"
+                    onClick={() => setWalkinRepName(walkinRepName === 'Anonymous' ? '' : 'Anonymous')}
+                    className="btn btn-sm"
+                    style={{
+                      minHeight: '26px',
+                      padding: '0.15rem 0.55rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      borderRadius: '20px',
+                      backgroundColor: walkinRepName === 'Anonymous' ? 'var(--dole-blue)' : '#f1f5f9',
+                      color: walkinRepName === 'Anonymous' ? '#ffffff' : 'var(--text-secondary)',
+                      border: walkinRepName === 'Anonymous' ? '1px solid var(--dole-blue)' : '1px solid #cbd5e1',
+                      cursor: 'pointer',
+                    }}
+                    title={walkinRepName === 'Anonymous' ? 'Click to clear anonymous' : 'Click to register as Anonymous'}
+                  >
+                    {walkinRepName === 'Anonymous' ? '✓ Anonymous' : '👤 Anonymous'}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={walkinRepName}
+                  onChange={(e) => setWalkinRepName(e.target.value)}
+                  placeholder="e.g. Maria Santos (Representative)"
+                  style={{
+                    backgroundColor: walkinRepName === 'Anonymous' ? 'rgba(3, 5, 186, 0.04)' : '#ffffff',
+                    borderColor: walkinRepName === 'Anonymous' ? 'var(--dole-blue)' : undefined,
+                    fontWeight: walkinRepName === 'Anonymous' ? 700 : 400,
+                    color: walkinRepName === 'Anonymous' ? 'var(--dole-blue)' : undefined,
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                  Number of Members in Group *
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ position: 'relative', width: '110px' }}>
+                    <input
+                      type="number"
+                      min="2"
+                      max="999"
+                      required
+                      value={walkinGroupSize}
+                      onChange={(e) => setWalkinGroupSize(e.target.value)}
+                      placeholder="e.g. 5"
+                      style={{
+                        width: '100%',
+                        fontWeight: 700,
+                        paddingLeft: '2rem',
+                      }}
+                    />
+                    <span style={{
+                      position: 'absolute',
+                      left: '8px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      fontSize: '0.9rem',
+                      pointerEvents: 'none',
+                    }}>
+                      👥
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Total people in group
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Select Service after representative and group members */}
           <div style={{ marginBottom: '1rem' }}>
             <label>Select Service *</label>
             <SearchableServiceSelect
@@ -749,43 +944,6 @@ export default function StaffQueue() {
               onChange={(val) => setWalkinService(val)}
               placeholder="-- Select Service --"
               searchPlaceholder="Search services or division..."
-            />
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-              <label style={{ margin: 0 }}>Client Name (Optional)</label>
-              <button
-                type="button"
-                onClick={() => setWalkinName(walkinName === 'Anonymous' ? '' : 'Anonymous')}
-                className="btn btn-sm"
-                style={{
-                  minHeight: '26px',
-                  padding: '0.15rem 0.55rem',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  borderRadius: '20px',
-                  backgroundColor: walkinName === 'Anonymous' ? 'var(--dole-blue)' : '#f1f5f9',
-                  color: walkinName === 'Anonymous' ? '#ffffff' : 'var(--text-secondary)',
-                  border: walkinName === 'Anonymous' ? '1px solid var(--dole-blue)' : '1px solid #cbd5e1',
-                  cursor: 'pointer',
-                }}
-                title={walkinName === 'Anonymous' ? 'Click to clear anonymous' : 'Click to register as Anonymous'}
-              >
-                {walkinName === 'Anonymous' ? '✓ Anonymous' : '👤 Anonymous'}
-              </button>
-            </div>
-            <input
-              type="text"
-              value={walkinName}
-              onChange={(e) => setWalkinName(e.target.value)}
-              placeholder="e.g. Juan Dela Cruz or Anonymous"
-              style={{
-                backgroundColor: walkinName === 'Anonymous' ? 'rgba(3, 5, 186, 0.04)' : '#ffffff',
-                borderColor: walkinName === 'Anonymous' ? 'var(--dole-blue)' : undefined,
-                fontWeight: walkinName === 'Anonymous' ? 700 : 400,
-                color: walkinName === 'Anonymous' ? 'var(--dole-blue)' : undefined,
-              }}
             />
           </div>
 

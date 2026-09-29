@@ -20,6 +20,9 @@ export default function CheckIn() {
   const [serviceId, setServiceId] = useState('');
   const [clientName, setClientName] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [isGroup, setIsGroup] = useState(false);
+  const [representativeName, setRepresentativeName] = useState('');
+  const [groupSize, setGroupSize] = useState('2');
   const [isPriority, setIsPriority] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsAgreedCheckbox, setTermsAgreedCheckbox] = useState(false);
@@ -45,8 +48,18 @@ export default function CheckIn() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!serviceId) {
-      setError('Please select a service to proceed.');
+      setError(lang === 'fil' ? 'Mangyaring pumili ng serbisyo bago magpatuloy.' : 'Please select a service to proceed.');
       return;
+    }
+
+    let finalClientName = '';
+    if (isGroup) {
+      const parsedSize = parseInt(groupSize, 10);
+      const count = isNaN(parsedSize) || parsedSize < 2 ? 2 : parsedSize;
+      const rep = isAnonymous ? 'Anonymous' : (representativeName.trim() || 'Anonymous');
+      finalClientName = `${rep} (Group of ${count})`;
+    } else {
+      finalClientName = isAnonymous ? 'Anonymous' : (clientName.trim() || null);
     }
 
     try {
@@ -55,7 +68,7 @@ export default function CheckIn() {
       const res = await publicApi.checkin({
         office: Number(officeId),
         service: Number(serviceId),
-        client_name: clientName,
+        client_name: finalClientName,
         is_priority: isPriority,
       });
 
@@ -253,6 +266,292 @@ export default function CheckIn() {
                 />
               </div>
 
+              {/* Registration Type: Individual vs. Group */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.9rem' }}>
+                  {t.registration_type}
+                </label>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '0.5rem',
+                  background: '#f1f5f9',
+                  padding: '4px',
+                  borderRadius: 'var(--radius-md)',
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsGroup(false);
+                    }}
+                    style={{
+                      padding: '0.55rem 1rem',
+                      borderRadius: 'var(--radius-sm)',
+                      border: 'none',
+                      background: !isGroup ? '#ffffff' : 'transparent',
+                      color: !isGroup ? 'var(--dole-blue)' : 'var(--text-secondary)',
+                      fontWeight: !isGroup ? 700 : 500,
+                      boxShadow: !isGroup ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.4rem',
+                      transition: 'all 0.15s ease',
+                      fontSize: '0.9rem',
+                    }}
+                  >
+                    <span>👤</span>
+                    <span>{t.individual}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsGroup(true);
+                    }}
+                    style={{
+                      padding: '0.55rem 1rem',
+                      borderRadius: 'var(--radius-sm)',
+                      border: 'none',
+                      background: isGroup ? '#ffffff' : 'transparent',
+                      color: isGroup ? 'var(--dole-blue)' : 'var(--text-secondary)',
+                      fontWeight: isGroup ? 700 : 500,
+                      boxShadow: isGroup ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.4rem',
+                      transition: 'all 0.15s ease',
+                      fontSize: '0.9rem',
+                    }}
+                  >
+                    <span>👥</span>
+                    <span>{t.group}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Individual: Name field + Anonymous */}
+              {!isGroup ? (
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
+                    <label htmlFor="client-name" style={{ margin: 0 }}>
+                      {t.name_label}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isAnonymous) {
+                          setIsAnonymous(false);
+                          setClientName('');
+                        } else {
+                          setIsAnonymous(true);
+                          setClientName('Anonymous');
+                        }
+                      }}
+                      className="btn btn-sm"
+                      style={{
+                        minHeight: '28px',
+                        padding: '0.15rem 0.65rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        borderRadius: '20px',
+                        backgroundColor: isAnonymous ? 'var(--dole-blue)' : '#f1f5f9',
+                        color: isAnonymous ? '#ffffff' : 'var(--text-secondary)',
+                        border: isAnonymous ? '1px solid var(--dole-blue)' : '1px solid #cbd5e1',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      title={isAnonymous ? 'Click to input custom name' : 'Click to register anonymously'}
+                    >
+                      {isAnonymous ? (t.anonymous_active || '✓ Anonymous') : (t.anonymous_btn || '👤 Anonymous')}
+                    </button>
+                  </div>
+
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      id="client-name"
+                      type="text"
+                      value={clientName}
+                      onChange={(e) => {
+                        setClientName(e.target.value);
+                        if (e.target.value.trim().toLowerCase() === 'anonymous') {
+                          setIsAnonymous(true);
+                        } else if (isAnonymous && e.target.value.trim().toLowerCase() !== 'anonymous') {
+                          setIsAnonymous(false);
+                        }
+                      }}
+                      placeholder={isAnonymous ? 'Anonymous' : t.name_placeholder}
+                      style={{
+                        backgroundColor: isAnonymous ? 'rgba(3, 5, 186, 0.04)' : '#ffffff',
+                        borderColor: isAnonymous ? 'var(--dole-blue)' : undefined,
+                        fontWeight: isAnonymous ? 700 : 400,
+                        color: isAnonymous ? 'var(--dole-blue)' : undefined,
+                      }}
+                    />
+                    {isAnonymous && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAnonymous(false);
+                          setClientName('');
+                        }}
+                        style={{
+                          position: 'absolute',
+                          right: '12px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          padding: '4px',
+                        }}
+                        title="Clear anonymous"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                    {t.anonymous_note}
+                  </p>
+                </div>
+              ) : (
+                /* Group: Representative Name (with Anonymous toggle) & Group Size */
+                <>
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
+                      <label htmlFor="representative-name" style={{ margin: 0 }}>
+                        {t.representative_name} *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isAnonymous) {
+                            setIsAnonymous(false);
+                            setRepresentativeName('');
+                          } else {
+                            setIsAnonymous(true);
+                            setRepresentativeName('Anonymous');
+                          }
+                        }}
+                        className="btn btn-sm"
+                        style={{
+                          minHeight: '28px',
+                          padding: '0.15rem 0.65rem',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          borderRadius: '20px',
+                          backgroundColor: isAnonymous ? 'var(--dole-blue)' : '#f1f5f9',
+                          color: isAnonymous ? '#ffffff' : 'var(--text-secondary)',
+                          border: isAnonymous ? '1px solid var(--dole-blue)' : '1px solid #cbd5e1',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title={isAnonymous ? 'Click to input representative name' : 'Click to register group anonymously'}
+                      >
+                        {isAnonymous ? (t.anonymous_active || '✓ Anonymous') : (t.anonymous_btn || '👤 Anonymous')}
+                      </button>
+                    </div>
+
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        id="representative-name"
+                        type="text"
+                        required={!isAnonymous}
+                        value={representativeName}
+                        onChange={(e) => {
+                          setRepresentativeName(e.target.value);
+                          if (e.target.value.trim().toLowerCase() === 'anonymous') {
+                            setIsAnonymous(true);
+                          } else if (isAnonymous && e.target.value.trim().toLowerCase() !== 'anonymous') {
+                            setIsAnonymous(false);
+                          }
+                        }}
+                        placeholder={isAnonymous ? 'Anonymous' : t.representative_placeholder}
+                        style={{
+                          backgroundColor: isAnonymous ? 'rgba(3, 5, 186, 0.04)' : '#ffffff',
+                          borderColor: isAnonymous ? 'var(--dole-blue)' : undefined,
+                          fontWeight: isAnonymous ? 700 : 400,
+                          color: isAnonymous ? 'var(--dole-blue)' : undefined,
+                        }}
+                      />
+                      {isAnonymous && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAnonymous(false);
+                            setRepresentativeName('');
+                          }}
+                          style={{
+                            position: 'absolute',
+                            right: '12px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            border: 'none',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                            padding: '4px',
+                          }}
+                          title="Clear anonymous"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                      {isAnonymous ? t.anonymous_group_note : t.anonymous_note}
+                    </p>
+                  </div>
+
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <label htmlFor="group-size" style={{ display: 'block', marginBottom: '0.375rem', fontWeight: 600 }}>
+                      {t.group_size_label} *
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{ position: 'relative', width: '130px' }}>
+                        <input
+                          id="group-size"
+                          type="number"
+                          min="2"
+                          max="999"
+                          required
+                          value={groupSize}
+                          onChange={(e) => setGroupSize(e.target.value)}
+                          placeholder={t.group_size_placeholder}
+                          style={{
+                            width: '100%',
+                            fontWeight: 700,
+                            fontSize: '1.05rem',
+                            paddingLeft: '2.2rem',
+                          }}
+                        />
+                        <span style={{
+                          position: 'absolute',
+                          left: '10px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          fontSize: '1rem',
+                          pointerEvents: 'none',
+                          color: 'var(--text-muted)',
+                        }}>
+                          👥
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                        {t.group_size_subtext}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Service Requested - Chosen after filling client / group info */}
               <div style={{ marginBottom: '1.25rem' }}>
                 <label htmlFor="service-select">{t.service_label} *</label>
                 <SearchableServiceSelect
@@ -265,92 +564,6 @@ export default function CheckIn() {
                   searchPlaceholder={t.search_services}
                   noResultsText={t.no_services_found}
                 />
-              </div>
-
-              <div style={{ marginBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-                  <label htmlFor="client-name" style={{ margin: 0 }}>
-                    {t.name_label}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isAnonymous) {
-                        setIsAnonymous(false);
-                        setClientName('');
-                      } else {
-                        setIsAnonymous(true);
-                        setClientName('Anonymous');
-                      }
-                    }}
-                    className="btn btn-sm"
-                    style={{
-                      minHeight: '28px',
-                      padding: '0.15rem 0.65rem',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      borderRadius: '20px',
-                      backgroundColor: isAnonymous ? 'var(--dole-blue)' : '#f1f5f9',
-                      color: isAnonymous ? '#ffffff' : 'var(--text-secondary)',
-                      border: isAnonymous ? '1px solid var(--dole-blue)' : '1px solid #cbd5e1',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                    title={isAnonymous ? 'Click to input custom name' : 'Click to register anonymously'}
-                  >
-                    {isAnonymous ? (t.anonymous_active || '✓ Anonymous') : (t.anonymous_btn || '👤 Anonymous')}
-                  </button>
-                </div>
-
-                <div style={{ position: 'relative' }}>
-                  <input
-                    id="client-name"
-                    type="text"
-                    value={clientName}
-                    onChange={(e) => {
-                      setClientName(e.target.value);
-                      if (e.target.value.trim().toLowerCase() === 'anonymous') {
-                        setIsAnonymous(true);
-                      } else if (isAnonymous && e.target.value.trim().toLowerCase() !== 'anonymous') {
-                        setIsAnonymous(false);
-                      }
-                    }}
-                    placeholder={isAnonymous ? 'Anonymous' : t.name_placeholder}
-                    style={{
-                      backgroundColor: isAnonymous ? 'rgba(3, 5, 186, 0.04)' : '#ffffff',
-                      borderColor: isAnonymous ? 'var(--dole-blue)' : undefined,
-                      fontWeight: isAnonymous ? 700 : 400,
-                      color: isAnonymous ? 'var(--dole-blue)' : undefined,
-                    }}
-                  />
-                  {isAnonymous && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAnonymous(false);
-                        setClientName('');
-                      }}
-                      style={{
-                        position: 'absolute',
-                        right: '12px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        border: 'none',
-                        backgroundColor: 'transparent',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        fontSize: '0.9rem',
-                        padding: '4px',
-                      }}
-                      title="Clear anonymous"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                  {t.anonymous_note}
-                </p>
               </div>
 
               <div style={{
