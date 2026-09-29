@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 
 const DIVISION_BADGES = {
   'TSSD 1': { color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
@@ -50,37 +50,41 @@ export default function SearchableServiceSelect({
 
   // Calculate optimal drop direction (up vs down)
   const calculateDirection = useCallback(() => {
-    if (dropDirection === 'up') {
-      setDropUp(true);
-      return;
-    }
-    if (dropDirection === 'down') {
-      setDropUp(false);
-      return;
-    }
-    if (!containerRef.current) return;
-
-    const rect = containerRef.current.getBoundingClientRect();
-    const spaceBelowViewport = window.innerHeight - rect.bottom;
-    const spaceAboveViewport = rect.top;
-
-    // Check if inside a modal or constrained container
-    const modalEl = containerRef.current.closest('[role="dialog"], [style*="position: fixed"], .card, form') || containerRef.current.offsetParent;
-    if (modalEl) {
-      const modalRect = modalEl.getBoundingClientRect();
-      const modalSpaceBelow = modalRect.bottom - rect.bottom;
-      const modalSpaceAbove = rect.top - modalRect.top;
-
-      // If space below inside modal is limited (< 260px) and space above has more room:
-      if (modalSpaceBelow < 260 && modalSpaceAbove > modalSpaceBelow) {
+    try {
+      if (dropDirection === 'up') {
         setDropUp(true);
         return;
       }
-    }
+      if (dropDirection === 'down') {
+        setDropUp(false);
+        return;
+      }
+      if (!containerRef.current) return;
 
-    if (spaceBelowViewport < 300 && spaceAboveViewport > spaceBelowViewport) {
-      setDropUp(true);
-    } else {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelowViewport = window.innerHeight - rect.bottom;
+      const spaceAboveViewport = rect.top;
+
+      // Check if inside a modal or constrained container
+      const modalEl = containerRef.current.closest('[role="dialog"], .card, form') || containerRef.current.offsetParent;
+      if (modalEl) {
+        const modalRect = modalEl.getBoundingClientRect();
+        const modalSpaceBelow = modalRect.bottom - rect.bottom;
+        const modalSpaceAbove = rect.top - modalRect.top;
+
+        // If space below inside modal is limited (< 260px) and space above has more room:
+        if (modalSpaceBelow < 260 && modalSpaceAbove > modalSpaceBelow) {
+          setDropUp(true);
+          return;
+        }
+      }
+
+      if (spaceBelowViewport < 300 && spaceAboveViewport > spaceBelowViewport) {
+        setDropUp(true);
+      } else {
+        setDropUp(false);
+      }
+    } catch {
       setDropUp(false);
     }
   }, [dropDirection]);
