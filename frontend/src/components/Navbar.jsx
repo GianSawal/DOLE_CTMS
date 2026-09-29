@@ -61,8 +61,8 @@ export default function Navbar() {
             🖨️ Check-in QR
           </NavLink>
           {user?.is_superuser && (
-            <NavLink to="/staff/users" style={navLinkStyle} id="nav-user-management">
-              👥 User Management
+            <NavLink to="/staff/personnel" style={navLinkStyle} id="nav-personnel">
+              👤 Personnel
             </NavLink>
           )}
         </div>

@@ -414,6 +414,46 @@ class StaffQueueView(APIView):
         })
 
 
+def validate_personnel_division_assignment(tx, personnel_name_or_id):
+    """
+    Enforces division restriction:
+    A personnel can only be assigned to services belonging to their assigned division.
+    For example, if assigned to TSSD1, they can only be assigned to services under TSSD1,
+    and cannot be assigned to services belonging to other divisions.
+    """
+    if not tx or not tx.service or not tx.service.division or not personnel_name_or_id:
+        return True, None
+
+    svc_div = tx.service.division.name.strip().upper().replace(' ', '')
+    if svc_div == 'ALL':
+        return True, None
+
+    clean_str = str(personnel_name_or_id).strip()
+
+    # Look up by employee_id or username first
+    emp = CtmsEmployee.objects.filter(
+        models.Q(employee_id__iexact=clean_str) |
+        models.Q(user__username__iexact=clean_str)
+    ).first()
+
+    # If not found by ID, look up by full name or parts
+    if not emp:
+        for candidate in CtmsEmployee.objects.all().prefetch_related('divisions'):
+            c_full = candidate.full_name.strip().lower()
+            c_simple = f"{candidate.first_name} {candidate.last_name}".strip().lower()
+            if clean_str.lower() in (c_full, c_simple) or c_full in clean_str.lower():
+                emp = candidate
+                break
+
+    if emp:
+        emp_divs = [d.name.strip().upper().replace(' ', '') for d in emp.divisions.all()]
+        if emp_divs and svc_div not in emp_divs and 'ALL' not in emp_divs:
+            div_names = ', '.join([d.name for d in emp.divisions.all()])
+            return False, f"Cannot assign {emp.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {tx.service.name} ({tx.service.division.name})."
+
+    return True, None
+
+
 class StaffCreateWalkinView(APIView):
     permission_classes = [IsStaffUser]
 
@@ -425,6 +465,13 @@ class StaffCreateWalkinView(APIView):
         allowed_offices = get_staff_offices(request.user)
         if not allowed_offices.filter(pk=data['office'].pk).exists():
             return Response({"detail": "Forbidden: You are not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
+
+        if not request.user.is_superuser:
+            allowed_divs = get_staff_divisions(request.user)
+            if data['service'].division and not allowed_divs.filter(pk=data['service'].division_id).exists():
+                return Response({
+                    "detail": f"Forbidden: You are not authorized to create walk-in tickets for services under {data['service'].division.name}."
+                }, status=status.HTTP_403_FORBIDDEN)
 
         try:
             tx = services.create_transaction(
@@ -473,6 +520,30 @@ class StaffCallNextView(APIView):
                 counter, _ = CtmsCounter.objects.get_or_create(office=office, name=default_name, defaults={'is_active': True})
 
         personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
+        if personnel and str(personnel).strip() and counter:
+            div = CsmDivision.objects.filter(name=counter.name).first()
+            if div:
+                clean_str = str(personnel).strip()
+                emp = CtmsEmployee.objects.filter(
+                    models.Q(employee_id__iexact=clean_str) |
+                    models.Q(user__username__iexact=clean_str)
+                ).first()
+                if not emp:
+                    for candidate in CtmsEmployee.objects.all().prefetch_related('divisions'):
+                        c_full = candidate.full_name.strip().lower()
+                        c_simple = f"{candidate.first_name} {candidate.last_name}".strip().lower()
+                        if clean_str.lower() in (c_full, c_simple) or c_full in clean_str.lower():
+                            emp = candidate
+                            break
+                if emp:
+                    emp_divs = [d.name.strip().upper().replace(' ', '') for d in emp.divisions.all()]
+                    c_div = div.name.strip().upper().replace(' ', '')
+                    if emp_divs and c_div not in emp_divs and 'ALL' not in emp_divs:
+                        div_names = ', '.join([d.name for d in emp.divisions.all()])
+                        return Response({
+                            "detail": f"Cannot assign {emp.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {div.name}."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             tx = services.call_next_transaction(office=office, counter=counter, personnel=personnel)
             if not tx:
@@ -501,11 +572,19 @@ class StaffTransactionActionView(APIView):
                 personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
                 if not personnel or not str(personnel).strip():
                     return Response({"detail": "Personnel name cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
-                tx = services.assign_personnel_to_transaction(tx, str(personnel).strip())
+                clean_personnel = str(personnel).strip()
+                valid, err_msg = validate_personnel_division_assignment(tx, clean_personnel)
+                if not valid:
+                    return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
+                tx = services.assign_personnel_to_transaction(tx, clean_personnel)
 
             elif action == 'call':
                 counter_id = request.data.get('counter')
                 personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
+                if personnel and str(personnel).strip():
+                    valid, err_msg = validate_personnel_division_assignment(tx, str(personnel).strip())
+                    if not valid:
+                        return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
                 if counter_id:
                     counter = get_object_or_404(CtmsCounter, pk=counter_id, office=tx.office, is_active=True)
                 else:
@@ -520,6 +599,10 @@ class StaffTransactionActionView(APIView):
                 if not tx.counter:
                     return Response({"detail": "Transaction is not assigned to a counter."}, status=status.HTTP_400_BAD_REQUEST)
                 personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
+                if personnel and str(personnel).strip():
+                    valid, err_msg = validate_personnel_division_assignment(tx, str(personnel).strip())
+                    if not valid:
+                        return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
                 tx = services.call_specific_transaction(tx, tx.counter, personnel=personnel)
 
             elif action == 'done':
@@ -1173,4 +1256,52 @@ class CsmDivisionListView(APIView):
     def get(self, request):
         divisions = CsmDivision.objects.all().order_by('id')
         return Response(CsmDivisionSerializer(divisions, many=True).data)
+
+
+class StaffPersonnelListView(APIView):
+    """
+    Returns active personnel for staff assignment, optionally filtered by office and/or division.
+    Accessible by all authenticated staff users.
+    """
+    permission_classes = [IsStaffUser]
+
+    def get(self, request):
+        qs = CtmsEmployee.objects.filter(user__is_active=True).select_related('office', 'user').prefetch_related('divisions').order_by('last_name', 'first_name')
+        office_id = request.query_params.get('office')
+        if office_id:
+            qs = qs.filter(office_id=office_id)
+
+        division_param = request.query_params.get('division')
+        if division_param:
+            div_clean = division_param.strip()
+            names = [div_clean]
+            if div_clean.upper() in ('TSSD1', 'TSSD 1'):
+                names = ['TSSD 1', 'TSSD1']
+            elif div_clean.upper() in ('TSSD2', 'TSSD 2'):
+                names = ['TSSD 2', 'TSSD2']
+            elif div_clean.upper() == 'IMSD':
+                names = ['IMSD']
+            elif div_clean.upper() == 'MALSU':
+                names = ['MALSU']
+
+            qs = qs.filter(models.Q(divisions__name__in=names) | models.Q(divisions__id__in=[div_clean] if div_clean.isdigit() else []))
+
+        data = []
+        for emp in qs.distinct():
+            div_names = [d.name for d in emp.divisions.all()]
+            data.append({
+                "id": emp.id,
+                "employee_id": emp.employee_id,
+                "first_name": emp.first_name,
+                "middle_name": emp.middle_name,
+                "last_name": emp.last_name,
+                "full_name": emp.full_name,
+                "position": emp.position,
+                "office_id": emp.office_id,
+                "office_name": emp.office.name,
+                "division_ids": [d.id for d in emp.divisions.all()],
+                "division_names": div_names,
+            })
+        return Response(data)
+
 

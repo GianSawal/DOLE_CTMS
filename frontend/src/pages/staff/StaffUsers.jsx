@@ -2,9 +2,40 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Navbar from '../../components/Navbar';
 import { staffApi } from '../../api/staff';
 
+export const DOLE_POSITIONS = [
+  'Regional Director',
+  'Director',
+  'Assistant Regional Director',
+  'Supervising Labor Employment Officer',
+  'Senior Labor Inspector',
+  'Labor Employment Officer III',
+  'Labor Employment Officer II',
+  'Labor Employment Officer I',
+  'Admin Aide IV',
+  'Admin Aide III',
+  'Admin Aide II',
+  'Admin Aide I',
+  'Admin Officer V',
+  'Job Order',
+  'GIP',
+  'Statistician',
+  'Information Systems Analyst',
+  'Chief Labor Employment Officer',
+];
+
+export const formatOfficeName = (off) => {
+  if (!off) return '';
+  const name = typeof off === 'string' ? off : (off.name || '');
+  const code = typeof off === 'object' ? (off.code || '') : '';
+  if (code === 'RO3' || name === 'DOLE Regional Office III') {
+    return 'Regional Office No. 3';
+  }
+  return name;
+};
+
 const TARGET_DIVISIONS = [
-  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Support Services Division 1', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
-  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Support Services Division 2', color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
+  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD1', fullName: 'Technical Support Services Division 1', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD2', fullName: 'Technical Support Services Division 2', color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
   { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
   { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation Arbitration and Legal Services Unit', color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
 ];
@@ -465,9 +496,9 @@ export default function StaffUsers() {
         >
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <span style={{ fontSize: '1.6rem' }}>👥</span>
+              <span style={{ fontSize: '1.6rem' }}>👤</span>
               <h1 style={{ fontSize: '1.45rem', color: 'var(--text-primary)', margin: 0 }}>
-                User &amp; Employee Management
+                DOLE Personnel Management
               </h1>
               <span
                 style={{
@@ -485,7 +516,7 @@ export default function StaffUsers() {
               </span>
             </div>
             <p style={{ margin: '0.3rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-              Create and manage staff accounts, assign field offices, and restrict queue line access by division.
+              Add and manage personnel information, positions, designated offices, and enforce division-based service access restrictions.
             </p>
           </div>
 
@@ -506,7 +537,7 @@ export default function StaffUsers() {
               boxShadow: 'var(--shadow-md)',
             }}
           >
-            <span>➕</span> Add New Employee
+            <span>➕</span> Add Personnel Information
           </button>
         </div>
 
@@ -529,7 +560,7 @@ export default function StaffUsers() {
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Total Employees
+              Total Personnel
             </div>
             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
               {totalEmployees}
@@ -650,7 +681,7 @@ export default function StaffUsers() {
               <option value="">All Offices</option>
               {offices.map((off) => (
                 <option key={off.id} value={off.id}>
-                  {off.name}
+                  {formatOfficeName(off)} ({off.code})
                 </option>
               ))}
             </select>
@@ -737,7 +768,7 @@ export default function StaffUsers() {
                     <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                       Assigned Division(s)
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', fontWeight: 400 }}>
-                        (Dictates Queue Access)
+                        (Dictates Service Access)
                       </span>
                     </th>
                     <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Status</th>
@@ -793,7 +824,7 @@ export default function StaffUsers() {
 
                         {/* Office */}
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.office_name}</div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{formatOfficeName(emp.office_name)}</div>
                           {emp.office_code && (
                             <span
                               style={{
@@ -991,12 +1022,12 @@ export default function StaffUsers() {
             >
               <div>
                 <h2 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', margin: 0 }}>
-                  {modalMode === 'create' ? '➕ Add New Employee' : `✏️ Edit Employee (${employeeId})`}
+                  {modalMode === 'create' ? '➕ Add Personnel Information' : `✏️ Edit Personnel Information (${employeeId})`}
                 </h2>
                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                   {modalMode === 'create'
-                    ? 'Fill in the fields below. Saving will automatically create the user account on the database.'
-                    : 'Update employee information and division queue permissions.'}
+                    ? 'Fill in the personnel details below. Saving will register the personnel and create their login credentials.'
+                    : 'Update personnel details, position, office, and division assignment.'}
                 </p>
               </div>
               <button
@@ -1109,22 +1140,32 @@ export default function StaffUsers() {
 
                 <div>
                   <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                    Position / Designation
+                    Position <span style={{ color: 'var(--dole-red)' }}>*</span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Labor and Employment Officer III"
+                  <select
+                    required
                     value={position}
                     onChange={(e) => setPosition(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '0.6rem 0.8rem',
+                      padding: '0.62rem 0.8rem',
                       borderRadius: 'var(--radius-sm)',
                       border: '1px solid var(--border-color)',
                       fontSize: '0.88rem',
                       outline: 'none',
+                      backgroundColor: '#fff',
                     }}
-                  />
+                  >
+                    <option value="" disabled>-- Select Official Position --</option>
+                    {DOLE_POSITIONS.map((pos) => (
+                      <option key={pos} value={pos}>
+                        {pos}
+                      </option>
+                    ))}
+                    {position && !DOLE_POSITIONS.includes(position) && (
+                      <option value={position}>{position} (Current)</option>
+                    )}
+                  </select>
                 </div>
               </div>
 
@@ -1150,12 +1191,12 @@ export default function StaffUsers() {
                   <option value="" disabled>-- Select DOLE Office --</option>
                   {offices.map((off) => (
                     <option key={off.id} value={off.id}>
-                      {off.name} ({off.code})
+                      {formatOfficeName(off)} ({off.code})
                     </option>
                   ))}
                 </select>
                 <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Regional Office No. 3, Pampanga, Clark, Tarlac, Bulacan, Nueva Ecija, Aurora, Bataan, Zambales
+                  Regional Office No. 3, Pampanga Field Office, Clark Satellite Office, Tarlac Field Office, Bulacan Field Office, Nueva Ecija Field Office, Aurora Field Office, or Bataan Field Office
                 </span>
               </div>
 
@@ -1170,15 +1211,30 @@ export default function StaffUsers() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
                   <label style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    Division Queue Access (Checkboxes) <span style={{ color: 'var(--dole-red)' }}>*</span>
+                    Division (Determines Allowed Services) <span style={{ color: 'var(--dole-red)' }}>*</span>
                   </label>
                   <span style={{ fontSize: '0.74rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
-                    Select one or more
+                    Select Division(s)
                   </span>
                 </div>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-                  The division(s) selected determine which <strong>Waiting in Line / Queue tickets</strong> this employee is allowed to view and call.
-                </p>
+                <div
+                  style={{
+                    backgroundColor: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.65rem 0.85rem',
+                    marginBottom: '0.85rem',
+                    fontSize: '0.8rem',
+                    color: '#1e40af',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <strong>⚠️ Division Service Assignment Rule:</strong>
+                  <div>
+                    The selected division strictly determines which services this personnel can access and be assigned to.
+                    For example, personnel assigned to <strong>TSSD1</strong> can only access and be assigned to services under the <strong>TSSD1</strong> division, and cannot access or be assigned to services belonging to other divisions.
+                  </div>
+                </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.65rem' }}>
                   {TARGET_DIVISIONS.map((tDiv) => {

@@ -156,6 +156,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
     office_name = serializers.ReadOnlyField(source='office.name')
     service_name = serializers.ReadOnlyField(source='service.name')
     division_name = serializers.ReadOnlyField(source='service.division.name')
+    division_id = serializers.ReadOnlyField(source='service.division.id')
     counter_name = serializers.ReadOnlyField(source='counter.name')
     served_by_username = serializers.ReadOnlyField(source='served_by.username')
     is_surveyed = serializers.ReadOnlyField()
@@ -171,6 +172,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'service',
             'service_name',
             'division_name',
+            'division_id',
             'is_priority',
             'client_name',
             'status',

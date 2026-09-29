@@ -131,6 +131,14 @@ export default function App() {
             }
           />
           <Route
+            path="/staff/personnel"
+            element={
+              <AdminRoute>
+                <StaffUsers />
+              </AdminRoute>
+            }
+          />
+          <Route
             path="/staff/users"
             element={
               <AdminRoute>

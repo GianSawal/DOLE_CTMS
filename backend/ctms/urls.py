@@ -23,6 +23,7 @@ from .views import (
     PublicStreamLocalVideoView,
     CsmDivisionListView,
     CsmOfficeListView,
+    StaffPersonnelListView,
     CtmsCounterViewSet,
     CtmsStaffOfficeViewSet,
     StaffEmployeeViewSet,
@@ -63,6 +64,7 @@ urlpatterns = [
     path('staff/display-video/', StaffDisplayVideoView.as_view(), name='staff-display-video'),
     path('staff/divisions/', CsmDivisionListView.as_view(), name='staff-divisions'),
     path('staff/offices/', CsmOfficeListView.as_view(), name='staff-offices-list'),
+    path('staff/personnel/', StaffPersonnelListView.as_view(), name='staff-personnel-list'),
 
     # Routers (Counters & Staff-Offices)
     path('', include(router.urls)),

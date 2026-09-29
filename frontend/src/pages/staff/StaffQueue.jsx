@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { staffApi } from '../../api/staff';
 import { publicApi } from '../../api/public';
 import { useAuth } from '../../context/AuthContext';
@@ -36,6 +36,7 @@ export default function StaffQueue() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignTx, setAssignTx] = useState(null);
   const [assignPersonnelName, setAssignPersonnelName] = useState('');
+  const [officePersonnel, setOfficePersonnel] = useState([]);
   const [recentPersonnel, setRecentPersonnel] = useState(() => {
     try {
       const saved = localStorage.getItem('ctms_recent_personnel');
@@ -128,13 +129,78 @@ export default function StaffQueue() {
 
   const isNextClientAssigned = Boolean(nextWaitingClient?.assigned_personnel && nextWaitingClient.assigned_personnel.trim());
 
+  // Helper to normalize division names
+  const normalizeDiv = (name) => (name || '').toUpperCase().replace(/\s+/g, '');
+
+  // Fetch registered personnel for the selected office
+  useEffect(() => {
+    if (selectedOffice) {
+      staffApi.getPersonnel({ office: selectedOffice })
+        .then(data => setOfficePersonnel(Array.isArray(data) ? data : []))
+        .catch(() => {});
+    }
+  }, [selectedOffice]);
+
+  // Filter walk-in services to staff's division(s) if not superuser
+  const filteredOfficeServices = useMemo(() => {
+    if (!officeServices || officeServices.length === 0) return [];
+    if (user?.is_superuser || !user?.assigned_divisions || user.assigned_divisions.length === 0) {
+      return officeServices;
+    }
+    const staffDivisionNorms = user.assigned_divisions.map(d => normalizeDiv(d.name));
+    const staffDivisionIds = user.assigned_divisions.map(d => d.id);
+    return officeServices.filter(svc => {
+      if (svc.division && staffDivisionIds.includes(svc.division)) return true;
+      if (svc.division_name) {
+        const norm = normalizeDiv(svc.division_name);
+        if (staffDivisionNorms.includes(norm) || norm === 'ALL') return true;
+      }
+      return false;
+    });
+  }, [officeServices, user]);
+
+  // For the current transaction: separate eligible personnel (same division) vs ineligible
+  const txDivNorm = normalizeDiv(assignTx?.division_name);
+
+  const eligiblePersonnel = useMemo(() => {
+    if (!txDivNorm) return officePersonnel;
+    return officePersonnel.filter(p => {
+      const divs = (p.division_names || []).map(normalizeDiv);
+      return divs.includes(txDivNorm) || divs.includes('ALL');
+    });
+  }, [officePersonnel, txDivNorm]);
+
+  const ineligiblePersonnel = useMemo(() => {
+    if (!txDivNorm) return [];
+    return officePersonnel.filter(p => {
+      const divs = (p.division_names || []).map(normalizeDiv);
+      return !divs.includes(txDivNorm) && !divs.includes('ALL');
+    });
+  }, [officePersonnel, txDivNorm]);
+
+  // Check if currently selected / typed name matches an ineligible personnel
+  const matchedIneligible = useMemo(() => {
+    if (!assignPersonnelName.trim() || ineligiblePersonnel.length === 0) return null;
+    const clean = assignPersonnelName.toLowerCase().trim();
+    return ineligiblePersonnel.find(
+      p => p.full_name?.toLowerCase().trim() === clean ||
+           p.employee_id?.toLowerCase().trim() === clean
+    );
+  }, [assignPersonnelName, ineligiblePersonnel]);
+
   const currentCounter = queueData.counters?.find(c => String(c.id) === String(selectedCounter));
   const currentCounterName = currentCounter ? currentCounter.name : null;
 
   const handleOpenAssignModal = (tx) => {
     setAssignTx(tx);
+    const txDiv = normalizeDiv(tx?.division_name);
+    const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(d.name));
+    const canUserSelfAssign = user?.is_superuser || !txDiv || loggedInUserDivs.includes(txDiv);
+
     const defaultName = tx?.assigned_personnel || (
-      user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user?.username || '')
+      canUserSelfAssign
+        ? (user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user?.username || ''))
+        : ''
     );
     setAssignPersonnelName(defaultName);
     setShowAssignModal(true);
@@ -143,6 +209,12 @@ export default function StaffQueue() {
   const handleAssignSubmit = async (e) => {
     e.preventDefault();
     if (!assignTx || !assignPersonnelName.trim()) return;
+
+    if (matchedIneligible) {
+      setError(`Cannot assign ${matchedIneligible.full_name}: assigned to ${matchedIneligible.division_names.join(', ')} and cannot be assigned to ${assignTx.division_name || 'other'} division services.`);
+      return;
+    }
+
     try {
       setActionLoading(true);
       setError('');
@@ -939,12 +1011,17 @@ export default function StaffQueue() {
             <label>Select Service *</label>
             <SearchableServiceSelect
               required
-              services={officeServices || []}
+              services={filteredOfficeServices || []}
               value={walkinService}
               onChange={(val) => setWalkinService(val)}
               placeholder="-- Select Service --"
               searchPlaceholder="Search services or division..."
             />
+            {user && !user.is_superuser && user.assigned_divisions?.length > 0 && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--dole-blue)', marginTop: '0.35rem', fontWeight: 600 }}>
+                🔒 Limited to your division: {user.assigned_divisions.map(d => d.name).join(', ')}
+              </div>
+            )}
           </div>
 
           <div style={{ marginBottom: '1.5rem' }}>
@@ -997,97 +1074,203 @@ export default function StaffQueue() {
         title={`Assign Personnel · Queue #${assignTx?.queue_no || ''}`}
       >
         <form onSubmit={handleAssignSubmit}>
-          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-            Designate the officer or staff handling this client (<strong>{assignTx?.service_name || 'Frontline Service'}</strong>).
-            This name will be announced on the office audio system and displayed under <strong>NOW SERVING</strong> on the TV screen.
-          </p>
+          <div style={{
+            backgroundColor: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: 'var(--radius-md)',
+            padding: '0.85rem 1rem',
+            marginBottom: '1.25rem',
+            fontSize: '0.88rem',
+            color: '#1e40af',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+              <strong style={{ fontSize: '0.95rem' }}>Service: {assignTx?.service_name || 'Frontline Service'}</strong>
+              {assignTx?.division_name && (
+                <span style={{
+                  backgroundColor: '#dbeafe',
+                  color: '#1d4ed8',
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: 'var(--radius-sm)',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                }}>
+                  Division: {assignTx.division_name}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#1e3a8a', lineHeight: 1.4 }}>
+              🔒 <strong>Division Access Policy:</strong> Only personnel assigned to the <strong>{assignTx?.division_name || 'same'}</strong> division are permitted to access and be assigned to this transaction.
+            </div>
+          </div>
+
+          {/* Quick Select from Registered Personnel */}
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label style={{ fontWeight: 700, marginBottom: '0.4rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.86rem' }}>
+              <span>Select Registered DOLE Personnel</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {eligiblePersonnel.length} eligible in {assignTx?.division_name || 'division'}
+              </span>
+            </label>
+            <select
+              value={
+                officePersonnel.some(p => p.full_name === assignPersonnelName)
+                  ? assignPersonnelName
+                  : ''
+              }
+              onChange={(e) => {
+                if (e.target.value) {
+                  setAssignPersonnelName(e.target.value);
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '0.65rem 0.75rem',
+                fontSize: '0.9rem',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-color)',
+                backgroundColor: '#fff',
+              }}
+            >
+              <option value="">-- Choose Registered Personnel --</option>
+              {eligiblePersonnel.length > 0 && (
+                <optgroup label={`Eligible for ${assignTx?.division_name || 'Frontline'} Division`}>
+                  {eligiblePersonnel.map((p) => (
+                    <option key={p.id} value={p.full_name}>
+                      ✓ {p.full_name} ({p.position || 'Staff'} · {p.division_names?.join(', ')})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {ineligiblePersonnel.length > 0 && (
+                <optgroup label="Unavailable (Assigned to Other Divisions)">
+                  {ineligiblePersonnel.map((p) => (
+                    <option key={p.id} value="" disabled style={{ color: '#9ca3af' }}>
+                      🚫 {p.full_name} ({p.position || 'Staff'} · Assigned to: {p.division_names?.join(', ')})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
 
           <div style={{ marginBottom: '1.25rem' }}>
-            <label style={{ fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>
+            <label style={{ fontWeight: 700, marginBottom: '0.4rem', display: 'block', fontSize: '0.86rem' }}>
               Assigned Personnel Name *
             </label>
             <input
               type="text"
               required
-              autoFocus
               value={assignPersonnelName}
               onChange={(e) => setAssignPersonnelName(e.target.value)}
-              placeholder="e.g. Engr. Juan Dela Cruz, Atty. Santos, Ms. Maria Reyes"
-              style={{ width: '100%', padding: '0.65rem 0.75rem', fontSize: '1rem' }}
+              placeholder="e.g. Juan Dela Cruz"
+              style={{
+                width: '100%',
+                padding: '0.65rem 0.75rem',
+                fontSize: '0.95rem',
+                borderColor: matchedIneligible ? 'var(--dole-red)' : undefined,
+              }}
             />
           </div>
+
+          {matchedIneligible && (
+            <div style={{
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: 'var(--radius-sm)',
+              padding: '0.75rem 0.9rem',
+              color: '#991b1b',
+              fontSize: '0.84rem',
+              marginBottom: '1.25rem',
+              lineHeight: 1.45,
+            }}>
+              ⚠️ <strong>Division Restriction Violation:</strong> <strong>{matchedIneligible.full_name}</strong> is assigned to division(s) <strong>{matchedIneligible.division_names?.join(', ')}</strong> and cannot access or be assigned to services under the <strong>{assignTx?.division_name}</strong> division.
+            </div>
+          )}
 
           {recentPersonnel.length > 0 && (
             <div style={{ marginBottom: '1.25rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-                  Quick select recently assigned:
+                  Recently assigned:
                 </label>
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                   Click ✕ to remove
                 </span>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
-                {recentPersonnel.map((name, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      borderRadius: '20px',
-                      backgroundColor: assignPersonnelName === name ? 'rgba(3, 5, 186, 0.1)' : '#f8fafc',
-                      border: assignPersonnelName === name ? '1.5px solid var(--dole-blue)' : '1px solid #cbd5e1',
-                      overflow: 'hidden',
-                      transition: 'all 0.15s ease',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setAssignPersonnelName(name)}
+                {recentPersonnel.map((name, idx) => {
+                  const isIneligible = ineligiblePersonnel.some(
+                    p => p.full_name?.toLowerCase().trim() === name.toLowerCase().trim()
+                  );
+                  return (
+                    <div
+                      key={idx}
                       style={{
-                        border: 'none',
-                        background: 'transparent',
-                        padding: '0.25rem 0.55rem',
-                        cursor: 'pointer',
-                        fontWeight: assignPersonnelName === name ? 700 : 500,
-                        color: assignPersonnelName === name ? 'var(--dole-blue)' : 'var(--text-primary)',
-                        display: 'flex',
+                        display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '0.35rem',
-                        fontSize: '0.8rem',
+                        borderRadius: '20px',
+                        backgroundColor: assignPersonnelName === name
+                          ? 'rgba(3, 5, 186, 0.1)'
+                          : isIneligible
+                          ? '#f1f5f9'
+                          : '#f8fafc',
+                        border: assignPersonnelName === name
+                          ? '1.5px solid var(--dole-blue)'
+                          : isIneligible
+                          ? '1px dashed #cbd5e1'
+                          : '1px solid #cbd5e1',
+                        opacity: isIneligible ? 0.6 : 1,
+                        overflow: 'hidden',
+                        transition: 'all 0.15s ease',
                       }}
-                      title={`Select ${name}`}
                     >
-                      <span>👤</span>
-                      <span>{name}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteRecentPersonnel(name, e)}
-                      style={{
-                        border: 'none',
-                        background: 'transparent',
-                        padding: '0.2rem 0.45rem',
-                        paddingLeft: '0.1rem',
-                        cursor: 'pointer',
-                        color: '#94a3b8',
-                        fontSize: '0.85rem',
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        lineHeight: 1,
-                        transition: 'color 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--dole-red)'}
-                      onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
-                      title={`Remove "${name}" from recent list`}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() => setAssignPersonnelName(name)}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          padding: '0.25rem 0.55rem',
+                          cursor: 'pointer',
+                          fontWeight: assignPersonnelName === name ? 700 : 500,
+                          color: assignPersonnelName === name ? 'var(--dole-blue)' : 'var(--text-primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          fontSize: '0.8rem',
+                        }}
+                        title={isIneligible ? `Cannot assign: belongs to another division` : `Select ${name}`}
+                      >
+                        <span>{isIneligible ? '🚫' : '👤'}</span>
+                        <span style={{ textDecoration: isIneligible ? 'line-through' : 'none' }}>{name}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteRecentPersonnel(name, e)}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          padding: '0.2rem 0.45rem',
+                          paddingLeft: '0.1rem',
+                          cursor: 'pointer',
+                          color: '#94a3b8',
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          lineHeight: 1,
+                          transition: 'color 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--dole-red)'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
+                        title={`Remove "${name}" from recent list`}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1105,7 +1288,7 @@ export default function StaffQueue() {
             </button>
             <button
               type="submit"
-              disabled={actionLoading || !assignPersonnelName.trim()}
+              disabled={actionLoading || !assignPersonnelName.trim() || Boolean(matchedIneligible)}
               className="btn btn-primary"
               style={{ fontWeight: 700 }}
             >

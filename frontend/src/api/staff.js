@@ -80,6 +80,14 @@ export const staffApi = {
   // Employee & User Management (Admin Only)
   getOffices: () => apiRequest('/staff/offices/'),
 
+  getPersonnel: (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== '' && v !== null && v !== undefined) params.append(k, v);
+    });
+    return apiRequest(`/staff/personnel/?${params.toString()}`);
+  },
+
   getEmployees: (filters = {}) => {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => {
