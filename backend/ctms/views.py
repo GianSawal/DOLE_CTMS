@@ -279,11 +279,13 @@ class PublicDisplayBoardView(APIView):
             office=office,
             status=CtmsTransaction.STATUS_SERVING,
             queue_date=today
-        ).select_related('counter', 'service').order_by('-called_at')
+        ).select_related('counter', 'service', 'service__division').order_by('-called_at')
 
         serving_data = []
         for s in serving_qs:
             service_name = s.service.name if s.service else ""
+            div = s.service.division if (s.service and s.service.division) else None
+            div_name = div.name if div else ""
             serving_data.append({
                 "id": s.id,
                 "counter": s.counter.name if s.counter else "Counter",
@@ -292,6 +294,9 @@ class PublicDisplayBoardView(APIView):
                 "service_name": service_name,
                 "service_description": get_service_description(service_name),
                 "assigned_personnel": s.assigned_personnel or "",
+                "is_priority": s.is_priority,
+                "division_name": div_name,
+                "division_id": div.id if div else None,
             })
 
         # Next waiting queue numbers (priority first, then FIFO) - numbers only, never names!
@@ -299,9 +304,20 @@ class PublicDisplayBoardView(APIView):
             office=office,
             status=CtmsTransaction.STATUS_WAITING,
             queue_date=today
-        ).order_by('-is_priority', 'checked_in_at')[:10]
+        ).select_related('service', 'service__division').order_by('-is_priority', 'checked_in_at')[:25]
 
-        next_queue_numbers = [tx.queue_no for tx in next_waiting_qs]
+        next_queue_numbers = [tx.queue_no for tx in next_waiting_qs[:10]]
+        next_details = []
+        for tx in next_waiting_qs:
+            div = tx.service.division if (tx.service and tx.service.division) else None
+            next_details.append({
+                "queue_no": tx.queue_no,
+                "is_priority": tx.is_priority,
+                "division_name": div.name if div else "",
+                "division_id": div.id if div else None,
+                "service_name": tx.service.name if tx.service else "",
+            })
+
         first_serving = serving_qs.first()
         latest_called_at = first_serving.called_at.isoformat() if first_serving and first_serving.called_at else None
 
@@ -313,10 +329,28 @@ class PublicDisplayBoardView(APIView):
             else:
                 arta_video_url = display_config.arta_video_url or ""
 
+        # Check if caller has an authenticated staff account or query param
+        user = request.user if (request.user and request.user.is_authenticated) else None
+        user_divisions = []
+        if user and user.is_staff:
+            allowed_divs = get_staff_divisions(user)
+            user_divisions = list(allowed_divs.values_list('name', flat=True))
+
+        divisions_param = request.query_params.get('divisions') or request.query_params.get('division')
+        if divisions_param:
+            req_div_names = [d.strip() for d in divisions_param.split(',') if d.strip()]
+            if req_div_names:
+                user_divisions = req_div_names
+
+        all_divisions = list(CsmDivision.objects.values_list('name', flat=True).order_by('id'))
+
         return Response({
             "office": CsmOfficeSerializer(office).data,
             "serving": serving_data,
             "next": next_queue_numbers,
+            "next_details": next_details,
+            "user_divisions": user_divisions,
+            "all_divisions": all_divisions,
             "latest_called_at": latest_called_at,
             "latest_called_queue_no": first_serving.queue_no if first_serving else None,
             "latest_called_counter": (first_serving.counter.name if first_serving.counter else "Counter") if first_serving else None,

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useParams, useLocation } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { publicApi } from '../../api/public';
 import { translations } from '../../locales/translations';
 import {
@@ -43,6 +44,94 @@ function getFallbackDesc(serviceName) {
   return 'Frontline public service, inquiry assistance, and document processing.';
 }
 
+const KNOWN_DIVISIONS = [
+  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Services & Support Division 1 (Labor Standards / OSH)', color: '#0305ba', accent: '#3b82f6', bgLight: '#eff6ff', bgDark: '#172554' },
+  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Services & Support Division 2 (Employment / Welfare)', color: '#059669', accent: '#10b981', bgLight: '#ecfdf5', bgDark: '#064e3b' },
+  { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division (Finance / Admin)', color: '#b45309', accent: '#f59e0b', bgLight: '#fffbeb', bgDark: '#451a03' },
+  { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation-Arbitration & Legal Services Unit', color: '#7c3aed', accent: '#8b5cf6', bgLight: '#f5f3ff', bgDark: '#3b0764' },
+];
+
+function normalizeDiv(name) {
+  return (name || '').toUpperCase().replace(/[\s\-_]+/g, '');
+}
+
+function matchDivision(divName) {
+  if (!divName) return null;
+  const norm = normalizeDiv(divName);
+  return KNOWN_DIVISIONS.find(d => normalizeDiv(d.key) === norm || normalizeDiv(d.alias) === norm || norm.includes(normalizeDiv(d.alias)));
+}
+
+// Dynamically scale down table layout and font sizes as queue volume increases
+function getDynamicScaling(count) {
+  if (count <= 1) {
+    return {
+      queueFontSize: '3.4rem',
+      queueLineHeight: '1',
+      rowPadding: '1.25rem 1rem',
+      counterFontSize: '1.35rem',
+      personnelFontSize: '1.15rem',
+      serviceFontSize: '0.92rem',
+      badgePadding: '0.35rem 0.75rem',
+      statusFontSize: '0.85rem',
+    };
+  } else if (count === 2) {
+    return {
+      queueFontSize: '2.8rem',
+      queueLineHeight: '1.05',
+      rowPadding: '1rem 0.9rem',
+      counterFontSize: '1.2rem',
+      personnelFontSize: '1.05rem',
+      serviceFontSize: '0.88rem',
+      badgePadding: '0.3rem 0.65rem',
+      statusFontSize: '0.82rem',
+    };
+  } else if (count === 3) {
+    return {
+      queueFontSize: '2.3rem',
+      queueLineHeight: '1.1',
+      rowPadding: '0.75rem 0.85rem',
+      counterFontSize: '1.05rem',
+      personnelFontSize: '0.98rem',
+      serviceFontSize: '0.84rem',
+      badgePadding: '0.25rem 0.6rem',
+      statusFontSize: '0.78rem',
+    };
+  } else if (count === 4) {
+    return {
+      queueFontSize: '1.95rem',
+      queueLineHeight: '1.1',
+      rowPadding: '0.6rem 0.75rem',
+      counterFontSize: '0.98rem',
+      personnelFontSize: '0.92rem',
+      serviceFontSize: '0.8rem',
+      badgePadding: '0.2rem 0.55rem',
+      statusFontSize: '0.75rem',
+    };
+  } else if (count <= 6) {
+    return {
+      queueFontSize: '1.65rem',
+      queueLineHeight: '1.1',
+      rowPadding: '0.45rem 0.65rem',
+      counterFontSize: '0.9rem',
+      personnelFontSize: '0.85rem',
+      serviceFontSize: '0.75rem',
+      badgePadding: '0.18rem 0.5rem',
+      statusFontSize: '0.7rem',
+    };
+  } else {
+    return {
+      queueFontSize: '1.4rem',
+      queueLineHeight: '1.1',
+      rowPadding: '0.35rem 0.55rem',
+      counterFontSize: '0.84rem',
+      personnelFontSize: '0.78rem',
+      serviceFontSize: '0.7rem',
+      badgePadding: '0.15rem 0.45rem',
+      statusFontSize: '0.68rem',
+    };
+  }
+}
+
 export default function DisplayBoard() {
   const { officeId } = useParams();
   const [lang, setLang] = useState('en');
@@ -53,6 +142,134 @@ export default function DisplayBoard() {
   }, [lang]);
 
   const [displayData, setDisplayData] = useState(null);
+  const { user } = useAuth();
+  const location = useLocation();
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+
+  // Selected division filter: '' means simultaneous display of all eligible divisions
+  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState(() => {
+    return localStorage.getItem('ctms_tv_division_filter') || '';
+  });
+
+  // Calculate divisions eligible for this account/screen
+  const eligibleDivisions = useMemo(() => {
+    // 1. URL search params override (?divisions=TSSD1,TSSD2 or ?division=TSSD1)
+    const paramDivs = searchParams.get('divisions') || searchParams.get('division');
+    if (paramDivs) {
+      const parts = paramDivs.split(',').map(s => s.trim()).filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+
+    // 2. Logged in user assigned divisions (if not superuser)
+    if (user && !user.is_superuser && user.assigned_divisions && user.assigned_divisions.length > 0) {
+      return user.assigned_divisions.map(d => d.name);
+    }
+
+    // 3. Backend response user_divisions
+    if (displayData?.user_divisions && displayData.user_divisions.length > 0) {
+      return displayData.user_divisions;
+    }
+
+    // 4. Inspect active serving and next items
+    const detected = new Set();
+    (displayData?.serving || []).forEach(s => {
+      if (s.division_name) detected.add(s.division_name);
+    });
+    (displayData?.next_details || []).forEach(n => {
+      if (n.division_name) detected.add(n.division_name);
+    });
+
+    if (detected.size > 0) {
+      return Array.from(detected);
+    }
+
+    // 5. If nothing detected yet, check all_divisions from backend or fallback to TSSD 1 & TSSD 2
+    if (displayData?.all_divisions && displayData.all_divisions.length > 0) {
+      return displayData.all_divisions.slice(0, 2);
+    }
+
+    return ['TSSD 1', 'TSSD 2'];
+  }, [searchParams, user, displayData]);
+
+  // Active divisions to render simultaneously
+  const activeDivisionsToRender = useMemo(() => {
+    if (selectedDivisionFilter && selectedDivisionFilter !== 'ALL') {
+      return [selectedDivisionFilter];
+    }
+    return eligibleDivisions;
+  }, [eligibleDivisions, selectedDivisionFilter]);
+
+  // Group serving items by division
+  const servingByDivision = useMemo(() => {
+    const groups = {};
+    activeDivisionsToRender.forEach(div => {
+      groups[div] = [];
+    });
+
+    const unassigned = [];
+
+    (displayData?.serving || []).forEach(item => {
+      const itemDiv = item.division_name;
+      const matchedDiv = activeDivisionsToRender.find(
+        targetDiv => normalizeDiv(targetDiv) === normalizeDiv(itemDiv)
+      );
+
+      if (matchedDiv) {
+        groups[matchedDiv].push(item);
+      } else {
+        let placed = false;
+        for (const targetDiv of activeDivisionsToRender) {
+          const m1 = matchDivision(targetDiv);
+          const m2 = matchDivision(itemDiv);
+          if (m1 && m2 && m1.alias === m2.alias) {
+            groups[targetDiv].push(item);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          unassigned.push(item);
+        }
+      }
+    });
+
+    if (unassigned.length > 0 && activeDivisionsToRender.length === 1) {
+      groups[activeDivisionsToRender[0]].push(...unassigned);
+    } else if (unassigned.length > 0 && activeDivisionsToRender.length > 1) {
+      groups[activeDivisionsToRender[0]].push(...unassigned);
+    }
+
+    return groups;
+  }, [activeDivisionsToRender, displayData?.serving]);
+
+  // Group upcoming tickets by division
+  const nextByDivision = useMemo(() => {
+    const groups = {};
+    activeDivisionsToRender.forEach(div => {
+      groups[div] = [];
+    });
+
+    (displayData?.next_details || []).forEach(item => {
+      const itemDiv = item.division_name;
+      const matchedDiv = activeDivisionsToRender.find(
+        targetDiv => normalizeDiv(targetDiv) === normalizeDiv(itemDiv)
+      );
+      if (matchedDiv) {
+        groups[matchedDiv].push(item.queue_no);
+      } else {
+        for (const targetDiv of activeDivisionsToRender) {
+          const m1 = matchDivision(targetDiv);
+          const m2 = matchDivision(itemDiv);
+          if (m1 && m2 && m1.alias === m2.alias) {
+            groups[targetDiv].push(item.queue_no);
+            break;
+          }
+        }
+      }
+    });
+
+    return groups;
+  }, [activeDivisionsToRender, displayData?.next_details]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -712,6 +929,34 @@ export default function DisplayBoard() {
           >
             🌐 {lang === 'en' ? 'Filipino' : 'English'}
           </button>
+          {eligibleDivisions.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <select
+                value={selectedDivisionFilter}
+                onChange={(e) => {
+                  setSelectedDivisionFilter(e.target.value);
+                  localStorage.setItem('ctms_tv_division_filter', e.target.value);
+                }}
+                className="staff-custom-select"
+                style={{
+                  padding: '0.25rem 1.8rem 0.25rem 0.65rem',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  borderRadius: '6px',
+                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.2)',
+                  backgroundColor: isLight ? '#ffffff' : 'rgba(255,255,255,0.08)',
+                  color: isLight ? '#0f172a' : '#ffffff',
+                  minHeight: '32px',
+                }}
+                title="Select division display mode"
+              >
+                <option value="">Simultaneous ({eligibleDivisions.map(d => matchDivision(d)?.alias || d).join(' & ')})</option>
+                {eligibleDivisions.map(d => (
+                  <option key={d} value={d}>Show {matchDivision(d)?.label || d} Only</option>
+                ))}
+              </select>
+            </div>
+          )}
           <button
             onClick={toggleFullScreen}
             className="btn btn-outline btn-sm"
@@ -749,125 +994,354 @@ export default function DisplayBoard() {
           <div style={{
             flex: 1,
             display: 'grid',
-            gridTemplateColumns: displayData?.serving?.length > 2 ? 'repeat(2, 1fr)' : '1fr',
+            gridTemplateColumns: activeDivisionsToRender.length > 1
+              ? `repeat(${activeDivisionsToRender.length}, minmax(0, 1fr))`
+              : '1fr',
             gap: '1.25rem',
+            minHeight: 0,
           }}>
-            {displayData?.serving?.length > 0 ? (
-              displayData.serving.map((item, idx) => (
-                <div key={idx} style={{
-                  backgroundColor: themeStyles.cardBg,
-                  borderRadius: '16px',
-                  border: themeStyles.cardBorder,
-                  padding: '1.75rem 1.5rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  boxShadow: themeStyles.cardShadow,
-                }}>
-                  <div style={{
-                    fontSize: '1.35rem',
-                    fontWeight: 800,
-                    color: themeStyles.counterLabel,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                  }}>
-                    {item.counter}
-                  </div>
-                  <div className="mono" style={{
-                    fontSize: displayData?.serving?.length > 2 ? '4.25rem' : '5.25rem',
-                    fontWeight: 900,
-                    color: item.is_priority ? 'var(--dole-gold)' : themeStyles.queueNoColor,
-                    letterSpacing: '-0.02em',
-                    lineHeight: 1.1,
-                    margin: '0.35rem 0',
-                    textShadow: item.is_priority ? '0 0 30px rgba(255, 198, 3, 0.35)' : themeStyles.queueNoShadow,
-                  }}>
-                    {item.queue_no}
-                  </div>
+            {activeDivisionsToRender.map((divName) => {
+              const divMeta = matchDivision(divName);
+              const divItems = servingByDivision[divName] || [];
+              const divUpcoming = nextByDivision[divName] || [];
+              const scale = getDynamicScaling(divItems.length);
 
-                  {item.assigned_personnel ? (
-                    <div style={{
-                      marginTop: '0.4rem',
-                      marginBottom: '0.65rem',
-                      padding: '0.5rem 1.4rem',
-                      backgroundColor: themeStyles.personnelBadgeBg,
-                      border: themeStyles.personnelBadgeBorder,
-                      borderRadius: '9999px',
+              return (
+                <div
+                  key={divName}
+                  style={{
+                    backgroundColor: themeStyles.cardBg,
+                    borderRadius: '16px',
+                    border: `2px solid ${divMeta?.color || (isLight ? '#2563eb' : 'rgba(3, 5, 186, 0.6)')}`,
+                    boxShadow: themeStyles.cardShadow,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    position: 'relative',
+                  }}
+                >
+                  {/* Division Header Banner */}
+                  <div
+                    style={{
+                      padding: '0.85rem 1.25rem',
+                      backgroundColor: isLight ? (divMeta?.bgLight || '#f1f5f9') : (divMeta?.bgDark || '#1e293b'),
+                      borderBottom: `2px solid ${divMeta?.color || (isLight ? '#cbd5e1' : 'rgba(255,255,255,0.1)')}`,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '0.6rem',
-                      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
-                    }}>
-                      <span style={{ fontSize: '1.25rem' }}>👤</span>
-                      <span style={{ fontSize: '1.15rem', color: themeStyles.personnelText, fontWeight: 600 }}>
-                        {t.please_look_for || (lang === 'fil' ? 'Mangyaring hanapin si' : 'Please look for')}:{' '}
-                        <strong style={{ color: themeStyles.personnelName, fontWeight: 800, fontSize: '1.25rem', textDecoration: 'underline decoration-amber-400' }}>
-                          {item.assigned_personnel}
-                        </strong>
-                      </span>
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '0.5rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <span
+                        style={{
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
+                          backgroundColor: divMeta?.accent || '#10b981',
+                          boxShadow: `0 0 10px ${divMeta?.accent || '#10b981'}`,
+                          animation: 'pulse 1.5s infinite',
+                          flexShrink: 0,
+                        }}
+                      />
+                      <div>
+                        <h2
+                          style={{
+                            fontSize: '1.35rem',
+                            fontWeight: 900,
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                            color: isLight ? (divMeta?.color || '#0f172a') : '#ffffff',
+                            margin: 0,
+                            lineHeight: 1.15,
+                          }}
+                        >
+                          {divMeta?.label || divName}
+                        </h2>
+                        {divMeta?.fullName && (
+                          <div
+                            style={{
+                              fontSize: '0.72rem',
+                              color: isLight ? '#475569' : '#94a3b8',
+                              fontWeight: 500,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              maxWidth: '280px',
+                              marginTop: '0.15rem',
+                            }}
+                            title={divMeta.fullName}
+                          >
+                            {divMeta.fullName}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ) : null}
 
-                  {item.service_name && (
-                    <div style={{
-                      marginTop: '0.65rem',
-                      textAlign: 'center',
-                      maxWidth: '92%',
-                      padding: '0.6rem 1rem',
-                      borderRadius: '10px',
-                      backgroundColor: themeStyles.serviceBoxBg,
-                      border: themeStyles.serviceBoxBorder,
-                    }}>
-                      <div style={{
-                        fontSize: '1.1rem',
-                        fontWeight: 700,
-                        color: themeStyles.serviceNameColor,
-                        letterSpacing: '-0.01em',
-                        marginBottom: '0.25rem',
+                    <span
+                      style={{
+                        fontSize: '0.78rem',
+                        fontWeight: 800,
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '9999px',
+                        backgroundColor: divItems.length > 0
+                          ? (isLight ? '#ecfdf5' : 'rgba(16, 185, 129, 0.25)')
+                          : (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.08)'),
+                        color: divItems.length > 0
+                          ? (isLight ? '#047857' : '#34d399')
+                          : (isLight ? '#64748b' : '#94a3b8'),
+                        border: divItems.length > 0
+                          ? '1px solid rgba(16, 185, 129, 0.4)'
+                          : '1px solid rgba(255,255,255,0.1)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          backgroundColor: divItems.length > 0 ? '#10b981' : '#94a3b8',
+                        }}
+                      />
+                      <span>{divItems.length > 0 ? `${divItems.length} Serving` : 'Waiting'}</span>
+                    </span>
+                  </div>
+
+                  {/* Division Table Body */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+                    {divItems.length > 0 ? (
+                      <table
+                        style={{
+                          width: '100%',
+                          borderCollapse: 'collapse',
+                          textAlign: 'left',
+                          tableLayout: 'fixed',
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              backgroundColor: isLight ? 'rgba(0, 0, 0, 0.03)' : 'rgba(255, 255, 255, 0.04)',
+                              borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                            }}
+                          >
+                            <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.76rem', fontWeight: 800, color: themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '32%' }}>
+                              Queue No.
+                            </th>
+                            <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.76rem', fontWeight: 800, color: themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '28%' }}>
+                              Counter
+                            </th>
+                            <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.76rem', fontWeight: 800, color: themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '40%' }}>
+                              Officer / Service
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {divItems.map((item, idx) => (
+                            <tr
+                              key={item.id || idx}
+                              style={{
+                                borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)',
+                                backgroundColor: idx % 2 === 1
+                                  ? (isLight ? 'rgba(0,0,0,0.015)' : 'rgba(255,255,255,0.02)')
+                                  : 'transparent',
+                              }}
+                            >
+                              {/* Queue Number */}
+                              <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
+                                <div
+                                  className="mono"
+                                  style={{
+                                    fontSize: scale.queueFontSize,
+                                    lineHeight: scale.queueLineHeight,
+                                    fontWeight: 900,
+                                    color: item.is_priority ? 'var(--dole-gold)' : themeStyles.queueNoColor,
+                                    letterSpacing: '-0.02em',
+                                    textShadow: item.is_priority ? '0 0 20px rgba(255, 198, 3, 0.35)' : themeStyles.queueNoShadow,
+                                    display: 'flex',
+                                    alignItems: 'baseline',
+                                    gap: '0.35rem',
+                                  }}
+                                >
+                                  <span>{item.queue_no}</span>
+                                  {item.is_priority && (
+                                    <span style={{ fontSize: '0.9rem', color: 'var(--dole-gold)', verticalAlign: 'middle' }} title="Priority Client">
+                                      ★
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Counter / Window */}
+                              <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
+                                <div
+                                  style={{
+                                    fontSize: scale.counterFontSize,
+                                    fontWeight: 800,
+                                    color: isLight ? '#0f172a' : '#f8fafc',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.04em',
+                                  }}
+                                >
+                                  {item.counter}
+                                </div>
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    fontSize: scale.statusFontSize,
+                                    fontWeight: 700,
+                                    padding: scale.badgePadding,
+                                    borderRadius: '9999px',
+                                    backgroundColor: isLight ? '#ecfdf5' : 'rgba(16, 185, 129, 0.2)',
+                                    color: isLight ? '#047857' : '#34d399',
+                                    marginTop: '0.2rem',
+                                  }}
+                                >
+                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                                  <span>Serving</span>
+                                </span>
+                              </td>
+
+                              {/* Officer & Service */}
+                              <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
+                                {item.assigned_personnel ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.2rem' }}>
+                                    <span style={{ fontSize: '0.85rem' }}>👤</span>
+                                    <span
+                                      style={{
+                                        fontSize: scale.personnelFontSize,
+                                        fontWeight: 700,
+                                        color: isLight ? '#0305ba' : '#93c5fd',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                      }}
+                                    >
+                                      {item.assigned_personnel}
+                                    </span>
+                                  </div>
+                                ) : null}
+
+                                {item.service_name && (
+                                  <div
+                                    style={{
+                                      fontSize: scale.serviceFontSize,
+                                      color: themeStyles.serviceDescColor,
+                                      fontWeight: 500,
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                    }}
+                                    title={item.service_name}
+                                  >
+                                    {item.service_name}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '2.5rem 1.5rem',
+                          color: themeStyles.emptyServingColor,
+                          textAlign: 'center',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: '50%',
+                            backgroundColor: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginBottom: '0.75rem',
+                            color: isLight ? '#94a3b8' : '#64748b',
+                          }}
+                        >
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                          </svg>
+                        </div>
+                        <div style={{ fontSize: '1rem', fontWeight: 700, color: isLight ? '#475569' : '#cbd5e1' }}>
+                          No Active Serving Queue
+                        </div>
+                        <div style={{ fontSize: '0.8rem', marginTop: '0.2rem', color: themeStyles.emptyServingColor }}>
+                          Counters are ready for next ticket call at {divMeta?.label || divName}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Division Upcoming Queue Footer */}
+                  {divUpcoming.length > 0 && (
+                    <div
+                      style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: isLight ? 'rgba(0, 0, 0, 0.025)' : 'rgba(255, 255, 255, 0.03)',
+                        borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                        fontSize: '0.8rem',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
                         gap: '0.4rem',
-                      }}>
-                        <span style={{
-                          display: 'inline-block',
-                          width: '8px',
-                          height: '8px',
-                          borderRadius: '50%',
-                          backgroundColor: '#3b82f6',
-                          flexShrink: 0,
-                        }} />
-                        <span>{item.service_name}</span>
-                      </div>
-                      <div style={{
-                        fontSize: '0.85rem',
-                        color: themeStyles.serviceDescColor,
-                        lineHeight: 1.35,
-                        fontWeight: 400,
-                      }}>
-                        {item.service_description || getFallbackDesc(item.service_name)}
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, color: isLight ? '#64748b' : '#94a3b8' }}>
+                        Next in line for {divMeta?.label || divName}:
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                        {divUpcoming.slice(0, 4).map((qNum) => (
+                          <span
+                            key={qNum}
+                            className="mono"
+                            style={{
+                              padding: '0.12rem 0.4rem',
+                              borderRadius: '5px',
+                              fontSize: '0.82rem',
+                              fontWeight: 800,
+                              backgroundColor: qNum.startsWith('P-')
+                                ? (isLight ? '#fef3c7' : 'rgba(245, 158, 11, 0.25)')
+                                : (isLight ? '#eff6ff' : 'rgba(59, 130, 246, 0.2)'),
+                              color: qNum.startsWith('P-')
+                                ? (isLight ? '#b45309' : '#fbbf24')
+                                : (isLight ? '#1d4ed8' : '#93c5fd'),
+                              border: qNum.startsWith('P-')
+                                ? '1px solid rgba(245, 158, 11, 0.4)'
+                                : '1px solid rgba(59, 130, 246, 0.3)',
+                            }}
+                          >
+                            {qNum}
+                          </span>
+                        ))}
+                        {divUpcoming.length > 4 && (
+                          <span style={{ fontSize: '0.74rem', color: isLight ? '#94a3b8' : '#64748b', fontWeight: 600 }}>
+                            +{divUpcoming.length - 4} more
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
                 </div>
-              ))
-            ) : (
-              <div style={{
-                gridColumn: '1 / -1',
-                backgroundColor: themeStyles.emptyServingBg,
-                borderRadius: '16px',
-                border: themeStyles.emptyServingBorder,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: themeStyles.emptyServingColor,
-                fontSize: '1.5rem',
-                fontWeight: 600,
-              }}>
-                {t.no_active_serving}
-              </div>
-            )}
+              );
+            })}
           </div>
         </section>
 
