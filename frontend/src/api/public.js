@@ -7,5 +7,8 @@ export const publicApi = {
     body: JSON.stringify(data),
   }),
   getTicket: (ticketToken) => apiRequest(`/public/tickets/${ticketToken}/`),
-  getDisplayBoard: (officeId) => apiRequest(`/public/display/${officeId}/`),
+  getDisplayBoard: (officeId, divisions = '') => {
+    const query = divisions ? `?divisions=${encodeURIComponent(divisions)}` : '';
+    return apiRequest(`/public/display/${officeId}/${query}`);
+  },
 };

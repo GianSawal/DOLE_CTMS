@@ -313,13 +313,19 @@ class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
         )
 
         assigned_divisions = []
-        try:
-            profile = self.user.employee_profile
+        staff_divs = CtmsStaffDivision.objects.filter(user=self.user).select_related('division').order_by('division__id')
+        if staff_divs.exists():
             assigned_divisions = [
-                {'id': d.id, 'name': d.name} for d in profile.divisions.all()
+                {'id': sd.division.id, 'name': sd.division.name} for sd in staff_divs if sd.division
             ]
-        except Exception:
-            pass
+        else:
+            try:
+                profile = self.user.employee_profile
+                assigned_divisions = [
+                    {'id': d.id, 'name': d.name} for d in profile.divisions.all()
+                ]
+            except Exception:
+                pass
 
         must_change_password = False
         try:

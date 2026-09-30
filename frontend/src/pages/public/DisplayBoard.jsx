@@ -191,58 +191,67 @@ export default function DisplayBoard() {
     return ['TSSD 1', 'TSSD 2'];
   }, [searchParams, user, displayData]);
 
-  // Active divisions to render simultaneously
+  // Active divisions to render simultaneously (validated against eligibleDivisions)
   const activeDivisionsToRender = useMemo(() => {
     if (selectedDivisionFilter && selectedDivisionFilter !== 'ALL') {
-      return [selectedDivisionFilter];
+      const validMatch = eligibleDivisions.find(
+        d => normalizeDiv(d) === normalizeDiv(selectedDivisionFilter)
+      );
+      if (validMatch) {
+        return [validMatch];
+      }
     }
     return eligibleDivisions;
   }, [eligibleDivisions, selectedDivisionFilter]);
 
-  // Group serving items by division
+  // Helper to check if a division/counter string matches one of activeDivisionsToRender
+  const findMatchingActiveDivision = useMemo(() => {
+    return (divOrCounterName) => {
+      if (!divOrCounterName) return null;
+      const direct = activeDivisionsToRender.find(
+        targetDiv => normalizeDiv(targetDiv) === normalizeDiv(divOrCounterName)
+      );
+      if (direct) return direct;
+      for (const targetDiv of activeDivisionsToRender) {
+        const m1 = matchDivision(targetDiv);
+        const m2 = matchDivision(divOrCounterName);
+        if (m1 && m2 && m1.alias === m2.alias) {
+          return targetDiv;
+        }
+      }
+      return null;
+    };
+  }, [activeDivisionsToRender]);
+
+  // Group serving items strictly by division (never mix other divisions like TSSD1/TSSD2 into IMSD)
   const servingByDivision = useMemo(() => {
     const groups = {};
     activeDivisionsToRender.forEach(div => {
       groups[div] = [];
     });
 
-    const unassigned = [];
+    const isRestrictedAccount = Boolean(
+      (searchParams.get('divisions') || searchParams.get('division')) ||
+      (user && !user.is_superuser && user.assigned_divisions?.length > 0) ||
+      (displayData?.user_divisions?.length > 0)
+    );
 
     (displayData?.serving || []).forEach(item => {
-      const itemDiv = item.division_name;
-      const matchedDiv = activeDivisionsToRender.find(
-        targetDiv => normalizeDiv(targetDiv) === normalizeDiv(itemDiv)
-      );
+      const itemDiv = item.division_name || item.counter || '';
+      const matchedDiv = findMatchingActiveDivision(itemDiv);
 
       if (matchedDiv) {
         groups[matchedDiv].push(item);
-      } else {
-        let placed = false;
-        for (const targetDiv of activeDivisionsToRender) {
-          const m1 = matchDivision(targetDiv);
-          const m2 = matchDivision(itemDiv);
-          if (m1 && m2 && m1.alias === m2.alias) {
-            groups[targetDiv].push(item);
-            placed = true;
-            break;
-          }
-        }
-        if (!placed) {
-          unassigned.push(item);
-        }
+      } else if (!isRestrictedAccount && !item.division_name && !matchDivision(item.counter) && activeDivisionsToRender.length > 0) {
+        // Only if the item has no division at all AND this display is not restricted to specific divisions
+        groups[activeDivisionsToRender[0]].push(item);
       }
     });
 
-    if (unassigned.length > 0 && activeDivisionsToRender.length === 1) {
-      groups[activeDivisionsToRender[0]].push(...unassigned);
-    } else if (unassigned.length > 0 && activeDivisionsToRender.length > 1) {
-      groups[activeDivisionsToRender[0]].push(...unassigned);
-    }
-
     return groups;
-  }, [activeDivisionsToRender, displayData?.serving]);
+  }, [activeDivisionsToRender, displayData?.serving, displayData?.user_divisions, findMatchingActiveDivision, searchParams, user]);
 
-  // Group upcoming tickets by division
+  // Group upcoming tickets strictly by division
   const nextByDivision = useMemo(() => {
     const groups = {};
     activeDivisionsToRender.forEach(div => {
@@ -250,26 +259,36 @@ export default function DisplayBoard() {
     });
 
     (displayData?.next_details || []).forEach(item => {
-      const itemDiv = item.division_name;
-      const matchedDiv = activeDivisionsToRender.find(
-        targetDiv => normalizeDiv(targetDiv) === normalizeDiv(itemDiv)
-      );
+      const matchedDiv = findMatchingActiveDivision(item.division_name);
       if (matchedDiv) {
         groups[matchedDiv].push(item.queue_no);
-      } else {
-        for (const targetDiv of activeDivisionsToRender) {
-          const m1 = matchDivision(targetDiv);
-          const m2 = matchDivision(itemDiv);
-          if (m1 && m2 && m1.alias === m2.alias) {
-            groups[targetDiv].push(item.queue_no);
-            break;
-          }
-        }
       }
     });
 
     return groups;
-  }, [activeDivisionsToRender, displayData?.next_details]);
+  }, [activeDivisionsToRender, displayData?.next_details, findMatchingActiveDivision]);
+
+  // Right-side "NEXT IN LINE" list filtered strictly to activeDivisionsToRender
+  const filteredNextNumbers = useMemo(() => {
+    const isRestrictedAccount = Boolean(
+      (searchParams.get('divisions') || searchParams.get('division')) ||
+      (user && !user.is_superuser && user.assigned_divisions?.length > 0) ||
+      (displayData?.user_divisions?.length > 0) ||
+      (selectedDivisionFilter && selectedDivisionFilter !== 'ALL')
+    );
+
+    if (Array.isArray(displayData?.next_details) && displayData.next_details.length > 0) {
+      const hasAnyDivisionTags = displayData.next_details.some(item => Boolean(item.division_name));
+      if (isRestrictedAccount || hasAnyDivisionTags) {
+        return displayData.next_details
+          .filter(item => Boolean(findMatchingActiveDivision(item.division_name)))
+          .map(item => item.queue_no)
+          .slice(0, 10);
+      }
+    }
+
+    return isRestrictedAccount ? [] : (displayData?.next || []);
+  }, [displayData?.next, displayData?.next_details, displayData?.user_divisions, findMatchingActiveDivision, searchParams, selectedDivisionFilter, user]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -588,7 +607,12 @@ export default function DisplayBoard() {
 
     async function fetchDisplay() {
       try {
-        const data = await publicApi.getDisplayBoard(officeId);
+        const paramDivs = searchParams.get('divisions') || searchParams.get('division') || (
+          user && !user.is_superuser && user.assigned_divisions?.length > 0
+            ? user.assigned_divisions.map(d => d.name).join(',')
+            : ''
+        );
+        const data = await publicApi.getDisplayBoard(officeId, paramDivs);
         if (!isMounted) return;
 
         const currentLatestCall = data.latest_called_at || (data.serving?.[0]?.called_at) || null;
@@ -657,7 +681,9 @@ export default function DisplayBoard() {
           if (!isMounted) return;
           if (event.data?.type === 'QUEUE_CALLED') {
             if (!event.data.officeId || String(event.data.officeId) === String(officeId)) {
-              if (soundEnabled) {
+              const calledCounter = event.data.counter || '';
+              const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivision(calledCounter);
+              if (!isOtherDivision && soundEnabled) {
                 announceNowServing({
                   queueNo: event.data.queueNo,
                   counter: event.data.counter,
@@ -692,7 +718,9 @@ export default function DisplayBoard() {
         try {
           const item = JSON.parse(e.newValue);
           if (!item.officeId || String(item.officeId) === String(officeId)) {
-            if (soundEnabled) {
+            const calledCounter = item.counter || '';
+            const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivision(calledCounter);
+            if (!isOtherDivision && soundEnabled) {
               announceNowServing({
                 queueNo: item.queueNo,
                 counter: item.counter,
@@ -724,7 +752,7 @@ export default function DisplayBoard() {
       }
       window.removeEventListener('storage', handleStorage);
     };
-  }, [officeId, soundEnabled]);
+  }, [officeId, soundEnabled, searchParams, user, findMatchingActiveDivision]);
 
   const toggleFullScreen = () => {
     if (!document.fullscreenElement) {
@@ -1379,16 +1407,16 @@ export default function DisplayBoard() {
               justifyContent: 'space-between',
             }}>
               <span>{t.next_numbers}</span>
-              {displayData?.next?.length > 0 && (
+              {filteredNextNumbers.length > 0 && (
                 <span style={{ fontSize: '0.85rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
-                  {displayData.next.length} in line
+                  {filteredNextNumbers.length} in line
                 </span>
               )}
             </div>
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.65rem', overflowY: 'auto', paddingRight: '4px' }}>
-              {displayData?.next?.length > 0 ? (
-                displayData.next.map((num, idx) => (
+              {filteredNextNumbers.length > 0 ? (
+                filteredNextNumbers.map((num, idx) => (
                   <div key={idx} style={{
                     backgroundColor: themeStyles.nextItemBg,
                     border: themeStyles.nextItemBorder,
