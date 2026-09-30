@@ -73,7 +73,7 @@ export default function PrintSlip({ transaction, onClose }) {
             <strong>Tx No:</strong> <span className="mono">{transaction.transaction_no}</span>
           </div>
           <div>
-            <strong>Claim Code:</strong> <span className="mono" style={{ fontWeight: 800, letterSpacing: '0.1em', color: 'var(--dole-blue)' }}>{transaction.claim_code}</span>
+            <strong>Survey Code:</strong> <span className="mono" style={{ fontWeight: 800, letterSpacing: '0.1em', color: 'var(--dole-blue)' }}>{transaction.claim_code}</span>
           </div>
           <div>
             <strong>Date/Time:</strong> {new Date(transaction.checked_in_at).toLocaleString()}
@@ -90,7 +90,7 @@ export default function PrintSlip({ transaction, onClose }) {
           lineHeight: 1.4,
         }}>
           <strong>DOLE CSM Survey Requirement:</strong><br />
-          Once your transaction is marked <em>Done</em>, rate our service at the CSM kiosk using your <strong>Transaction No.</strong> and <strong>Claim Code</strong>.
+          Once your transaction is marked <em>Done</em>, rate our service at the CSM kiosk using your <strong>Transaction No.</strong> and <strong>Survey Code</strong>.
         </div>
       </div>
 
