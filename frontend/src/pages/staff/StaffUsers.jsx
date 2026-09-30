@@ -369,7 +369,24 @@ export default function StaffUsers() {
               textAlign: 'center',
             }}
           >
-            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🎉</div>
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '50%',
+                backgroundColor: '#ecfdf5',
+                color: '#059669',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 0.75rem auto',
+                border: '1px solid #a7f3d0',
+              }}
+            >
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>
             <h3 style={{ fontSize: '1.3rem', color: 'var(--dole-green)', margin: '0 0 0.5rem 0', fontWeight: 800 }}>
               User Account Created!
             </h3>
@@ -426,139 +443,307 @@ export default function StaffUsers() {
       )}
 
       {/* Main Content */}
-      <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+      <main style={{ flex: 1, padding: '1.75rem 2rem', maxWidth: '1440px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
         {/* Page Header */}
         <div
           style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '1rem',
+            backgroundColor: '#ffffff',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '1.5rem 1.75rem',
             marginBottom: '1.5rem',
+            boxShadow: '0 1px 3px 0 rgba(15, 23, 42, 0.05)',
+            position: 'relative',
+            overflow: 'hidden',
           }}
         >
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <span style={{ fontSize: '1.75rem' }}>👥</span>
-              <h1 style={{ fontSize: '1.6rem', color: 'var(--text-primary)', margin: 0, fontWeight: 800 }}>
-                User Accounts Management
-              </h1>
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: 'var(--radius-full)',
-                  backgroundColor: 'var(--dole-red-light)',
-                  color: 'var(--dole-red)',
-                  border: '1px solid #fecaca',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Admin Only
-              </span>
-            </div>
-            <p style={{ margin: '0.35rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-              Manage login accounts, credentials, and office access for DOLE staff. Personnel who assist clients are managed in the <strong>Personnel</strong> tab.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="btn btn-primary"
+          <div
             style={{
-              display: 'inline-flex',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '3px',
+              background: 'linear-gradient(90deg, #0305ba 0%, #1e40af 50%, #ffc603 50%, #ffc603 55%, #ff0103 55%, #dc2626 100%)',
+            }}
+          />
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'space-between',
               alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.65rem 1.25rem',
-              fontSize: '0.92rem',
-              fontWeight: 700,
-              backgroundColor: 'var(--dole-blue)',
-              color: '#fff',
-              borderRadius: 'var(--radius-md)',
-              boxShadow: 'var(--shadow-md)',
+              gap: '1.25rem',
             }}
           >
-            <span>➕</span> Create User Account
-          </button>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'var(--dole-blue)',
+                    backgroundColor: 'rgba(3, 5, 186, 0.06)',
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: '9999px',
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                  </svg>
+                  <span>Access Control &amp; Security Directory</span>
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: '9999px',
+                    backgroundColor: 'var(--dole-red-light)',
+                    color: 'var(--dole-red)',
+                    border: '1px solid #fecaca',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  Admin Only
+                </span>
+              </div>
+              <h1 style={{ fontSize: '1.5rem', color: '#0f172a', margin: 0, fontWeight: 800, letterSpacing: '-0.02em' }}>
+                User Accounts Management
+              </h1>
+              <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: 1.4, maxWidth: '750px' }}>
+                Manage login accounts, credentials, and office access for DOLE staff. Personnel who assist clients are managed in the <strong>Personnel</strong> tab.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.65rem 1.4rem',
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #0305ba 0%, #1e40af 100%)',
+                color: '#fff',
+                borderRadius: '8px',
+                boxShadow: '0 4px 10px rgba(3, 5, 186, 0.25)',
+                minHeight: '44px',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Create User Account</span>
+            </button>
+          </div>
         </div>
 
         {/* Stats Summary Cards */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
             gap: '1rem',
             marginBottom: '1.5rem',
           }}
         >
+          {/* Total Accounts */}
           <div
             style={{
               backgroundColor: 'var(--bg-card)',
-              padding: '1.1rem 1.25rem',
-              borderRadius: 'var(--radius-md)',
+              padding: '1.25rem',
+              borderRadius: 'var(--radius-lg)',
               border: '1px solid var(--border-color)',
-              boxShadow: 'var(--shadow-sm)',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
             }}
           >
-            <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Total User Accounts
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Total User Accounts
+                </div>
+                <div className="mono" style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a', marginTop: '0.2rem', lineHeight: 1.1 }}>
+                  {totalUsers}
+                </div>
+              </div>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  backgroundColor: '#eff6ff',
+                  color: 'var(--dole-blue)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+              </div>
             </div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
-              {totalUsers}
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
+              System directory registry
             </div>
           </div>
 
+          {/* Active Logins */}
           <div
             style={{
               backgroundColor: 'var(--bg-card)',
-              padding: '1.1rem 1.25rem',
-              borderRadius: 'var(--radius-md)',
+              padding: '1.25rem',
+              borderRadius: 'var(--radius-lg)',
               border: '1px solid var(--border-color)',
-              boxShadow: 'var(--shadow-sm)',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
             }}
           >
-            <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Active Logins
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Active Logins
+                </div>
+                <div className="mono" style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--dole-green)', marginTop: '0.2rem', lineHeight: 1.1 }}>
+                  {activeCount}
+                </div>
+              </div>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  backgroundColor: '#ecfdf5',
+                  color: 'var(--dole-green)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                  <polyline points="9 12 11 14 15 10"></polyline>
+                </svg>
+              </div>
             </div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--dole-green)', marginTop: '0.2rem' }}>
-              {activeCount}
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
+              Authorized to sign in
             </div>
           </div>
 
+          {/* Administrators */}
           <div
             style={{
               backgroundColor: 'var(--bg-card)',
-              padding: '1.1rem 1.25rem',
-              borderRadius: 'var(--radius-md)',
+              padding: '1.25rem',
+              borderRadius: 'var(--radius-lg)',
               border: '1px solid var(--border-color)',
-              boxShadow: 'var(--shadow-sm)',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
             }}
           >
-            <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Administrators
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Administrators
+                </div>
+                <div className="mono" style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.2rem', lineHeight: 1.1 }}>
+                  {adminCount}
+                </div>
+              </div>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  backgroundColor: '#f5f3ff',
+                  color: '#7c3aed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                </svg>
+              </div>
             </div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.2rem' }}>
-              {adminCount}
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
+              Full administrative authority
             </div>
           </div>
 
+          {/* Staff Accounts */}
           <div
             style={{
               backgroundColor: 'var(--bg-card)',
-              padding: '1.1rem 1.25rem',
-              borderRadius: 'var(--radius-md)',
+              padding: '1.25rem',
+              borderRadius: 'var(--radius-lg)',
               border: '1px solid var(--border-color)',
-              boxShadow: 'var(--shadow-sm)',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
             }}
           >
-            <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              Staff Accounts
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Staff Accounts
+                </div>
+                <div className="mono" style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--dole-blue)', marginTop: '0.2rem', lineHeight: 1.1 }}>
+                  {staffCount}
+                </div>
+              </div>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--dole-blue-light)',
+                  color: 'var(--dole-blue)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </div>
             </div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--dole-blue)', marginTop: '0.2rem' }}>
-              {staffCount}
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
+              Counter &amp; frontline operators
             </div>
           </div>
         </div>
@@ -568,9 +753,9 @@ export default function StaffUsers() {
           style={{
             backgroundColor: 'var(--bg-card)',
             padding: '1rem 1.25rem',
-            borderRadius: 'var(--radius-md)',
+            borderRadius: 'var(--radius-lg)',
             border: '1px solid var(--border-color)',
-            boxShadow: 'var(--shadow-sm)',
+            boxShadow: '0 1px 3px 0 rgba(15, 23, 42, 0.05)',
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
@@ -578,39 +763,43 @@ export default function StaffUsers() {
             marginBottom: '1.5rem',
           }}
         >
-          <div style={{ flex: '1 1 240px', position: 'relative' }}>
-            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              🔍
+          <div style={{ flex: '1 1 260px', position: 'relative' }}>
+            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
             </span>
             <input
               type="text"
-              placeholder="Search by username or account name..."
+              placeholder="Search by username, account owner, or ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 width: '100%',
-                padding: '0.55rem 0.75rem 0.55rem 2.2rem',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-color)',
+                padding: '0.55rem 0.85rem 0.55rem 2.25rem',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
                 fontSize: '0.88rem',
-                backgroundColor: 'var(--bg-ground)',
+                backgroundColor: '#ffffff',
                 outline: 'none',
+                minHeight: '40px',
               }}
             />
           </div>
 
-          <div style={{ minWidth: '180px' }}>
+          <div style={{ minWidth: '190px' }}>
             <select
               value={officeFilter}
               onChange={(e) => setOfficeFilter(e.target.value)}
+              className="staff-custom-select"
               style={{
                 width: '100%',
-                padding: '0.55rem 0.75rem',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-color)',
+                padding: '0.45rem 2.2rem 0.45rem 0.8rem',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
                 fontSize: '0.88rem',
-                backgroundColor: 'var(--bg-ground)',
-                outline: 'none',
+                minHeight: '40px',
               }}
             >
               <option value="">All Offices</option>
@@ -622,18 +811,18 @@ export default function StaffUsers() {
             </select>
           </div>
 
-          <div style={{ minWidth: '150px' }}>
+          <div style={{ minWidth: '160px' }}>
             <select
               value={divisionFilter}
               onChange={(e) => setDivisionFilter(e.target.value)}
+              className="staff-custom-select"
               style={{
                 width: '100%',
-                padding: '0.55rem 0.75rem',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-color)',
+                padding: '0.45rem 2.2rem 0.45rem 0.8rem',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
                 fontSize: '0.88rem',
-                backgroundColor: 'var(--bg-ground)',
-                outline: 'none',
+                minHeight: '40px',
               }}
             >
               <option value="">All Divisions</option>
@@ -648,21 +837,28 @@ export default function StaffUsers() {
             type="button"
             onClick={loadData}
             title="Refresh table"
+            className="btn btn-outline"
             style={{
-              padding: '0.55rem 0.95rem',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border-color)',
-              backgroundColor: 'var(--bg-card)',
-              color: 'var(--text-secondary)',
-              fontSize: '0.88rem',
+              padding: '0.45rem 0.95rem',
+              borderRadius: '8px',
+              border: '1px solid #cbd5e1',
+              backgroundColor: '#ffffff',
+              color: '#334155',
+              fontSize: '0.86rem',
+              fontWeight: 600,
               cursor: 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '0.35rem',
-              minHeight: 'auto',
+              gap: '0.4rem',
+              minHeight: '40px',
             }}
           >
-            🔄 Refresh
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M1 20v-6h6"></path>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span>Refresh</span>
           </button>
         </div>
 
@@ -672,42 +868,92 @@ export default function StaffUsers() {
             backgroundColor: 'var(--bg-card)',
             borderRadius: 'var(--radius-lg)',
             border: '1px solid var(--border-color)',
-            boxShadow: 'var(--shadow-sm)',
+            boxShadow: '0 1px 3px 0 rgba(15, 23, 42, 0.05)',
             overflow: 'hidden',
           }}
         >
           {loading ? (
-            <div style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>⏳</div>
-              <p>Loading user accounts...</p>
+            <div style={{ padding: '4rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                border: '3px solid #e2e8f0',
+                borderTopColor: 'var(--dole-blue)',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 1rem auto',
+              }} />
+              <p style={{ fontWeight: 600, color: '#334155' }}>Loading user accounts...</p>
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📂</div>
-              <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No user accounts found</p>
-              <p style={{ fontSize: '0.88rem', marginTop: '0.25rem' }}>
+            <div style={{ padding: '4rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  backgroundColor: '#f1f5f9',
+                  color: '#94a3b8',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 1rem auto',
+                }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                </svg>
+              </div>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1e293b', margin: '0 0 0.25rem 0' }}>
+                No user accounts found
+              </h3>
+              <p style={{ fontSize: '0.88rem', color: '#64748b', maxWidth: '420px', margin: '0 auto 1.25rem auto' }}>
                 {searchQuery || officeFilter || divisionFilter
-                  ? 'Try adjusting your search filters.'
-                  : 'Get started by clicking "+ Create User Account" above.'}
+                  ? 'No accounts match the active search filters.'
+                  : 'Get started by creating your first DOLE staff user account.'}
               </p>
+              {searchQuery || officeFilter || divisionFilter ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setOfficeFilter('');
+                    setDivisionFilter('');
+                  }}
+                  className="btn btn-outline btn-sm"
+                  style={{ borderRadius: '6px' }}
+                >
+                  Clear Filters
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="btn btn-primary btn-sm"
+                  style={{ borderRadius: '6px' }}
+                >
+                  Create User Account
+                </button>
+              )}
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
                 <thead>
-                  <tr style={{ backgroundColor: 'var(--bg-ground)', borderBottom: '1px solid var(--border-color)' }}>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Login Username</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Account Name</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Role</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Assigned Office</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                  <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border-color)' }}>
+                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Login Username</th>
+                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Account Name</th>
+                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Role</th>
+                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Office</th>
+                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       Assigned Division(s)
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', fontWeight: 400 }}>
-                        (Dictates Queue Access)
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', fontWeight: 500, textTransform: 'none', letterSpacing: 'normal' }}>
+                        Dictates queue counter access
                       </span>
                     </th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Status</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right' }}>
+                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
+                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>
                       Actions
                     </th>
                   </tr>
@@ -718,24 +964,25 @@ export default function StaffUsers() {
                       <tr
                         key={u.id}
                         style={{
-                          borderBottom: '1px solid var(--border-color)',
-                          transition: 'background-color 0.15s',
+                          borderBottom: '1px solid #f1f5f9',
+                          transition: 'background-color 0.15s ease',
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--dole-blue-subtle)')}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(3, 5, 186, 0.02)')}
                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                       >
                         {/* Username */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.9rem 1.15rem' }}>
                           <span
                             className="mono"
                             style={{
-                              backgroundColor: 'var(--bg-ground)',
-                              padding: '0.25rem 0.55rem',
-                              borderRadius: 'var(--radius-sm)',
-                              fontWeight: 700,
+                              backgroundColor: '#f1f5f9',
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '6px',
+                              fontWeight: 800,
                               color: 'var(--dole-blue)',
                               fontSize: '0.86rem',
-                              border: '1px solid var(--border-color)',
+                              border: '1px solid #e2e8f0',
+                              letterSpacing: '-0.01em',
                             }}
                           >
                             {u.username}
@@ -743,65 +990,90 @@ export default function StaffUsers() {
                         </td>
 
                         {/* Full Name */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                        <td style={{ padding: '0.9rem 1.15rem' }}>
+                          <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
                             {u.full_name || (u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.username)}
                           </div>
                         </td>
 
                         {/* Role */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.9rem 1.15rem' }}>
                           {u.is_superuser ? (
                             <span
                               style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
                                 fontSize: '0.75rem',
                                 fontWeight: 700,
-                                padding: '0.2rem 0.55rem',
-                                borderRadius: 'var(--radius-sm)',
+                                padding: '0.25rem 0.65rem',
+                                borderRadius: '9999px',
                                 backgroundColor: '#f5f3ff',
                                 color: '#7c3aed',
                                 border: '1px solid #ddd6fe',
                               }}
                             >
-                              👑 Administrator
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                              </svg>
+                              <span>Administrator</span>
                             </span>
                           ) : (
                             <span
                               style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
                                 fontSize: '0.75rem',
                                 fontWeight: 700,
-                                padding: '0.2rem 0.55rem',
-                                borderRadius: 'var(--radius-sm)',
+                                padding: '0.25rem 0.65rem',
+                                borderRadius: '9999px',
                                 backgroundColor: '#eff6ff',
                                 color: '#1d4ed8',
                                 border: '1px solid #bfdbfe',
                               }}
                             >
-                              👤 Staff User
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                              </svg>
+                              <span>Staff User</span>
                             </span>
                           )}
                         </td>
 
                         {/* Office */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.office_name}</div>
+                        <td style={{ padding: '0.9rem 1.15rem' }}>
+                          <div style={{ fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#94a3b8' }}>
+                              <path d="M3 21h18"></path>
+                              <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                            </svg>
+                            <span>{u.office_name}</span>
+                          </div>
                         </td>
 
                         {/* Assigned Divisions */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.9rem 1.15rem' }}>
                           {u.is_superuser ? (
                             <span
                               style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
                                 fontSize: '0.75rem',
                                 fontWeight: 700,
-                                padding: '0.2rem 0.5rem',
-                                borderRadius: 'var(--radius-sm)',
+                                padding: '0.25rem 0.65rem',
+                                borderRadius: '9999px',
                                 backgroundColor: '#ecfdf5',
                                 color: '#047857',
                                 border: '1px solid #a7f3d0',
                               }}
                             >
-                              🌟 All Divisions Access
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                              </svg>
+                              <span>All Divisions Access</span>
                             </span>
                           ) : u.division_names && u.division_names.length > 0 ? (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
@@ -818,8 +1090,8 @@ export default function StaffUsers() {
                                     style={{
                                       fontSize: '0.75rem',
                                       fontWeight: 700,
-                                      padding: '0.2rem 0.5rem',
-                                      borderRadius: 'var(--radius-sm)',
+                                      padding: '0.2rem 0.55rem',
+                                      borderRadius: '6px',
                                       color: color,
                                       backgroundColor: bg,
                                       border: `1px solid ${border}`,
@@ -833,22 +1105,30 @@ export default function StaffUsers() {
                           ) : (
                             <span
                               style={{
-                                fontSize: '0.75rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                fontSize: '0.74rem',
                                 color: '#991b1b',
                                 backgroundColor: '#fef2f2',
-                                padding: '0.2rem 0.5rem',
-                                borderRadius: 'var(--radius-sm)',
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: '6px',
                                 border: '1px solid #fecaca',
                                 fontWeight: 600,
                               }}
                             >
-                              ⚠️ No Division Assigned
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                <line x1="12" y1="9" x2="12" y2="13"></line>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                              </svg>
+                              <span>No Division Assigned</span>
                             </span>
                           )}
                         </td>
 
                         {/* Status */}
-                        <td style={{ padding: '0.85rem 1rem' }}>
+                        <td style={{ padding: '0.9rem 1.15rem' }}>
                           <button
                             type="button"
                             onClick={() => handleToggleActive(u)}
@@ -856,21 +1136,33 @@ export default function StaffUsers() {
                             style={{
                               fontSize: '0.75rem',
                               fontWeight: 700,
-                              padding: '0.2rem 0.55rem',
-                              borderRadius: 'var(--radius-full)',
-                              border: 'none',
+                              padding: '0.25rem 0.65rem',
+                              borderRadius: '9999px',
+                              border: u.is_active ? '1px solid #a7f3d0' : '1px solid #fecaca',
                               cursor: 'pointer',
-                              backgroundColor: u.is_active ? 'var(--dole-green-light)' : 'var(--dole-red-light)',
-                              color: u.is_active ? 'var(--dole-green)' : 'var(--dole-red)',
+                              backgroundColor: u.is_active ? '#ecfdf5' : '#fef2f2',
+                              color: u.is_active ? '#047857' : '#991b1b',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
                               minHeight: 'auto',
+                              transition: 'all 0.15s ease',
                             }}
                           >
-                            {u.is_active ? '● Active' : '○ Inactive'}
+                            <span
+                              style={{
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '50%',
+                                backgroundColor: u.is_active ? '#10b981' : '#ef4444',
+                              }}
+                            />
+                            <span>{u.is_active ? 'Active' : 'Inactive'}</span>
                           </button>
                         </td>
 
                         {/* Actions */}
-                        <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                        <td style={{ padding: '0.9rem 1.15rem', textAlign: 'right' }}>
                           <div style={{ display: 'inline-flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
                             <button
                               type="button"
@@ -878,15 +1170,24 @@ export default function StaffUsers() {
                               className="btn btn-outline"
                               title="Edit user account"
                               style={{
-                                minHeight: 'auto',
-                                padding: '0.35rem 0.65rem',
-                                fontSize: '0.8rem',
-                                borderRadius: 'var(--radius-sm)',
+                                minHeight: '32px',
+                                padding: '0.3rem 0.65rem',
+                                fontSize: '0.785rem',
+                                borderRadius: '6px',
                                 color: 'var(--dole-blue)',
-                                border: '1px solid var(--border-color)',
+                                borderColor: '#cbd5e1',
+                                backgroundColor: '#ffffff',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                fontWeight: 600,
                               }}
                             >
-                              ✏️ Edit
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                              </svg>
+                              <span>Edit</span>
                             </button>
 
                             <button
@@ -895,15 +1196,26 @@ export default function StaffUsers() {
                               className="btn btn-outline"
                               title="Reset account password"
                               style={{
-                                minHeight: 'auto',
-                                padding: '0.35rem 0.65rem',
-                                fontSize: '0.8rem',
-                                borderRadius: 'var(--radius-sm)',
-                                color: 'var(--dole-gold-dark)',
-                                border: '1px solid var(--border-color)',
+                                minHeight: '32px',
+                                padding: '0.3rem 0.65rem',
+                                fontSize: '0.785rem',
+                                borderRadius: '6px',
+                                color: '#b45309',
+                                borderColor: '#cbd5e1',
+                                backgroundColor: '#ffffff',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                fontWeight: 600,
                               }}
                             >
-                              🔑 Reset Pass
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="7.5" cy="15.5" r="4.5"></circle>
+                                <path d="M10.5 12.5L20 3"></path>
+                                <path d="M18 5l2 2"></path>
+                                <path d="M15 8l2 2"></path>
+                              </svg>
+                              <span>Reset Pass</span>
                             </button>
 
                             <button
@@ -912,15 +1224,22 @@ export default function StaffUsers() {
                               className="btn btn-outline"
                               title="Delete user account"
                               style={{
-                                minHeight: 'auto',
-                                padding: '0.35rem 0.65rem',
-                                fontSize: '0.8rem',
-                                borderRadius: 'var(--radius-sm)',
-                                color: 'var(--dole-red)',
-                                border: '1px solid var(--border-color)',
+                                minHeight: '32px',
+                                padding: '0.3rem 0.55rem',
+                                fontSize: '0.785rem',
+                                borderRadius: '6px',
+                                color: '#dc2626',
+                                borderColor: '#cbd5e1',
+                                backgroundColor: '#ffffff',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                               }}
                             >
-                              🗑️
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                              </svg>
                             </button>
                           </div>
                         </td>
@@ -974,20 +1293,47 @@ export default function StaffUsers() {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                backgroundColor: 'var(--bg-ground)',
+                backgroundColor: '#f8fafc',
                 borderTopLeftRadius: 'var(--radius-lg)',
                 borderTopRightRadius: 'var(--radius-lg)',
               }}
             >
-              <div>
-                <h2 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', margin: 0 }}>
-                  {modalMode === 'create' ? '➕ Create User Account' : `✏️ Edit Account (${username})`}
-                </h2>
-                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                  {modalMode === 'create'
-                    ? 'Configure login credentials, role, office, and division queue access.'
-                    : 'Update account details, role, and division queue permissions.'}
-                </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    backgroundColor: modalMode === 'create' ? '#eff6ff' : '#f5f3ff',
+                    color: modalMode === 'create' ? 'var(--dole-blue)' : '#7c3aed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {modalMode === 'create' ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                  )}
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.15rem', color: '#0f172a', margin: 0, fontWeight: 800 }}>
+                    {modalMode === 'create' ? 'Create User Account' : `Edit Account (${username})`}
+                  </h2>
+                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {modalMode === 'create'
+                      ? 'Configure login credentials, role, office, and division queue access.'
+                      : 'Update account details, role, and division queue permissions.'}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
@@ -1159,11 +1505,25 @@ export default function StaffUsers() {
                       border: 'none',
                       background: 'none',
                       cursor: 'pointer',
-                      fontSize: '1rem',
-                      padding: '0.2rem',
+                      color: '#64748b',
+                      padding: '0.25rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
+                    title={showPassword ? 'Hide password' : 'Show password'}
                   >
-                    {showPassword ? '🙈' : '👁️'}
+                    {showPassword ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    )}
                   </button>
                 </div>
               </div>
@@ -1270,13 +1630,24 @@ export default function StaffUsers() {
                     backgroundColor: 'var(--dole-blue)',
                     color: '#fff',
                     fontWeight: 700,
+                    borderRadius: '8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
                   }}
                 >
-                  {submitting
-                    ? 'Saving...'
-                    : modalMode === 'create'
-                    ? '💾 Create Account'
-                    : '💾 Save Changes'}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                    <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                    <polyline points="7 3 7 8 15 8"></polyline>
+                  </svg>
+                  <span>
+                    {submitting
+                      ? 'Saving...'
+                      : modalMode === 'create'
+                      ? 'Create Account'
+                      : 'Save Changes'}
+                  </span>
                 </button>
               </div>
             </form>
@@ -1313,11 +1684,34 @@ export default function StaffUsers() {
               border: '1px solid var(--border-color)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.85rem' }}>
-              <span style={{ fontSize: '1.4rem' }}>🔑</span>
-              <h3 style={{ fontSize: '1.15rem', color: 'var(--text-primary)', margin: 0, fontWeight: 800 }}>
-                Reset Password
-              </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  backgroundColor: '#fffbeb',
+                  color: '#b45309',
+                  border: '1px solid #fde68a',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="7.5" cy="15.5" r="4.5"></circle>
+                  <path d="M10.5 12.5L20 3"></path>
+                  <path d="M18 5l2 2"></path>
+                  <path d="M15 8l2 2"></path>
+                </svg>
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', color: '#0f172a', margin: 0, fontWeight: 800 }}>
+                  Reset Password
+                </h3>
+                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Administrative credential override</span>
+              </div>
             </div>
 
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
@@ -1404,11 +1798,34 @@ export default function StaffUsers() {
               border: '1px solid var(--border-color)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.85rem' }}>
-              <span style={{ fontSize: '1.4rem' }}>🗑️</span>
-              <h3 style={{ fontSize: '1.15rem', color: 'var(--dole-red)', margin: 0, fontWeight: 800 }}>
-                Delete User Account
-              </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  backgroundColor: '#fef2f2',
+                  color: '#dc2626',
+                  border: '1px solid #fecaca',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                  <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', color: '#dc2626', margin: 0, fontWeight: 800 }}>
+                  Delete User Account
+                </h3>
+                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Permanent account revocation</span>
+              </div>
             </div>
 
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
