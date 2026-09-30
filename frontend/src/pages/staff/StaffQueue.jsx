@@ -93,7 +93,7 @@ export default function StaffQueue() {
     localStorage.setItem('ctms_staff_counter', val);
   };
 
-  // Fetch queue data (with automatic recovery if a stale counter ID from a previous user is in localStorage)
+  // Fetch queue data (with automatic recovery if a stale unauthorized counter ID is in localStorage)
   const fetchQueue = useCallback(async () => {
     if (!selectedOffice) return;
     try {
@@ -101,9 +101,11 @@ export default function StaffQueue() {
       setQueueData(data);
       setError('');
     } catch (err) {
-      if (selectedCounter) {
+      const msg = (err.message || '').toLowerCase();
+      const isForbiddenCounter = msg.includes('forbidden') || msg.includes('not authorized');
+      if (selectedCounter && isForbiddenCounter) {
         setSelectedCounter('');
-        localStorage.removeItem('ctms_staff_counter');
+        localStorage.setItem('ctms_staff_counter', '');
         try {
           const fallbackData = await staffApi.getQueue(selectedOffice, '');
           setQueueData(fallbackData);

@@ -602,17 +602,26 @@ export default function DisplayBoard() {
     }
   };
 
+  const findMatchingActiveDivisionRef = useRef(findMatchingActiveDivision);
+  useEffect(() => {
+    findMatchingActiveDivisionRef.current = findMatchingActiveDivision;
+  }, [findMatchingActiveDivision]);
+
+  const divisionsQueryParam = useMemo(() => {
+    const fromUrl = searchParams.get('divisions') || searchParams.get('division');
+    if (fromUrl) return fromUrl;
+    if (user && !user.is_superuser && Array.isArray(user.assigned_divisions) && user.assigned_divisions.length > 0) {
+      return user.assigned_divisions.map(d => d.name).join(',');
+    }
+    return '';
+  }, [searchParams, user?.is_superuser, user?.assigned_divisions]);
+
   useEffect(() => {
     let isMounted = true;
 
     async function fetchDisplay() {
       try {
-        const paramDivs = searchParams.get('divisions') || searchParams.get('division') || (
-          user && !user.is_superuser && user.assigned_divisions?.length > 0
-            ? user.assigned_divisions.map(d => d.name).join(',')
-            : ''
-        );
-        const data = await publicApi.getDisplayBoard(officeId, paramDivs);
+        const data = await publicApi.getDisplayBoard(officeId, divisionsQueryParam);
         if (!isMounted) return;
 
         const currentLatestCall = data.latest_called_at || (data.serving?.[0]?.called_at) || null;
@@ -682,7 +691,7 @@ export default function DisplayBoard() {
           if (event.data?.type === 'QUEUE_CALLED') {
             if (!event.data.officeId || String(event.data.officeId) === String(officeId)) {
               const calledCounter = event.data.counter || '';
-              const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivision(calledCounter);
+              const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivisionRef.current?.(calledCounter);
               if (!isOtherDivision && soundEnabled) {
                 announceNowServing({
                   queueNo: event.data.queueNo,
@@ -719,7 +728,7 @@ export default function DisplayBoard() {
           const item = JSON.parse(e.newValue);
           if (!item.officeId || String(item.officeId) === String(officeId)) {
             const calledCounter = item.counter || '';
-            const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivision(calledCounter);
+            const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivisionRef.current?.(calledCounter);
             if (!isOtherDivision && soundEnabled) {
               announceNowServing({
                 queueNo: item.queueNo,
@@ -752,7 +761,7 @@ export default function DisplayBoard() {
       }
       window.removeEventListener('storage', handleStorage);
     };
-  }, [officeId, soundEnabled, searchParams, user, findMatchingActiveDivision]);
+  }, [officeId, soundEnabled, divisionsQueryParam]);
 
   const toggleFullScreen = () => {
     if (!document.fullscreenElement) {
