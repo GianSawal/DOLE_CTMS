@@ -59,21 +59,50 @@ export default function StaffQueue() {
     }
   }, [user, selectedOffice]);
 
-  // Auto-select first counter if none chosen, user has a single division counter, or counter is invalid
+  // Auto-select counter logic:
+  // If user has a single counter available, auto-select it.
+  // If multiple counters are available:
+  //   - Keep '-- All Counters / Divisions --' ('') if selected or if unset
+  //   - If a valid saved counter is in localStorage, use it
+  //   - Never forcibly hijack the selection to counters[0] (e.g. IMSD)
   useEffect(() => {
     if (queueData.counters?.length > 0) {
       const saved = localStorage.getItem('ctms_staff_counter');
       const hasValid = queueData.counters.some(c => String(c.id) === String(selectedCounter));
 
-      // If user intentionally chose "All Counters / Divisions" and has multiple counters, respect it
-      if (saved === '' && selectedCounter === '' && queueData.counters.length > 1) {
+      // If exactly 1 counter exists, auto-select it
+      if (queueData.counters.length === 1) {
+        const onlyId = String(queueData.counters[0].id);
+        if (selectedCounter !== onlyId) {
+          setSelectedCounter(onlyId);
+          localStorage.setItem('ctms_staff_counter', onlyId);
+        }
         return;
       }
 
-      if (!selectedCounter || !hasValid) {
-        const firstId = String(queueData.counters[0].id);
-        setSelectedCounter(firstId);
-        localStorage.setItem('ctms_staff_counter', firstId);
+      // If user is currently on '-- All Counters / Divisions --', keep it!
+      if (selectedCounter === '') {
+        return;
+      }
+
+      // If user has a valid saved counter in localStorage, preserve it
+      if (saved && queueData.counters.some(c => String(c.id) === String(saved))) {
+        if (selectedCounter !== saved) {
+          setSelectedCounter(saved);
+        }
+        return;
+      }
+
+      // If saved is explicitly empty string, keep selectedCounter as ''
+      if (saved === '') {
+        if (selectedCounter !== '') setSelectedCounter('');
+        return;
+      }
+
+      // If selectedCounter is set but invalid (e.g. from another office), reset to All Counters
+      if (selectedCounter && !hasValid) {
+        setSelectedCounter('');
+        localStorage.setItem('ctms_staff_counter', '');
       }
     }
   }, [queueData.counters, selectedCounter]);
@@ -288,14 +317,29 @@ export default function StaffQueue() {
       return;
     }
 
-    const counterToUse = selectedCounter || (queueData.counters?.length > 0 ? String(queueData.counters[0].id) : null);
+    // Determine counter to use:
+    // If next client has a division, find the counter matching that division name
+    let counterToUse = null;
+    if (nextWaitingClient.division_name && queueData.counters?.length > 0) {
+      const divNorm = nextWaitingClient.division_name.trim().toLowerCase().replace(/\s+/g, '');
+      const matched = queueData.counters.find(
+        c => c.name.trim().toLowerCase().replace(/\s+/g, '') === divNorm
+      );
+      if (matched) {
+        counterToUse = String(matched.id);
+      }
+    }
+
+    if (!counterToUse && selectedCounter) {
+      counterToUse = selectedCounter;
+    }
+    if (!counterToUse && queueData.counters?.length > 0) {
+      counterToUse = String(queueData.counters[0].id);
+    }
+
     if (!counterToUse) {
       setError('No window counters available for this office. Please set up a counter first.');
       return;
-    }
-    if (!selectedCounter && counterToUse) {
-      setSelectedCounter(counterToUse);
-      localStorage.setItem('ctms_staff_counter', counterToUse);
     }
 
     try {
@@ -328,15 +372,34 @@ export default function StaffQueue() {
       return;
     }
 
-    const counterToUse = selectedCounter || (queueData.counters?.length > 0 ? String(queueData.counters[0].id) : null);
+    // Determine counter to use:
+    // If ticket has a division, find the counter matching that division name
+    let counterToUse = null;
+    if (tx.division_name && queueData.counters?.length > 0) {
+      const divNorm = tx.division_name.trim().toLowerCase().replace(/\s+/g, '');
+      const matched = queueData.counters.find(
+        c => c.name.trim().toLowerCase().replace(/\s+/g, '') === divNorm
+      );
+      if (matched) {
+        counterToUse = String(matched.id);
+      }
+    }
+
+    // If no division match, use selectedCounter if set, or first available counter
+    if (!counterToUse && selectedCounter) {
+      counterToUse = selectedCounter;
+    }
+    if (!counterToUse && queueData.counters?.length > 0) {
+      counterToUse = String(queueData.counters[0].id);
+    }
+
     if (!counterToUse) {
       setError('No window counters available. Please select or add a counter.');
       return;
     }
-    if (!selectedCounter && counterToUse) {
-      setSelectedCounter(counterToUse);
-      localStorage.setItem('ctms_staff_counter', counterToUse);
-    }
+
+    // NOTE: We intentionally do NOT call setSelectedCounter(counterToUse) here.
+    // Forcing selectedCounter switches the user's dropdown view and filters out all other divisions.
     await handleAction(tx.id, 'call', { counter: counterToUse, personnel: tx.assigned_personnel });
   };
 

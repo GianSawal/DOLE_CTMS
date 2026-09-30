@@ -622,14 +622,7 @@ class StaffCallNextView(APIView):
             if not request.user.is_superuser and counter.name not in allowed_div_names:
                 return Response({"detail": "Forbidden: You are not authorized to call clients for this counter / division."}, status=status.HTTP_403_FORBIDDEN)
         else:
-            counter_candidates = CtmsCounter.objects.filter(office=office, is_active=True)
-            if not request.user.is_superuser:
-                counter_candidates = counter_candidates.filter(name__in=allowed_div_names)
-            counter = counter_candidates.first()
-            if not counter:
-                first_div = allowed_divs.first() or CsmDivision.objects.first()
-                default_name = first_div.name if first_div else "General"
-                counter, _ = CtmsCounter.objects.get_or_create(office=office, name=default_name, defaults={'is_active': True})
+            counter = None
 
         personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
         if personnel and str(personnel).strip() and counter:
@@ -697,14 +690,9 @@ class StaffTransactionActionView(APIView):
                     valid, err_msg = validate_personnel_division_assignment(tx, str(personnel).strip())
                     if not valid:
                         return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
+                counter = None
                 if counter_id:
-                    counter = get_object_or_404(CtmsCounter, pk=counter_id, office=tx.office, is_active=True)
-                else:
-                    counter = CtmsCounter.objects.filter(office=tx.office, is_active=True).first()
-                    if not counter:
-                        first_div = CsmDivision.objects.first()
-                        default_name = first_div.name if first_div else "General"
-                        counter, _ = CtmsCounter.objects.get_or_create(office=tx.office, name=default_name, defaults={'is_active': True})
+                    counter = CtmsCounter.objects.filter(pk=counter_id, office=tx.office, is_active=True).first()
                 tx = services.call_specific_transaction(tx, counter, personnel=personnel)
 
             elif action == 'recall':

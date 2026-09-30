@@ -109,15 +109,26 @@ def call_next_transaction(office, counter, personnel=None):
         if not tx.assigned_personnel:
             raise ValueError(f"Cannot call queue #{tx.queue_no}: A personnel must be assigned before calling.")
 
+        assigned_counter = counter
+        # If counter was not specified, automatically match to transaction's division counter
+        if not assigned_counter and tx.service and tx.service.division:
+            assigned_counter = CtmsCounter.objects.filter(
+                office=office,
+                name__iexact=tx.service.division.name.strip(),
+                is_active=True
+            ).first()
+        if not assigned_counter:
+            assigned_counter = CtmsCounter.objects.filter(office=office, is_active=True).first()
+
         now = timezone.now()
         tx.status = CtmsTransaction.STATUS_SERVING
-        tx.counter = counter
+        tx.counter = assigned_counter
         tx.called_at = now
         tx.save(update_fields=['status', 'counter', 'called_at', 'assigned_personnel'])
         return tx
 
 
-def call_specific_transaction(tx, counter, personnel=None):
+def call_specific_transaction(tx, counter=None, personnel=None):
     """Staff calls, recalls, or resumes a specific transaction."""
     if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
         raise ValueError(f"Cannot call a transaction with status '{tx.status}'.")
@@ -128,9 +139,28 @@ def call_specific_transaction(tx, counter, personnel=None):
     if not tx.assigned_personnel:
         raise ValueError(f"Cannot call queue #{tx.queue_no}: A personnel must be assigned before calling.")
 
+    assigned_counter = counter
+    # Route to ticket's division counter if counter was omitted,
+    # or if counter belongs to a different division while a matching division counter exists
+    if tx.service and tx.service.division:
+        div_counter = CtmsCounter.objects.filter(
+            office=tx.office,
+            name__iexact=tx.service.division.name.strip(),
+            is_active=True
+        ).first()
+        if div_counter:
+            if not assigned_counter:
+                assigned_counter = div_counter
+            elif assigned_counter.name != div_counter.name and CsmDivision.objects.filter(name__iexact=assigned_counter.name).exists():
+                # The passed counter belongs to another division (e.g. IMSD instead of TSSD 1)
+                assigned_counter = div_counter
+
+    if not assigned_counter:
+        assigned_counter = CtmsCounter.objects.filter(office=tx.office, is_active=True).first()
+
     now = timezone.now()
     tx.status = CtmsTransaction.STATUS_SERVING
-    tx.counter = counter
+    tx.counter = assigned_counter
     tx.called_at = now
     tx.save(update_fields=['status', 'counter', 'called_at', 'assigned_personnel'])
     return tx
