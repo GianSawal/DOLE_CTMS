@@ -1000,23 +1000,42 @@ export default function DisplayBoard() {
                   setSelectedDivisionFilter(e.target.value);
                   localStorage.setItem('ctms_tv_division_filter', e.target.value);
                 }}
-                className="staff-custom-select"
+                className={`staff-custom-select ${isLight ? 'tv-select-light' : 'tv-select-dark'}`}
                 style={{
                   padding: '0.25rem 1.8rem 0.25rem 0.65rem',
                   fontSize: '0.78rem',
                   fontWeight: 700,
                   borderRadius: '6px',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.2)',
-                  backgroundColor: isLight ? '#ffffff' : 'rgba(255,255,255,0.08)',
+                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.25)',
+                  backgroundColor: isLight ? '#ffffff' : '#0f172a',
                   color: isLight ? '#0f172a' : '#ffffff',
+                  colorScheme: isLight ? 'light' : 'dark',
                   boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none',
                   minHeight: '32px',
+                  cursor: 'pointer',
                 }}
                 title="Select division display mode"
               >
-                <option value="">Simultaneous ({eligibleDivisions.map(d => matchDivision(d)?.alias || d).join(' & ')})</option>
+                <option
+                  value=""
+                  style={{
+                    backgroundColor: isLight ? '#ffffff' : '#0f172a',
+                    color: isLight ? '#0f172a' : '#ffffff',
+                  }}
+                >
+                  Simultaneous ({eligibleDivisions.map(d => matchDivision(d)?.alias || d).join(' & ')})
+                </option>
                 {eligibleDivisions.map(d => (
-                  <option key={d} value={d}>Show {matchDivision(d)?.label || d} Only</option>
+                  <option
+                    key={d}
+                    value={d}
+                    style={{
+                      backgroundColor: isLight ? '#ffffff' : '#0f172a',
+                      color: isLight ? '#0f172a' : '#ffffff',
+                    }}
+                  >
+                    Show {matchDivision(d)?.label || d} Only
+                  </option>
                 ))}
               </select>
             </div>

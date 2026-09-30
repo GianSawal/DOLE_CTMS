@@ -687,6 +687,33 @@ label {
   box-shadow: 0 0 0 3px rgba(3, 5, 186, 0.12);
 }
 
+.staff-custom-select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+.tv-select-dark {
+  color-scheme: dark !important;
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+}
+
+.tv-select-dark option {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+}
+
+.tv-select-light {
+  color-scheme: light !important;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+.tv-select-light option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
 .pulse-live-dot {
   width: 8px;
   height: 8px;
