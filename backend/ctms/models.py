@@ -230,6 +230,7 @@ class CtmsDisplayConfig(models.Model):
 class CtmsTransaction(models.Model):
     STATUS_WAITING = 'waiting'
     STATUS_SERVING = 'serving'
+    STATUS_PENDING = 'pending'
     STATUS_DONE = 'done'
     STATUS_NO_SHOW = 'no_show'
     STATUS_CANCELLED = 'cancelled'
@@ -237,6 +238,7 @@ class CtmsTransaction(models.Model):
     STATUS_CHOICES = (
         (STATUS_WAITING, 'Waiting'),
         (STATUS_SERVING, 'Serving'),
+        (STATUS_PENDING, 'Pending'),
         (STATUS_DONE, 'Done'),
         (STATUS_NO_SHOW, 'No-show'),
         (STATUS_CANCELLED, 'Cancelled'),

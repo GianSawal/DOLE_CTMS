@@ -15,7 +15,7 @@ export default function StaffQueue() {
   const [selectedOffice, setSelectedOffice] = useState(() => localStorage.getItem('ctms_staff_office') || '');
   const [selectedCounter, setSelectedCounter] = useState(() => localStorage.getItem('ctms_staff_counter') || '');
 
-  const [queueData, setQueueData] = useState({ waiting: [], serving: [], counters: [], office: null });
+  const [queueData, setQueueData] = useState({ waiting: [], serving: [], pending: [], counters: [], office: null });
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
@@ -483,6 +483,15 @@ export default function StaffQueue() {
                 </svg>
                 <span>Waiting: <strong>{queueData.waiting?.length || 0}</strong></span>
               </span>
+
+              <span className={`staff-stat-pill ${queueData.pending?.length > 0 ? 'staff-stat-pill-amber' : 'staff-stat-pill-green'}`}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="10" y1="15" x2="10" y2="9"></line>
+                  <line x1="14" y1="15" x2="14" y2="9"></line>
+                </svg>
+                <span>Pending: <strong>{queueData.pending?.length || 0}</strong></span>
+              </span>
             </div>
           </div>
 
@@ -817,6 +826,21 @@ export default function StaffQueue() {
                       </button>
 
                       <button
+                        onClick={() => handleAction(tx.id, 'pending')}
+                        disabled={actionLoading}
+                        className="btn btn-sm"
+                        style={{
+                          backgroundColor: '#fffbeb',
+                          color: '#b45309',
+                          border: '1px solid #f59e0b',
+                          fontWeight: 700,
+                        }}
+                        title="Move to Pending Line (for services that cannot be finished in one day)"
+                      >
+                        ⏳ Pending
+                      </button>
+
+                      <button
                         onClick={() => {
                           if (!tx.assigned_personnel || !tx.assigned_personnel.trim()) {
                             setError(`Cannot recall Queue ${tx.queue_no}: Help desk officer must assign a personnel first.`);
@@ -901,6 +925,215 @@ export default function StaffQueue() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Pending Line Section (Multi-day / Ongoing Services) */}
+            <div style={{ marginTop: '1.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ color: '#b45309' }}>
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="10" y1="15" x2="10" y2="9"></line>
+                      <line x1="14" y1="15" x2="14" y2="9"></line>
+                    </svg>
+                    <span>Pending Line</span>
+                  </h2>
+                  {currentCounterName && (
+                    <span style={{
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: '#b45309',
+                      backgroundColor: '#fffbeb',
+                      padding: '0.2rem 0.55rem',
+                      borderRadius: '6px',
+                      border: '1px solid #fde68a',
+                    }}>
+                      {currentCounterName}
+                    </span>
+                  )}
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    Multi-day / hold services
+                  </span>
+                </div>
+                <span className="badge" style={{
+                  backgroundColor: queueData.pending?.length > 0 ? '#fffbeb' : '#f1f5f9',
+                  color: queueData.pending?.length > 0 ? '#b45309' : '#64748b',
+                  border: queueData.pending?.length > 0 ? '1px solid #fde68a' : '1px solid #e2e8f0',
+                  fontWeight: 700,
+                }}>
+                  {queueData.pending?.length || 0} Pending
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                {queueData.pending?.length > 0 ? (
+                  queueData.pending.map(tx => (
+                    <div key={tx.id} className="card" style={{
+                      borderLeft: '5px solid #f59e0b',
+                      padding: '1.15rem 1.25rem',
+                      backgroundColor: '#fffdf7',
+                      boxShadow: '0 2px 5px rgba(0, 0, 0, 0.04)',
+                    }}>
+                      <div className="flex justify-between items-center" style={{ marginBottom: '0.55rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <div className="flex items-center gap-2">
+                          <span className="mono" style={{ fontSize: '1.65rem', fontWeight: 900, color: '#b45309', letterSpacing: '-0.02em' }}>
+                            {tx.queue_no}
+                          </span>
+                          <span className="badge badge-pending">
+                            ⏳ Pending
+                          </span>
+                          {tx.is_priority && (
+                            <span className="badge badge-priority">
+                              ★ Priority
+                            </span>
+                          )}
+                          {(tx.counter_name || tx.division_name) && (
+                            <span className="badge badge-serving">
+                              {tx.counter_name || tx.division_name}
+                            </span>
+                          )}
+                        </div>
+                        <span className="mono" style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                          {tx.transaction_no}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '0.88rem', marginBottom: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', marginBottom: '0.2rem' }}>
+                          <span style={{ fontWeight: 700, color: '#0f172a' }}>{tx.service_name}</span>
+                          {tx.division_name && (
+                            <span style={{
+                              fontSize: '0.72rem',
+                              backgroundColor: 'rgba(3, 5, 186, 0.08)',
+                              color: 'var(--dole-blue)',
+                              fontWeight: 700,
+                              padding: '0.12rem 0.45rem',
+                              borderRadius: '4px',
+                              border: '1px solid rgba(3, 5, 186, 0.15)',
+                            }}>
+                              {tx.division_name}
+                            </span>
+                          )}
+                        </div>
+                        {tx.client_name && (
+                          <div style={{ color: '#475569', fontSize: '0.85rem' }}>
+                            Client: <strong>{tx.client_name}</strong>
+                          </div>
+                        )}
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                          <span>
+                            Checked in: {tx.checked_in_at ? new Date(tx.checked_in_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '--'}
+                          </span>
+                          {tx.called_at && (
+                            <span>
+                              • Last served: {new Date(tx.called_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Assigned Personnel Row */}
+                      <div style={{
+                        marginBottom: '0.75rem',
+                        padding: '0.45rem 0.75rem',
+                        borderRadius: '8px',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #fde68a',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.83rem' }}>
+                          <span>👤</span>
+                          {tx.assigned_personnel ? (
+                            <span style={{ color: '#475569' }}>
+                              Assigned Officer: <strong style={{ color: '#0f172a' }}>{tx.assigned_personnel}</strong>
+                            </span>
+                          ) : (
+                            <span style={{ color: '#b45309', fontWeight: 700 }}>
+                              No officer assigned
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAssignModal(tx)}
+                          className="btn btn-ghost btn-xs"
+                          style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--dole-blue)', textDecoration: 'underline' }}
+                        >
+                          {tx.assigned_personnel ? 'Change' : 'Assign'}
+                        </button>
+                      </div>
+
+                      {/* Pending Card Actions */}
+                      <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '0.45rem',
+                        borderTop: '1px solid #fef3c7',
+                        paddingTop: '0.65rem',
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => handleCallSpecific(tx)}
+                          disabled={actionLoading}
+                          className="btn btn-primary btn-sm"
+                          style={{ fontWeight: 700 }}
+                          title="Resume serving this client at your counter"
+                        >
+                          ▶ Resume Serving
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAction(tx.id, 'done')}
+                          disabled={actionLoading}
+                          className="btn btn-success btn-sm"
+                          style={{ fontWeight: 700 }}
+                          title="Mark service as completed and unlock CSM survey"
+                        >
+                          ✓ Mark Done
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAction(tx.id, 'requeue')}
+                          disabled={actionLoading}
+                          className="btn btn-outline btn-sm"
+                        >
+                          ↩ Return to Queue
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAction(tx.id, 'cancel')}
+                          disabled={actionLoading}
+                          className="btn btn-outline btn-sm"
+                          style={{ color: 'var(--dole-red)' }}
+                        >
+                          Cancel
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setPrintedTx(tx)}
+                          className="btn btn-outline btn-sm"
+                        >
+                          🖨️ Slip
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="staff-empty-card" style={{ padding: '1.75rem 1.25rem' }}>
+                    <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+                      No pending multi-day transactions for <strong>{currentCounterName || 'this counter'}</strong>. Click <strong>⏳ Pending</strong> on an active Now Serving ticket to hold it here.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 

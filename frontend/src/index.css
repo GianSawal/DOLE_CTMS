@@ -242,6 +242,12 @@ label {
   border: 1px solid #fde68a;
 }
 
+.badge-pending {
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
 .badge-cancelled, .badge-no_show {
   background-color: var(--dole-red-light);
   color: var(--dole-red);

@@ -274,11 +274,12 @@ class PublicDisplayBoardView(APIView):
         office = get_object_or_404(CsmOffice, pk=office_id, is_active=True)
         today = timezone.localdate()
 
-        # Currently serving transactions at this office
+        # Currently serving transactions at this office (including multi-day pending tickets resumed today)
         serving_qs = CtmsTransaction.objects.filter(
             office=office,
             status=CtmsTransaction.STATUS_SERVING,
-            queue_date=today
+        ).filter(
+            models.Q(queue_date=today) | models.Q(called_at__date=today)
         ).select_related('counter', 'service', 'service__division').order_by('-called_at')
 
         serving_data = []
@@ -427,17 +428,25 @@ class StaffQueueView(APIView):
             queue_date=today
         ).select_related('office', 'service', 'service__division')
 
-        # Serving list: all serving in this office or counter
+        # Serving list: all serving in this office or counter (including pending tickets from previous days resumed today)
         serving_qs = CtmsTransaction.objects.filter(
             office=office,
             status=CtmsTransaction.STATUS_SERVING,
-            queue_date=today
+        ).filter(
+            models.Q(queue_date=today) | models.Q(called_at__date=today)
         ).select_related('office', 'service', 'service__division', 'counter', 'served_by').order_by('-called_at')
 
-        # If not superuser, restrict waiting and serving queues to the user's assigned divisions
+        # Pending list: multi-day or hold services that cannot be finished in one day (persists across dates)
+        pending_qs = CtmsTransaction.objects.filter(
+            office=office,
+            status=CtmsTransaction.STATUS_PENDING
+        ).select_related('office', 'service', 'service__division', 'counter', 'served_by')
+
+        # If not superuser, restrict waiting, serving, and pending queues to the user's assigned divisions
         if not request.user.is_superuser:
             waiting_qs = waiting_qs.filter(service__division__in=allowed_divisions)
             serving_qs = serving_qs.filter(service__division__in=allowed_divisions)
+            pending_qs = pending_qs.filter(service__division__in=allowed_divisions)
 
         if counter_id:
             counter = CtmsCounter.objects.filter(pk=counter_id, office=office, is_active=True).first()
@@ -450,13 +459,20 @@ class StaffQueueView(APIView):
                 division = CsmDivision.objects.filter(name__iexact=counter.name.strip()).first()
                 if division:
                     waiting_qs = waiting_qs.filter(service__division=division)
+                    pending_qs = pending_qs.filter(
+                        models.Q(service__division=division) | models.Q(counter=counter)
+                    )
+                else:
+                    pending_qs = pending_qs.filter(counter=counter)
 
         waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
+        pending_qs = pending_qs.order_by('-is_priority', '-called_at', 'checked_in_at')
 
         return Response({
             "office": CsmOfficeSerializer(office).data,
             "waiting": StaffTransactionSerializer(waiting_qs, many=True).data,
             "serving": StaffTransactionSerializer(serving_qs, many=True).data,
+            "pending": StaffTransactionSerializer(pending_qs, many=True).data,
             "counters": CtmsCounterSerializer(counters_qs, many=True).data,
             "divisions": CsmDivisionSerializer(divisions_data, many=True).data,
         })
@@ -676,6 +692,9 @@ class StaffTransactionActionView(APIView):
 
             elif action == 'cancel':
                 tx = services.cancel_transaction(tx)
+
+            elif action == 'pending':
+                tx = services.mark_pending(tx)
 
             elif action == 'requeue':
                 tx = services.requeue_transaction(tx)

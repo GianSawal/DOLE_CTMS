@@ -118,8 +118,8 @@ def call_next_transaction(office, counter, personnel=None):
 
 
 def call_specific_transaction(tx, counter, personnel=None):
-    """Staff calls or recalls a specific transaction."""
-    if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING):
+    """Staff calls, recalls, or resumes a specific transaction."""
+    if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
         raise ValueError(f"Cannot call a transaction with status '{tx.status}'.")
 
     if personnel:
@@ -136,10 +136,20 @@ def call_specific_transaction(tx, counter, personnel=None):
     return tx
 
 
+def mark_pending(tx):
+    """Staff moves a serving or waiting transaction to the Pending line (e.g. multi-day services)."""
+    if tx.status not in (CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_WAITING):
+        raise ValueError(f"Cannot mark transaction with status '{tx.status}' as Pending.")
+
+    tx.status = CtmsTransaction.STATUS_PENDING
+    tx.save(update_fields=['status'])
+    return tx
+
+
 def mark_done(tx, staff_user):
-    """Staff marks a serving transaction as Done."""
-    if tx.status != CtmsTransaction.STATUS_SERVING:
-        raise ValueError(f"Cannot mark transaction '{tx.status}' as Done. Must be serving.")
+    """Staff marks a serving or pending transaction as Done."""
+    if tx.status not in (CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
+        raise ValueError(f"Cannot mark transaction '{tx.status}' as Done. Must be serving or pending.")
 
     now = timezone.now()
     tx.status = CtmsTransaction.STATUS_DONE
@@ -165,7 +175,7 @@ def undo_done(tx):
 
 def mark_no_show(tx):
     """Staff marks transaction as No-Show."""
-    if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING):
+    if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
         raise ValueError(f"Cannot mark transaction with status '{tx.status}' as no-show.")
 
     tx.status = CtmsTransaction.STATUS_NO_SHOW
@@ -176,7 +186,7 @@ def mark_no_show(tx):
 
 def cancel_transaction(tx):
     """Staff or client cancels transaction."""
-    if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING):
+    if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
         raise ValueError(f"Cannot cancel transaction with status '{tx.status}'.")
 
     tx.status = CtmsTransaction.STATUS_CANCELLED
@@ -186,8 +196,8 @@ def cancel_transaction(tx):
 
 
 def requeue_transaction(tx):
-    """Return serving transaction back to waiting queue."""
-    if tx.status != CtmsTransaction.STATUS_SERVING:
+    """Return serving or pending transaction back to waiting queue."""
+    if tx.status not in (CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
         raise ValueError(f"Cannot requeue transaction with status '{tx.status}'.")
 
     tx.status = CtmsTransaction.STATUS_WAITING

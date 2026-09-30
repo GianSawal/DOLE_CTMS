@@ -70,6 +70,8 @@ export default function Ticket() {
         return <span className="badge badge-waiting">{t.status_waiting}</span>;
       case 'serving':
         return <span className="badge badge-serving" style={{ fontSize: '0.9rem', padding: '0.4rem 0.85rem' }}>🔔 {t.status_serving}</span>;
+      case 'pending':
+        return <span className="badge badge-pending" style={{ fontSize: '0.9rem', padding: '0.4rem 0.85rem' }}>⏳ Pending / Processing</span>;
       case 'done':
         return <span className="badge badge-done">{t.status_done}</span>;
       case 'no_show':

@@ -125,6 +125,8 @@ export default function StaffTransactions() {
         return <span className="badge badge-waiting">Waiting</span>;
       case 'serving':
         return <span className="badge badge-serving">Serving</span>;
+      case 'pending':
+        return <span className="badge badge-pending">Pending</span>;
       case 'done':
         return <span className="badge badge-done">Done</span>;
       case 'no_show':
@@ -248,6 +250,7 @@ export default function StaffTransactions() {
                 <option value="">All Statuses</option>
                 <option value="waiting">Waiting</option>
                 <option value="serving">Serving</option>
+                <option value="pending">Pending</option>
                 <option value="done">Done</option>
                 <option value="no_show">No-show</option>
                 <option value="cancelled">Cancelled</option>
