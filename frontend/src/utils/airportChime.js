@@ -49,11 +49,13 @@ export function isAudioUnlocked() {
  */
 export function broadcastQueueCall(payload = {}) {
   try {
+    const callId = `${payload.queueNo || ''}_${payload.counter || ''}_${Date.now()}`;
     if (typeof BroadcastChannel !== 'undefined') {
       const bc = new BroadcastChannel(CHIME_BROADCAST_CHANNEL);
       bc.postMessage({
         type: 'QUEUE_CALLED',
         timestamp: Date.now(),
+        callId,
         ...payload,
       });
       bc.close();
@@ -62,6 +64,7 @@ export function broadcastQueueCall(payload = {}) {
     try {
       localStorage.setItem('dole_last_queue_call', JSON.stringify({
         timestamp: Date.now(),
+        callId,
         ...payload,
       }));
     } catch {}
@@ -182,143 +185,281 @@ export async function playAirportChime(presetKey = 'classic4') {
 export const ANNOUNCEMENT_START_EVENT = 'dole_announcement_start';
 export const ANNOUNCEMENT_END_EVENT = 'dole_announcement_end';
 
+// Keep reference to active SpeechSynthesisUtterance to prevent garbage collection mid-speech
+let activeUtterance = null;
+let currentChimeTimeout = null;
+
+// Announcement FIFO Queue & Execution State
+const announcementQueue = [];
+let isAnnouncing = false;
+let isAudioDucked = false;
+
+// Set of recently processed call signatures to avoid double-announcing from simultaneous BC + storage events
+const recentCallTimestamps = new Map();
+
 /**
- * Speaks the queue number and personnel announcement via Web Speech API.
+ * Cleans up and purges old entries in recentCallTimestamps older than 15 seconds.
  */
-export function speakQueueAnnouncement({ queueNo, counter, personnel, lang = 'en', onEnd }) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) {
-    onEnd?.();
-    return;
-  }
-
-  try {
-    window.speechSynthesis.cancel(); // Cancel any overlapping speech
-
-    // Format queue digits for articulate pronunciation (e.g., "0 4 2" or "Priority P 0 0 1")
-    let rawQueue = String(queueNo || '').trim();
-    let spokenQueue = rawQueue;
-    if (rawQueue.toUpperCase().startsWith('P-')) {
-      const numPart = rawQueue.substring(2).split('').join(' ');
-      spokenQueue = `Priority P ${numPart}`;
-    } else {
-      spokenQueue = rawQueue.split('').join(' ');
+function cleanRecentCalls() {
+  const now = Date.now();
+  for (const [key, ts] of recentCallTimestamps.entries()) {
+    if (now - ts > 15000) {
+      recentCallTimestamps.delete(key);
     }
-
-    const spokenCounter = counter || 'the designated window';
-    const cleanPersonnel = (personnel || '').trim();
-
-    let text = '';
-    if (lang === 'fil') {
-      if (cleanPersonnel) {
-        text = `Kasalukuyang pinaglilingkuran, numero ${spokenQueue}, sa ${spokenCounter}. Mangyaring hanapin si ${cleanPersonnel}.`;
-      } else {
-        text = `Kasalukuyang pinaglilingkuran, numero ${spokenQueue}, sa ${spokenCounter}.`;
-      }
-    } else {
-      if (cleanPersonnel) {
-        text = `Now serving, queue number ${spokenQueue}, at ${spokenCounter}. Please look for ${cleanPersonnel}.`;
-      } else {
-        text = `Now serving, queue number ${spokenQueue}, at ${spokenCounter}.`;
-      }
-    }
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.88; // Deliberate, clear PA announcement pace
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-    utterance.lang = lang === 'fil' ? 'fil-PH' : 'en-US';
-
-    const handleSpeechFinish = () => {
-      onEnd?.();
-      try {
-        window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_END_EVENT, { detail: { queueNo } }));
-      } catch {}
-    };
-
-    utterance.onend = handleSpeechFinish;
-    utterance.onerror = handleSpeechFinish;
-
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-      if (lang === 'fil') {
-        const filVoice = voices.find(v => v.lang.startsWith('fil') || v.lang.startsWith('tl'));
-        if (filVoice) utterance.voice = filVoice;
-      }
-      if (!utterance.voice) {
-        const preferredVoice =
-          voices.find(v => v.lang === 'en-PH') ||
-          voices.find(v => (v.lang === 'en-US' || v.lang.startsWith('en')) && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft') || v.name.includes('Samantha') || v.name.includes('Zira'))) ||
-          voices.find(v => v.lang.startsWith('en')) ||
-          voices[0];
-        if (preferredVoice) utterance.voice = preferredVoice;
-      }
-    }
-
-    window.speechSynthesis.speak(utterance);
-  } catch (err) {
-    console.debug('Speech synthesis announcement notice:', err);
-    onEnd?.();
   }
 }
 
 /**
- * Complete airport public announcement:
- * 1. Dispatches ANNOUNCEMENT_START_EVENT to tone down video sound.
- * 2. Plays the 4-tone airport chime.
- * 3. Waits for chime melody to conclude (~1.85s).
- * 4. Speaks the announcement clearly through Text-to-Speech.
- * 5. Dispatches ANNOUNCEMENT_END_EVENT to restore video sound.
+ * Check if a call signature was recently processed within a short deduplication window.
  */
-let pendingSpeechTimer = null;
-let duckSafetyTimer = null;
-
-export async function announceNowServing({ queueNo, counter, personnel, lang = 'en', onDuckStart, onDuckEnd }) {
-  if (pendingSpeechTimer) {
-    clearTimeout(pendingSpeechTimer);
-    pendingSpeechTimer = null;
+function isDuplicateCall(queueNo, counter, dedupeWindowMs = 3500) {
+  cleanRecentCalls();
+  const key = `${String(queueNo || '').trim().toUpperCase()}_${String(counter || '').trim().toUpperCase()}`;
+  const now = Date.now();
+  const lastTs = recentCallTimestamps.get(key);
+  if (lastTs && (now - lastTs) < dedupeWindowMs) {
+    return true;
   }
-  if (duckSafetyTimer) {
-    clearTimeout(duckSafetyTimer);
-    duckSafetyTimer = null;
+  // Check if this exact queue number and counter is already waiting in line
+  const alreadyInQueue = announcementQueue.some(
+    item => String(item.queueNo).trim().toUpperCase() === String(queueNo).trim().toUpperCase() &&
+            String(item.counter).trim().toUpperCase() === String(counter).trim().toUpperCase()
+  );
+  if (alreadyInQueue) {
+    return true;
+  }
+  recentCallTimestamps.set(key, now);
+  return false;
+}
+
+/**
+ * Formats utterance text and articulates digits clearly.
+ */
+export function formatAnnouncementText({ queueNo, counter, personnel, lang = 'en' }) {
+  let rawQueue = String(queueNo || '').trim();
+  let spokenQueue = rawQueue;
+  if (rawQueue.toUpperCase().startsWith('P-')) {
+    const numPart = rawQueue.substring(2).split('').join(' ');
+    spokenQueue = `Priority P ${numPart}`;
+  } else {
+    spokenQueue = rawQueue.split('').join(' ');
   }
 
-  // 1. Notify listeners immediately that an announcement started (tones down video volume)
-  try {
-    window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_START_EVENT, { detail: { queueNo, counter, personnel } }));
-  } catch {}
-  onDuckStart?.();
+  const spokenCounter = counter || 'the designated window';
+  const cleanPersonnel = (personnel || '').trim();
 
-  // Safety fallback: if speech API is muted or fails, ensure video volume restores in 8.5 seconds
-  duckSafetyTimer = setTimeout(() => {
-    try {
-      window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_END_EVENT, { detail: { queueNo } }));
-    } catch {}
-    onDuckEnd?.();
-    duckSafetyTimer = null;
-  }, 8500);
-
-  const handleDone = () => {
-    if (duckSafetyTimer) {
-      clearTimeout(duckSafetyTimer);
-      duckSafetyTimer = null;
+  if (lang === 'fil') {
+    if (cleanPersonnel) {
+      return `Kasalukuyang pinaglilingkuran, numero ${spokenQueue}, sa ${spokenCounter}. Mangyaring hanapin si ${cleanPersonnel}.`;
     }
+    return `Kasalukuyang pinaglilingkuran, numero ${spokenQueue}, sa ${spokenCounter}.`;
+  }
+
+  if (cleanPersonnel) {
+    return `Now serving, queue number ${spokenQueue}, at ${spokenCounter}. Please look for ${cleanPersonnel}.`;
+  }
+  return `Now serving, queue number ${spokenQueue}, at ${spokenCounter}.`;
+}
+
+/**
+ * Speaks a single queue announcement via Web Speech API and returns a Promise that
+ * resolves ONLY when the text-to-speech finishes completely (with watchdog safety).
+ */
+export function speakQueueAnnouncementAsync({ queueNo, counter, personnel, lang = 'en' }) {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      resolve();
+      return;
+    }
+
     try {
-      window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_END_EVENT, { detail: { queueNo } }));
-    } catch {}
-    onDuckEnd?.();
-  };
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
 
-  // 2. Play the airport chime
-  await playAirportChime();
+      const text = formatAnnouncementText({ queueNo, counter, personnel, lang });
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.88; // Deliberate, clear PA announcement pace
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      utterance.lang = lang === 'fil' ? 'fil-PH' : 'en-US';
 
-  // 3. Trigger voice announcement after the chime plays
-  pendingSpeechTimer = setTimeout(() => {
-    speakQueueAnnouncement({
-      queueNo,
-      counter,
-      personnel,
-      lang,
-      onEnd: handleDone,
+      let isFinished = false;
+      let watchdogTimer = null;
+
+      const finishSpeech = () => {
+        if (isFinished) return;
+        isFinished = true;
+        if (watchdogTimer) {
+          clearTimeout(watchdogTimer);
+          watchdogTimer = null;
+        }
+        activeUtterance = null;
+        resolve();
+      };
+
+      utterance.onend = finishSpeech;
+      utterance.onerror = (err) => {
+        console.debug('SpeechSynthesis error event:', err);
+        finishSpeech();
+      };
+
+      // Watchdog timer: estimated duration + 4s safety buffer (max 15s)
+      const maxDuration = Math.min(15000, Math.max(7000, text.length * 160));
+      watchdogTimer = setTimeout(() => {
+        console.debug('Speech watchdog timer triggered for queue:', queueNo);
+        finishSpeech();
+      }, maxDuration);
+
+      const voices = window.speechSynthesis.getVoices();
+      if (voices && voices.length > 0) {
+        if (lang === 'fil') {
+          const filVoice = voices.find(v => v.lang.startsWith('fil') || v.lang.startsWith('tl'));
+          if (filVoice) utterance.voice = filVoice;
+        }
+        if (!utterance.voice) {
+          const preferredVoice =
+            voices.find(v => v.lang === 'en-PH') ||
+            voices.find(v => (v.lang === 'en-US' || v.lang.startsWith('en')) && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft') || v.name.includes('Samantha') || v.name.includes('Zira'))) ||
+            voices.find(v => v.lang.startsWith('en')) ||
+            voices[0];
+          if (preferredVoice) utterance.voice = preferredVoice;
+        }
+      }
+
+      activeUtterance = utterance;
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.debug('Speech synthesis start exception:', err);
+      resolve();
+    }
+  });
+}
+
+/**
+ * Backwards-compatible speakQueueAnnouncement callback wrapper.
+ */
+export function speakQueueAnnouncement({ queueNo, counter, personnel, lang = 'en', onEnd }) {
+  speakQueueAnnouncementAsync({ queueNo, counter, personnel, lang }).then(() => {
+    onEnd?.();
+  });
+}
+
+/**
+ * Sequential Announcement Worker:
+ * Processes one queue announcement at a time in FIFO order:
+ * 1. Ducks background media audio.
+ * 2. Plays the airport chime (~1.85s).
+ * 3. Speaks the full text-to-speech announcement.
+ * 4. Ensures queue 001 finishes completely before queue 002 starts!
+ * 5. Adds a comfortable 750ms natural pause between successive announcements.
+ * 6. Restores background media audio once all announcements finish.
+ */
+async function processAnnouncementQueue() {
+  if (isAnnouncing) {
+    // An announcement is already actively playing; next item will run as soon as this one finishes
+    return;
+  }
+
+  if (announcementQueue.length === 0) {
+    // All announcements in the queue have completed
+    if (isAudioDucked) {
+      isAudioDucked = false;
+      try {
+        window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_END_EVENT));
+      } catch {}
+    }
+    return;
+  }
+
+  isAnnouncing = true;
+  const item = announcementQueue.shift();
+
+  try {
+    // 1. Duck background audio (only if not already ducked)
+    if (!isAudioDucked) {
+      isAudioDucked = true;
+      try {
+        window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_START_EVENT, { detail: item }));
+      } catch {}
+      item.onDuckStart?.();
+    }
+
+    // 2. Play the airport chime and wait for the chimes to ring out cleanly (~1.85s)
+    await playAirportChime();
+    await new Promise((resolve) => {
+      currentChimeTimeout = setTimeout(resolve, 1850);
     });
-  }, 1850);
+    currentChimeTimeout = null;
+
+    // 3. Play the speech announcement and await its full completion!
+    await speakQueueAnnouncementAsync({
+      queueNo: item.queueNo,
+      counter: item.counter,
+      personnel: item.personnel,
+      lang: item.lang,
+    });
+
+    item.onDuckEnd?.();
+
+    // 4. If more announcements are waiting in line (e.g. queue 002 after 001),
+    //    insert a polite 750ms natural pause before the next chime sounds.
+    if (announcementQueue.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+  } catch (err) {
+    console.warn('Announcement execution error:', err);
+  } finally {
+    isAnnouncing = false;
+    // Process next queued announcement
+    processAnnouncementQueue();
+  }
+}
+
+/**
+ * Enqueues a call/recall announcement into the FIFO queue.
+ * Guarantees that queue numbers never overlap or cut each other off.
+ */
+export function announceNowServing({ queueNo, counter, personnel, lang = 'en', onDuckStart, onDuckEnd, bypassDedupe = false }) {
+  if (!queueNo) return;
+
+  // Deduplicate rapid repeat events within 3.5 seconds
+  if (!bypassDedupe && isDuplicateCall(queueNo, counter)) {
+    return;
+  }
+
+  announcementQueue.push({
+    queueNo,
+    counter,
+    personnel,
+    lang,
+    onDuckStart,
+    onDuckEnd,
+  });
+
+  processAnnouncementQueue();
+}
+
+/**
+ * Clears and cancels all active and pending announcements (e.g., when muting or unmounting).
+ */
+export function cancelAllAnnouncements() {
+  announcementQueue.length = 0;
+  if (currentChimeTimeout) {
+    clearTimeout(currentChimeTimeout);
+    currentChimeTimeout = null;
+  }
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+  }
+  activeUtterance = null;
+  isAnnouncing = false;
+  if (isAudioDucked) {
+    isAudioDucked = false;
+    try {
+      window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_END_EVENT));
+    } catch {}
+  }
 }

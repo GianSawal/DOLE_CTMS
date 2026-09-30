@@ -6,6 +6,7 @@ import { translations } from '../../locales/translations';
 import {
   playAirportChime,
   announceNowServing,
+  cancelAllAnnouncements,
   getAudioContext,
   unlockAudioContext,
   isAudioUnlocked,
@@ -598,7 +599,10 @@ export default function DisplayBoard() {
         counter: firstServing?.counter || 'Window 1',
         personnel: firstServing?.assigned_personnel || '',
         lang: langRef.current,
+        bypassDedupe: true,
       });
+    } else {
+      cancelAllAnnouncements();
     }
   };
 
@@ -615,6 +619,8 @@ export default function DisplayBoard() {
     }
     return '';
   }, [searchParams, user?.is_superuser, user?.assigned_divisions]);
+
+  const processedCallIdsRef = useRef(new Set());
 
   useEffect(() => {
     let isMounted = true;
@@ -689,6 +695,9 @@ export default function DisplayBoard() {
         bc.onmessage = (event) => {
           if (!isMounted) return;
           if (event.data?.type === 'QUEUE_CALLED') {
+            if (event.data?.callId) {
+              processedCallIdsRef.current.add(event.data.callId);
+            }
             if (!event.data.officeId || String(event.data.officeId) === String(officeId)) {
               const calledCounter = event.data.counter || '';
               const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivisionRef.current?.(calledCounter);
@@ -726,6 +735,12 @@ export default function DisplayBoard() {
       if (e.key === 'dole_last_queue_call' && e.newValue) {
         try {
           const item = JSON.parse(e.newValue);
+          if (item.callId && processedCallIdsRef.current.has(item.callId)) {
+            return;
+          }
+          if (item.callId) {
+            processedCallIdsRef.current.add(item.callId);
+          }
           if (!item.officeId || String(item.officeId) === String(officeId)) {
             const calledCounter = item.counter || '';
             const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivisionRef.current?.(calledCounter);
@@ -753,6 +768,7 @@ export default function DisplayBoard() {
     return () => {
       isMounted = false;
       clearInterval(interval);
+      cancelAllAnnouncements();
       if (bc) {
         try { bc.close(); } catch {}
       }
@@ -840,6 +856,7 @@ export default function DisplayBoard() {
               counter: firstServing?.counter || 'Window 1',
               personnel: firstServing?.assigned_personnel || 'Officer on Duty',
               lang: langRef.current,
+              bypassDedupe: true,
             });
           }}
           style={{
@@ -946,6 +963,7 @@ export default function DisplayBoard() {
                   counter: firstServing?.counter || 'Window 1',
                   personnel: firstServing?.assigned_personnel || 'Officer on Duty',
                   lang: langRef.current,
+                  bypassDedupe: true,
                 });
               }}
               className="btn btn-outline btn-sm"
