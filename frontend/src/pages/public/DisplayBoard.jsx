@@ -62,13 +62,149 @@ function matchDivision(divName) {
   return KNOWN_DIVISIONS.find(d => normalizeDiv(d.key) === norm || normalizeDiv(d.alias) === norm || norm.includes(normalizeDiv(d.alias)));
 }
 
-// Dynamically scale down table layout and font sizes as queue volume increases
-function getDynamicScaling(count) {
+// Dynamically scale down layout and font sizes based on queue volume AND number of simultaneous division columns
+function getDynamicScaling(count, numCols = 1) {
+  const isCrowded = numCols >= 4; // e.g. 4 or 5 divisions simultaneous
+
+  if (isCrowded) {
+    if (count <= 1) {
+      return {
+        queueFontSize: '2.0rem',
+        queueLineHeight: '1',
+        rowPadding: '0.6rem 0.75rem',
+        cardPadding: '0.7rem 0.75rem',
+        counterFontSize: '0.9rem',
+        personnelFontSize: '0.86rem',
+        serviceFontSize: '0.78rem',
+        badgePadding: '0.15rem 0.45rem',
+        statusFontSize: '0.7rem',
+      };
+    } else if (count === 2) {
+      return {
+        queueFontSize: '1.8rem',
+        queueLineHeight: '1',
+        rowPadding: '0.5rem 0.65rem',
+        cardPadding: '0.6rem 0.65rem',
+        counterFontSize: '0.86rem',
+        personnelFontSize: '0.82rem',
+        serviceFontSize: '0.74rem',
+        badgePadding: '0.12rem 0.4rem',
+        statusFontSize: '0.68rem',
+      };
+    } else if (count === 3) {
+      return {
+        queueFontSize: '1.6rem',
+        queueLineHeight: '1.05',
+        rowPadding: '0.45rem 0.55rem',
+        cardPadding: '0.5rem 0.6rem',
+        counterFontSize: '0.82rem',
+        personnelFontSize: '0.8rem',
+        serviceFontSize: '0.72rem',
+        badgePadding: '0.12rem 0.35rem',
+        statusFontSize: '0.65rem',
+      };
+    } else {
+      return {
+        queueFontSize: '1.45rem',
+        queueLineHeight: '1.1',
+        rowPadding: '0.35rem 0.45rem',
+        cardPadding: '0.4rem 0.5rem',
+        counterFontSize: '0.8rem',
+        personnelFontSize: '0.76rem',
+        serviceFontSize: '0.7rem',
+        badgePadding: '0.1rem 0.3rem',
+        statusFontSize: '0.62rem',
+      };
+    }
+  }
+
+  if (numCols === 3) {
+    if (count <= 1) {
+      return {
+        queueFontSize: '2.3rem',
+        queueLineHeight: '1',
+        rowPadding: '0.75rem 0.85rem',
+        cardPadding: '0.75rem 0.85rem',
+        counterFontSize: '0.98rem',
+        personnelFontSize: '0.92rem',
+        serviceFontSize: '0.82rem',
+        badgePadding: '0.18rem 0.5rem',
+        statusFontSize: '0.74rem',
+      };
+    } else if (count === 2) {
+      return {
+        queueFontSize: '2.0rem',
+        queueLineHeight: '1.05',
+        rowPadding: '0.6rem 0.75rem',
+        cardPadding: '0.65rem 0.75rem',
+        counterFontSize: '0.92rem',
+        personnelFontSize: '0.88rem',
+        serviceFontSize: '0.78rem',
+        badgePadding: '0.15rem 0.45rem',
+        statusFontSize: '0.7rem',
+      };
+    } else {
+      return {
+        queueFontSize: '1.7rem',
+        queueLineHeight: '1.1',
+        rowPadding: '0.5rem 0.65rem',
+        cardPadding: '0.5rem 0.65rem',
+        counterFontSize: '0.86rem',
+        personnelFontSize: '0.82rem',
+        serviceFontSize: '0.74rem',
+        badgePadding: '0.12rem 0.4rem',
+        statusFontSize: '0.68rem',
+      };
+    }
+  }
+
+  if (numCols === 2) {
+    if (count <= 1) {
+      return {
+        queueFontSize: '2.6rem',
+        queueLineHeight: '1',
+        rowPadding: '0.9rem 1rem',
+        cardPadding: '0.85rem 1rem',
+        counterFontSize: '1.15rem',
+        personnelFontSize: '1.02rem',
+        serviceFontSize: '0.86rem',
+        badgePadding: '0.25rem 0.6rem',
+        statusFontSize: '0.78rem',
+      };
+    } else if (count === 2) {
+      return {
+        queueFontSize: '2.2rem',
+        queueLineHeight: '1.05',
+        rowPadding: '0.75rem 0.85rem',
+        cardPadding: '0.7rem 0.85rem',
+        counterFontSize: '1.05rem',
+        personnelFontSize: '0.95rem',
+        serviceFontSize: '0.82rem',
+        badgePadding: '0.2rem 0.55rem',
+        statusFontSize: '0.75rem',
+      };
+    } else {
+      return {
+        queueFontSize: '1.85rem',
+        queueLineHeight: '1.1',
+        rowPadding: '0.55rem 0.7rem',
+        cardPadding: '0.55rem 0.7rem',
+        counterFontSize: '0.92rem',
+        personnelFontSize: '0.88rem',
+        serviceFontSize: '0.78rem',
+        badgePadding: '0.18rem 0.45rem',
+        statusFontSize: '0.72rem',
+      };
+    }
+  }
+
+  // Single Column View (numCols === 1)
   if (count <= 1) {
     return {
-      queueFontSize: '3.4rem',
+      queueFontSize: '3.2rem',
       queueLineHeight: '1',
       rowPadding: '1.25rem 1rem',
+      cardPadding: '1.25rem 1rem',
       counterFontSize: '1.35rem',
       personnelFontSize: '1.15rem',
       serviceFontSize: '0.92rem',
@@ -77,9 +213,10 @@ function getDynamicScaling(count) {
     };
   } else if (count === 2) {
     return {
-      queueFontSize: '2.8rem',
+      queueFontSize: '2.7rem',
       queueLineHeight: '1.05',
       rowPadding: '1rem 0.9rem',
+      cardPadding: '1rem 0.9rem',
       counterFontSize: '1.2rem',
       personnelFontSize: '1.05rem',
       serviceFontSize: '0.88rem',
@@ -88,47 +225,27 @@ function getDynamicScaling(count) {
     };
   } else if (count === 3) {
     return {
-      queueFontSize: '2.3rem',
+      queueFontSize: '2.2rem',
       queueLineHeight: '1.1',
       rowPadding: '0.75rem 0.85rem',
+      cardPadding: '0.75rem 0.85rem',
       counterFontSize: '1.05rem',
       personnelFontSize: '0.98rem',
       serviceFontSize: '0.84rem',
       badgePadding: '0.25rem 0.6rem',
       statusFontSize: '0.78rem',
     };
-  } else if (count === 4) {
+  } else {
     return {
-      queueFontSize: '1.95rem',
+      queueFontSize: '1.75rem',
       queueLineHeight: '1.1',
-      rowPadding: '0.6rem 0.75rem',
-      counterFontSize: '0.98rem',
-      personnelFontSize: '0.92rem',
+      rowPadding: '0.55rem 0.7rem',
+      cardPadding: '0.55rem 0.7rem',
+      counterFontSize: '0.95rem',
+      personnelFontSize: '0.9rem',
       serviceFontSize: '0.8rem',
       badgePadding: '0.2rem 0.55rem',
       statusFontSize: '0.75rem',
-    };
-  } else if (count <= 6) {
-    return {
-      queueFontSize: '1.65rem',
-      queueLineHeight: '1.1',
-      rowPadding: '0.45rem 0.65rem',
-      counterFontSize: '0.9rem',
-      personnelFontSize: '0.85rem',
-      serviceFontSize: '0.75rem',
-      badgePadding: '0.18rem 0.5rem',
-      statusFontSize: '0.7rem',
-    };
-  } else {
-    return {
-      queueFontSize: '1.4rem',
-      queueLineHeight: '1.1',
-      rowPadding: '0.35rem 0.55rem',
-      counterFontSize: '0.84rem',
-      personnelFontSize: '0.78rem',
-      serviceFontSize: '0.7rem',
-      badgePadding: '0.15rem 0.45rem',
-      statusFontSize: '0.68rem',
     };
   }
 }
@@ -1059,8 +1176,8 @@ export default function DisplayBoard() {
       <div style={{
         flex: 1,
         display: 'grid',
-        gridTemplateColumns: '2.2fr 1fr',
-        gap: '2rem',
+        gridTemplateColumns: activeDivisionsToRender.length >= 4 ? '2.5fr 1fr' : '2.2fr 1fr',
+        gap: activeDivisionsToRender.length >= 4 ? '1.25rem' : '2rem',
       }}>
         {/* Left Side: NOW SERVING */}
         <section style={{ display: 'flex', flexDirection: 'column' }}>
@@ -1070,7 +1187,7 @@ export default function DisplayBoard() {
             textTransform: 'uppercase',
             letterSpacing: '0.08em',
             color: themeStyles.sectionTitleColor,
-            marginBottom: '1rem',
+            marginBottom: '0.85rem',
             display: 'flex',
             alignItems: 'center',
             gap: '0.5rem',
@@ -1085,14 +1202,16 @@ export default function DisplayBoard() {
             gridTemplateColumns: activeDivisionsToRender.length > 1
               ? `repeat(${activeDivisionsToRender.length}, minmax(0, 1fr))`
               : '1fr',
-            gap: '1.25rem',
+            gap: activeDivisionsToRender.length >= 4 ? '0.65rem' : (activeDivisionsToRender.length > 1 ? '0.85rem' : '1.25rem'),
             minHeight: 0,
           }}>
             {activeDivisionsToRender.map((divName) => {
               const divMeta = matchDivision(divName);
               const divItems = servingByDivision[divName] || [];
               const divUpcoming = nextByDivision[divName] || [];
-              const scale = getDynamicScaling(divItems.length);
+              const isSimultaneous = activeDivisionsToRender.length > 1;
+              const isCrowded = activeDivisionsToRender.length >= 4;
+              const scale = getDynamicScaling(divItems.length, activeDivisionsToRender.length);
 
               return (
                 <div
@@ -1111,21 +1230,21 @@ export default function DisplayBoard() {
                   {/* Division Header Banner */}
                   <div
                     style={{
-                      padding: '0.85rem 1.25rem',
+                      padding: isCrowded ? '0.55rem 0.75rem' : (isSimultaneous ? '0.65rem 0.9rem' : '0.85rem 1.25rem'),
                       backgroundColor: isLight ? (divMeta?.bgLight || '#edf2f7') : (divMeta?.bgDark || '#1e293b'),
                       borderBottom: `2px solid ${divMeta?.color || (isLight ? '#cbd5e1' : 'rgba(255,255,255,0.1)')}`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       flexWrap: 'wrap',
-                      gap: '0.5rem',
+                      gap: '0.4rem',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: isCrowded ? '0.45rem' : '0.65rem', minWidth: 0, flex: 1 }}>
                       <span
                         style={{
-                          width: '12px',
-                          height: '12px',
+                          width: isCrowded ? '9px' : (isSimultaneous ? '10px' : '12px'),
+                          height: isCrowded ? '9px' : (isSimultaneous ? '10px' : '12px'),
                           borderRadius: '50%',
                           backgroundColor: divMeta?.accent || '#10b981',
                           boxShadow: `0 0 10px ${divMeta?.accent || '#10b981'}`,
@@ -1133,31 +1252,35 @@ export default function DisplayBoard() {
                           flexShrink: 0,
                         }}
                       />
-                      <div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <h2
                           style={{
-                            fontSize: '1.35rem',
+                            fontSize: isCrowded ? '1.1rem' : (isSimultaneous ? '1.22rem' : '1.35rem'),
                             fontWeight: 900,
-                            letterSpacing: '0.04em',
+                            letterSpacing: '0.03em',
                             textTransform: 'uppercase',
                             color: isLight ? (divMeta?.color || '#0f172a') : '#ffffff',
                             margin: 0,
                             lineHeight: 1.15,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
                           }}
+                          title={divMeta?.label || divName}
                         >
                           {divMeta?.label || divName}
                         </h2>
                         {divMeta?.fullName && (
                           <div
                             style={{
-                              fontSize: '0.72rem',
+                              fontSize: isCrowded ? '0.66rem' : (isSimultaneous ? '0.69rem' : '0.72rem'),
                               color: isLight ? '#475569' : '#94a3b8',
                               fontWeight: 500,
                               whiteSpace: 'nowrap',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
-                              maxWidth: '280px',
-                              marginTop: '0.15rem',
+                              maxWidth: isCrowded ? '135px' : (isSimultaneous ? '180px' : '280px'),
+                              marginTop: '0.1rem',
                             }}
                             title={divMeta.fullName}
                           >
@@ -1169,9 +1292,9 @@ export default function DisplayBoard() {
 
                     <span
                       style={{
-                        fontSize: '0.78rem',
+                        fontSize: isCrowded ? '0.7rem' : (isSimultaneous ? '0.74rem' : '0.78rem'),
                         fontWeight: 800,
-                        padding: '0.2rem 0.6rem',
+                        padding: isCrowded ? '0.12rem 0.45rem' : (isSimultaneous ? '0.16rem 0.55rem' : '0.2rem 0.6rem'),
                         borderRadius: '9999px',
                         backgroundColor: divItems.length > 0
                           ? (isLight ? '#dcfce7' : 'rgba(16, 185, 129, 0.25)')
@@ -1184,13 +1307,14 @@ export default function DisplayBoard() {
                           : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.1)'),
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '0.3rem',
+                        gap: '0.25rem',
+                        flexShrink: 0,
                       }}
                     >
                       <span
                         style={{
-                          width: '6px',
-                          height: '6px',
+                          width: '5px',
+                          height: '5px',
                           borderRadius: '50%',
                           backgroundColor: divItems.length > 0 ? '#10b981' : '#94a3b8',
                         }}
@@ -1199,143 +1323,294 @@ export default function DisplayBoard() {
                     </span>
                   </div>
 
-                  {/* Division Table Body */}
+                  {/* Division Table / Card Body */}
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
                     {divItems.length > 0 ? (
-                      <table
-                        style={{
-                          width: '100%',
-                          borderCollapse: 'collapse',
-                          textAlign: 'left',
-                          tableLayout: 'fixed',
-                        }}
-                      >
-                        <thead>
-                          <tr
-                            style={{
-                              backgroundColor: isLight ? '#edf2f7' : 'rgba(255, 255, 255, 0.04)',
-                              borderBottom: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.08)',
-                            }}
-                          >
-                            <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.76rem', fontWeight: 800, color: isLight ? '#334155' : themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '32%' }}>
-                              Queue No.
-                            </th>
-                            <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.76rem', fontWeight: 800, color: isLight ? '#334155' : themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '28%' }}>
-                              Counter
-                            </th>
-                            <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.76rem', fontWeight: 800, color: isLight ? '#334155' : themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '40%' }}>
-                              Officer / Service
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
+                      isSimultaneous ? (
+                        /* Simultaneous View: Stacked Ticket Cards so Officer & Service have 100% width */
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
                           {divItems.map((item, idx) => (
-                            <tr
+                            <div
                               key={item.id || idx}
                               style={{
-                                borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.06)',
+                                padding: scale.cardPadding,
+                                borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
                                 backgroundColor: idx % 2 === 1
-                                  ? (isLight ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255,255,255,0.02)')
+                                  ? (isLight ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255, 255, 255, 0.02)')
                                   : 'transparent',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: isCrowded ? '0.35rem' : '0.45rem',
                               }}
                             >
-                              {/* Queue Number */}
-                              <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
+                              {/* Row 1: Queue Number on Left, Counter and Serving Badge on Right */}
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '0.4rem',
+                              }}>
+                                {/* Queue Number */}
                                 <div
                                   className="mono"
                                   style={{
                                     fontSize: scale.queueFontSize,
-                                    lineHeight: scale.queueLineHeight,
+                                    lineHeight: 1,
                                     fontWeight: 900,
                                     color: item.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
                                     letterSpacing: '-0.02em',
                                     textShadow: item.is_priority ? (isLight ? 'none' : '0 0 20px rgba(255, 198, 3, 0.35)') : themeStyles.queueNoShadow,
                                     display: 'flex',
                                     alignItems: 'baseline',
-                                    gap: '0.35rem',
+                                    gap: '0.25rem',
                                   }}
                                 >
                                   <span>{item.queue_no}</span>
                                   {item.is_priority && (
-                                    <span style={{ fontSize: '0.9rem', color: isLight ? '#b45309' : 'var(--dole-gold)', verticalAlign: 'middle' }} title="Priority Client">
+                                    <span style={{ fontSize: '0.85rem', color: isLight ? '#b45309' : 'var(--dole-gold)' }} title="Priority Client">
                                       ★
                                     </span>
                                   )}
                                 </div>
-                              </td>
 
-                              {/* Counter / Window */}
-                              <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
-                                <div
-                                  style={{
-                                    fontSize: scale.counterFontSize,
-                                    fontWeight: 800,
-                                    color: isLight ? '#0f172a' : '#f8fafc',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.04em',
-                                  }}
-                                >
-                                  {item.counter}
-                                </div>
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem',
-                                    fontSize: scale.statusFontSize,
-                                    fontWeight: 700,
-                                    padding: scale.badgePadding,
-                                    borderRadius: '9999px',
-                                    backgroundColor: isLight ? '#ecfdf5' : 'rgba(16, 185, 129, 0.2)',
-                                    color: isLight ? '#047857' : '#34d399',
-                                    marginTop: '0.2rem',
-                                  }}
-                                >
-                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                                  <span>Serving</span>
-                                </span>
-                              </td>
-
-                              {/* Officer & Service */}
-                              <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
-                                {item.assigned_personnel ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.2rem' }}>
-                                    <span style={{ fontSize: '0.85rem' }}>👤</span>
-                                    <span
-                                      style={{
-                                        fontSize: scale.personnelFontSize,
-                                        fontWeight: 700,
-                                        color: isLight ? '#1e3a8a' : '#93c5fd',
-                                        whiteSpace: 'nowrap',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                      }}
-                                    >
-                                      {item.assigned_personnel}
-                                    </span>
-                                  </div>
-                                ) : null}
-
-                                {item.service_name && (
+                                {/* Counter and Serving Badge */}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.15rem' }}>
                                   <div
                                     style={{
-                                      fontSize: scale.serviceFontSize,
-                                      color: themeStyles.serviceDescColor,
-                                      fontWeight: 500,
+                                      fontSize: scale.counterFontSize,
+                                      fontWeight: 800,
+                                      color: isLight ? '#0f172a' : '#f8fafc',
+                                      textTransform: 'uppercase',
+                                      letterSpacing: '0.03em',
+                                      textAlign: 'right',
                                       whiteSpace: 'nowrap',
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
+                                      maxWidth: isCrowded ? '115px' : '160px',
                                     }}
-                                    title={item.service_name}
+                                    title={item.counter}
                                   >
-                                    {item.service_name}
+                                    {item.counter}
                                   </div>
-                                )}
-                              </td>
-                            </tr>
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.25rem',
+                                      fontSize: scale.statusFontSize,
+                                      fontWeight: 700,
+                                      padding: scale.badgePadding,
+                                      borderRadius: '9999px',
+                                      backgroundColor: isLight ? '#ecfdf5' : 'rgba(16, 185, 129, 0.2)',
+                                      color: isLight ? '#047857' : '#34d399',
+                                    }}
+                                  >
+                                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                                    <span>Serving</span>
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Row 2: Assigned Personnel / Officer */}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  fontSize: scale.personnelFontSize,
+                                  fontWeight: 700,
+                                  color: isLight ? '#1e3a8a' : '#93c5fd',
+                                  backgroundColor: isLight ? 'rgba(30, 58, 138, 0.05)' : 'rgba(147, 197, 253, 0.08)',
+                                  padding: '0.25rem 0.5rem',
+                                  borderRadius: '6px',
+                                  border: isLight ? '1px solid rgba(30, 58, 138, 0.12)' : '1px solid rgba(147, 197, 253, 0.12)',
+                                  minWidth: 0,
+                                }}
+                              >
+                                <span style={{ fontSize: '0.82rem', flexShrink: 0 }}>👤</span>
+                                <span
+                                  style={{
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.25,
+                                    overflow: 'hidden',
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: 'vertical',
+                                  }}
+                                  title={item.assigned_personnel || 'Officer on Duty'}
+                                >
+                                  {item.assigned_personnel || (
+                                    <span style={{ fontStyle: 'italic', fontWeight: 500, color: isLight ? '#64748b' : '#94a3b8' }}>
+                                      Officer on Duty
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+
+                              {/* Row 3: Counter Service Name */}
+                              {item.service_name && (
+                                <div
+                                  style={{
+                                    fontSize: scale.serviceFontSize,
+                                    color: themeStyles.serviceDescColor,
+                                    fontWeight: 500,
+                                    lineHeight: 1.3,
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden',
+                                    padding: '0 0.15rem',
+                                  }}
+                                  title={item.service_name}
+                                >
+                                  <span style={{ fontWeight: 700, color: isLight ? '#475569' : '#cbd5e1' }}>Service: </span>
+                                  {item.service_name}
+                                </div>
+                              )}
+                            </div>
                           ))}
-                        </tbody>
-                      </table>
+                        </div>
+                      ) : (
+                        /* Single Division View: Wide Table with Word-Wrap */
+                        <table
+                          style={{
+                            width: '100%',
+                            borderCollapse: 'collapse',
+                            textAlign: 'left',
+                            tableLayout: 'fixed',
+                          }}
+                        >
+                          <thead>
+                            <tr
+                              style={{
+                                backgroundColor: isLight ? '#edf2f7' : 'rgba(255, 255, 255, 0.04)',
+                                borderBottom: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.08)',
+                              }}
+                            >
+                              <th style={{ padding: '0.65rem 1rem', fontSize: '0.82rem', fontWeight: 800, color: isLight ? '#334155' : themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '28%' }}>
+                                Queue No.
+                              </th>
+                              <th style={{ padding: '0.65rem 1rem', fontSize: '0.82rem', fontWeight: 800, color: isLight ? '#334155' : themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '26%' }}>
+                                Counter / Window
+                              </th>
+                              <th style={{ padding: '0.65rem 1rem', fontSize: '0.82rem', fontWeight: 800, color: isLight ? '#334155' : themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '46%' }}>
+                                Officer & Service
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {divItems.map((item, idx) => (
+                              <tr
+                                key={item.id || idx}
+                                style={{
+                                  borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.06)',
+                                  backgroundColor: idx % 2 === 1
+                                    ? (isLight ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255, 255, 255, 0.02)')
+                                    : 'transparent',
+                                }}
+                              >
+                                {/* Queue Number */}
+                                <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
+                                  <div
+                                    className="mono"
+                                    style={{
+                                      fontSize: scale.queueFontSize,
+                                      lineHeight: scale.queueLineHeight,
+                                      fontWeight: 900,
+                                      color: item.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
+                                      letterSpacing: '-0.02em',
+                                      textShadow: item.is_priority ? (isLight ? 'none' : '0 0 20px rgba(255, 198, 3, 0.35)') : themeStyles.queueNoShadow,
+                                      display: 'flex',
+                                      alignItems: 'baseline',
+                                      gap: '0.35rem',
+                                    }}
+                                  >
+                                    <span>{item.queue_no}</span>
+                                    {item.is_priority && (
+                                      <span style={{ fontSize: '0.9rem', color: isLight ? '#b45309' : 'var(--dole-gold)', verticalAlign: 'middle' }} title="Priority Client">
+                                        ★
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* Counter / Window */}
+                                <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
+                                  <div
+                                    style={{
+                                      fontSize: scale.counterFontSize,
+                                      fontWeight: 800,
+                                      color: isLight ? '#0f172a' : '#f8fafc',
+                                      textTransform: 'uppercase',
+                                      letterSpacing: '0.04em',
+                                    }}
+                                  >
+                                    {item.counter}
+                                  </div>
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.25rem',
+                                      fontSize: scale.statusFontSize,
+                                      fontWeight: 700,
+                                      padding: scale.badgePadding,
+                                      borderRadius: '9999px',
+                                      backgroundColor: isLight ? '#ecfdf5' : 'rgba(16, 185, 129, 0.2)',
+                                      color: isLight ? '#047857' : '#34d399',
+                                      marginTop: '0.2rem',
+                                    }}
+                                  >
+                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                                    <span>Serving</span>
+                                  </span>
+                                </td>
+
+                                {/* Officer & Service */}
+                                <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
+                                  {item.assigned_personnel ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                                      <span style={{ fontSize: '0.95rem' }}>👤</span>
+                                      <span
+                                        style={{
+                                          fontSize: scale.personnelFontSize,
+                                          fontWeight: 700,
+                                          color: isLight ? '#1e3a8a' : '#93c5fd',
+                                          wordBreak: 'break-word',
+                                          lineHeight: 1.25,
+                                        }}
+                                      >
+                                        {item.assigned_personnel}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.25rem', color: isLight ? '#64748b' : '#94a3b8', fontStyle: 'italic', fontSize: scale.personnelFontSize }}>
+                                      <span>👤</span>
+                                      <span>Officer on Duty</span>
+                                    </div>
+                                  )}
+
+                                  {item.service_name && (
+                                    <div
+                                      style={{
+                                        fontSize: scale.serviceFontSize,
+                                        color: themeStyles.serviceDescColor,
+                                        fontWeight: 500,
+                                        lineHeight: 1.35,
+                                        wordBreak: 'break-word',
+                                      }}
+                                      title={item.service_name}
+                                    >
+                                      <span style={{ fontWeight: 700, color: isLight ? '#475569' : '#cbd5e1' }}>Service: </span>
+                                      {item.service_name}
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )
                     ) : (
                       <div
                         style={{
@@ -1344,33 +1619,33 @@ export default function DisplayBoard() {
                           flexDirection: 'column',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          padding: '2.5rem 1.5rem',
+                          padding: isCrowded ? '1.75rem 0.75rem' : (isSimultaneous ? '2rem 1rem' : '2.5rem 1.5rem'),
                           color: themeStyles.emptyServingColor,
                           textAlign: 'center',
                         }}
                       >
                         <div
                           style={{
-                            width: '44px',
-                            height: '44px',
+                            width: isCrowded ? '36px' : (isSimultaneous ? '40px' : '44px'),
+                            height: isCrowded ? '36px' : (isSimultaneous ? '40px' : '44px'),
                             borderRadius: '50%',
                             backgroundColor: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            marginBottom: '0.75rem',
+                            marginBottom: '0.6rem',
                             color: isLight ? '#94a3b8' : '#64748b',
                           }}
                         >
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <svg width={isCrowded ? "18" : "20"} height={isCrowded ? "18" : "20"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <circle cx="12" cy="12" r="10"></circle>
                             <polyline points="12 6 12 12 16 14"></polyline>
                           </svg>
                         </div>
-                        <div style={{ fontSize: '1rem', fontWeight: 700, color: isLight ? '#475569' : '#cbd5e1' }}>
+                        <div style={{ fontSize: isCrowded ? '0.88rem' : (isSimultaneous ? '0.94rem' : '1rem'), fontWeight: 700, color: isLight ? '#475569' : '#cbd5e1' }}>
                           No Active Serving Queue
                         </div>
-                        <div style={{ fontSize: '0.8rem', marginTop: '0.2rem', color: themeStyles.emptyServingColor }}>
+                        <div style={{ fontSize: isCrowded ? '0.72rem' : '0.8rem', marginTop: '0.2rem', color: themeStyles.emptyServingColor, lineHeight: 1.35, maxWidth: '200px' }}>
                           Counters are ready for next ticket call at {divMeta?.label || divName}
                         </div>
                       </div>
@@ -1381,29 +1656,29 @@ export default function DisplayBoard() {
                   {divUpcoming.length > 0 && (
                     <div
                       style={{
-                        padding: '0.5rem 1rem',
+                        padding: isCrowded ? '0.35rem 0.6rem' : (isSimultaneous ? '0.45rem 0.75rem' : '0.5rem 1rem'),
                         backgroundColor: isLight ? '#edf2f7' : 'rgba(255, 255, 255, 0.03)',
                         borderTop: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.08)',
-                        fontSize: '0.8rem',
+                        fontSize: isCrowded ? '0.72rem' : (isSimultaneous ? '0.75rem' : '0.8rem'),
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         flexWrap: 'wrap',
-                        gap: '0.4rem',
+                        gap: '0.35rem',
                       }}
                     >
                       <span style={{ fontWeight: 600, color: isLight ? '#64748b' : '#94a3b8' }}>
-                        Next in line for {divMeta?.label || divName}:
+                        {isSimultaneous ? 'Next in line:' : `Next in line for ${divMeta?.label || divName}:`}
                       </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                        {divUpcoming.slice(0, 4).map((qNum) => (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                        {divUpcoming.slice(0, isCrowded ? 3 : 4).map((qNum) => (
                           <span
                             key={qNum}
                             className="mono"
                             style={{
-                              padding: '0.12rem 0.4rem',
+                              padding: '0.1rem 0.35rem',
                               borderRadius: '5px',
-                              fontSize: '0.82rem',
+                              fontSize: isCrowded ? '0.75rem' : '0.82rem',
                               fontWeight: 800,
                               backgroundColor: qNum.startsWith('P-')
                                 ? (isLight ? '#fef3c7' : 'rgba(245, 158, 11, 0.25)')
@@ -1419,9 +1694,9 @@ export default function DisplayBoard() {
                             {qNum}
                           </span>
                         ))}
-                        {divUpcoming.length > 4 && (
-                          <span style={{ fontSize: '0.74rem', color: isLight ? '#94a3b8' : '#64748b', fontWeight: 600 }}>
-                            +{divUpcoming.length - 4} more
+                        {divUpcoming.length > (isCrowded ? 3 : 4) && (
+                          <span style={{ fontSize: '0.7rem', color: isLight ? '#94a3b8' : '#64748b', fontWeight: 600 }}>
+                            +{divUpcoming.length - (isCrowded ? 3 : 4)} more
                           </span>
                         )}
                       </div>
