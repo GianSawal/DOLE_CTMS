@@ -29,6 +29,8 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     const data = await staffApi.login(username, password);
+    localStorage.removeItem('ctms_staff_counter');
+    localStorage.removeItem('ctms_staff_office');
     localStorage.setItem('ctms_access_token', data.access);
     localStorage.setItem('ctms_refresh_token', data.refresh);
     localStorage.setItem('ctms_user', JSON.stringify(data.user));
@@ -40,6 +42,8 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('ctms_access_token');
     localStorage.removeItem('ctms_refresh_token');
     localStorage.removeItem('ctms_user');
+    localStorage.removeItem('ctms_staff_counter');
+    localStorage.removeItem('ctms_staff_office');
     setUser(null);
   };
 

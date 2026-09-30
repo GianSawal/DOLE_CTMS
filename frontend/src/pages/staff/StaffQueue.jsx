@@ -59,14 +59,17 @@ export default function StaffQueue() {
     }
   }, [user, selectedOffice]);
 
-  // Auto-select first counter if none chosen or counter is invalid
+  // Auto-select first counter if none chosen, user has a single division counter, or counter is invalid
   useEffect(() => {
     if (queueData.counters?.length > 0) {
       const saved = localStorage.getItem('ctms_staff_counter');
-      if (saved === '') {
+      const hasValid = queueData.counters.some(c => String(c.id) === String(selectedCounter));
+
+      // If user intentionally chose "All Counters / Divisions" and has multiple counters, respect it
+      if (saved === '' && selectedCounter === '' && queueData.counters.length > 1) {
         return;
       }
-      const hasValid = queueData.counters.some(c => String(c.id) === String(selectedCounter));
+
       if (!selectedCounter || !hasValid) {
         const firstId = String(queueData.counters[0].id);
         setSelectedCounter(firstId);
@@ -90,7 +93,7 @@ export default function StaffQueue() {
     localStorage.setItem('ctms_staff_counter', val);
   };
 
-  // Fetch queue data
+  // Fetch queue data (with automatic recovery if a stale counter ID from a previous user is in localStorage)
   const fetchQueue = useCallback(async () => {
     if (!selectedOffice) return;
     try {
@@ -98,6 +101,19 @@ export default function StaffQueue() {
       setQueueData(data);
       setError('');
     } catch (err) {
+      if (selectedCounter) {
+        setSelectedCounter('');
+        localStorage.removeItem('ctms_staff_counter');
+        try {
+          const fallbackData = await staffApi.getQueue(selectedOffice, '');
+          setQueueData(fallbackData);
+          setError('');
+          return;
+        } catch (retryErr) {
+          setError(retryErr.message || 'Error loading queue.');
+          return;
+        }
+      }
       setError(err.message || 'Error loading queue.');
     } finally {
       setLoading(false);

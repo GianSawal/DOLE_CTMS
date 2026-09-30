@@ -386,6 +386,39 @@ class StaffQueueView(APIView):
         today = timezone.localdate()
         allowed_divisions = get_staff_divisions(request.user)
         allowed_div_names = list(allowed_divisions.values_list('name', flat=True))
+        allowed_div_norms = {n.strip().upper().replace(' ', '') for n in allowed_div_names if n}
+
+        # Retrieve divisions directly from csm_division table
+        all_divisions = CsmDivision.objects.all().order_by('id')
+        all_division_names = [d.name for d in all_divisions if d.name.strip().upper() != 'ALL']
+
+        if all_division_names:
+            # Ensure an active counter exists for each operational division in csm_division
+            for div_name in all_division_names:
+                cnt, created = CtmsCounter.objects.get_or_create(
+                    office=office,
+                    name=div_name,
+                    defaults={'is_active': True}
+                )
+                if not created and not cnt.is_active:
+                    cnt.is_active = True
+                    cnt.save(update_fields=['is_active'])
+
+            # Deactivate obsolete counters that do not match active divisions (e.g. Window 1, Window 2, ALL)
+            CtmsCounter.objects.filter(office=office).exclude(name__in=all_division_names).update(is_active=False)
+
+        counters_qs = CtmsCounter.objects.filter(office=office, is_active=True).order_by('id')
+
+        # If regular staff (non-superuser), restrict counters and divisions to only assigned divisions
+        if not request.user.is_superuser:
+            allowed_counter_ids = [
+                c.id for c in counters_qs
+                if c.name.strip().upper().replace(' ', '') in allowed_div_norms
+            ]
+            counters_qs = counters_qs.filter(id__in=allowed_counter_ids)
+            divisions_data = allowed_divisions
+        else:
+            divisions_data = all_divisions.exclude(name__iexact='ALL')
 
         # Waiting list: priority first, then FIFO
         waiting_qs = CtmsTransaction.objects.filter(
@@ -408,43 +441,17 @@ class StaffQueueView(APIView):
 
         if counter_id:
             counter = CtmsCounter.objects.filter(pk=counter_id, office=office, is_active=True).first()
+            if counter and not request.user.is_superuser:
+                if counter.name.strip().upper().replace(' ', '') not in allowed_div_norms:
+                    # Stale counter_id from a previous user session in localStorage: fallback to first allowed counter
+                    counter = counters_qs.first()
             if counter:
-                if not request.user.is_superuser and counter.name not in allowed_div_names:
-                    return Response({"detail": "Forbidden: You are not authorized to access this counter / division queue."}, status=status.HTTP_403_FORBIDDEN)
                 serving_qs = serving_qs.filter(counter=counter)
-                division = CsmDivision.objects.filter(name=counter.name).first()
+                division = CsmDivision.objects.filter(name__iexact=counter.name.strip()).first()
                 if division:
                     waiting_qs = waiting_qs.filter(service__division=division)
 
         waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
-
-        # Retrieve divisions directly from csm_division table
-        all_divisions = CsmDivision.objects.all().order_by('id')
-        all_division_names = [d.name for d in all_divisions]
-
-        if all_division_names:
-            # Ensure an active counter exists for each division in csm_division
-            for div_name in all_division_names:
-                cnt, created = CtmsCounter.objects.get_or_create(
-                    office=office,
-                    name=div_name,
-                    defaults={'is_active': True}
-                )
-                if not created and not cnt.is_active:
-                    cnt.is_active = True
-                    cnt.save(update_fields=['is_active'])
-
-            # Deactivate obsolete counters that do not match csm_division (e.g. Window 1, Window 2)
-            CtmsCounter.objects.filter(office=office).exclude(name__in=all_division_names).update(is_active=False)
-
-        counters_qs = CtmsCounter.objects.filter(office=office, is_active=True).order_by('id')
-
-        # If regular staff (non-superuser), restrict counters and divisions to only assigned divisions
-        if not request.user.is_superuser:
-            counters_qs = counters_qs.filter(name__in=allowed_div_names)
-            divisions_data = allowed_divisions
-        else:
-            divisions_data = all_divisions
 
         return Response({
             "office": CsmOfficeSerializer(office).data,
@@ -1095,6 +1102,7 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
         if 'division_ids' in data:
             division_ids = data.get('division_ids', [])
             CtmsStaffDivision.objects.filter(user=user).delete()
+            matched = CsmDivision.objects.none()
             if division_ids:
                 id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
                 name_filters = models.Q(name__in=[str(x) for x in division_ids])
@@ -1105,6 +1113,11 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                 matched = CsmDivision.objects.filter(id_filters | name_filters)
                 for div in matched:
                     CtmsStaffDivision.objects.get_or_create(user=user, division=div)
+            try:
+                if hasattr(user, 'employee_profile') and user.employee_profile:
+                    user.employee_profile.divisions.set(matched)
+            except Exception:
+                pass
 
         serializer = self.get_serializer(user)
         return Response(serializer.data)
@@ -1324,7 +1337,10 @@ class CsmDivisionListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        divisions = CsmDivision.objects.all().order_by('id')
+        for std_div in ('IMSD', 'TSSD 1', 'TSSD 2', 'MALSU'):
+            if not CsmDivision.objects.filter(name__iexact=std_div).exists():
+                CsmDivision.objects.get_or_create(name=std_div)
+        divisions = CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
         return Response(CsmDivisionSerializer(divisions, many=True).data)
 
 
