@@ -27,6 +27,7 @@ from .views import (
     CtmsCounterViewSet,
     CtmsStaffOfficeViewSet,
     StaffUserAccountViewSet,
+    StaffAuditLogListView,
 )
 
 router = DefaultRouter()
@@ -65,6 +66,7 @@ urlpatterns = [
     path('staff/display-video/', StaffDisplayVideoView.as_view(), name='staff-display-video'),
     path('staff/divisions/', CsmDivisionListView.as_view(), name='staff-divisions'),
     path('staff/offices/', CsmOfficeListView.as_view(), name='staff-offices-list'),
+    path('staff/audit-logs/', StaffAuditLogListView.as_view(), name='staff-audit-logs'),
 
     # Routers (Counters & Staff-Offices)
     path('', include(router.urls)),

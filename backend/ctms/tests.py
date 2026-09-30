@@ -389,4 +389,40 @@ class CtmsCoreTestCase(TestCase):
         self.assertIn(tx1.id, ids_q)
         self.assertNotIn(tx2.id, ids_q)
 
+    def test_audit_log_endpoint_and_logging(self):
+        from .models import CtmsAuditLog, log_audit_event
+        # 1. Non-admin (staff) cannot view audit logs
+        self.client.force_authenticate(user=self.staff_user)
+        res = self.client.get("/api/staff/audit-logs/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 2. Admin can access audit logs
+        admin_user = User.objects.create_superuser(username="admin_audit", password="password123", email="admin@dole.gov.ph")
+        self.client.force_authenticate(user=admin_user)
+        res_admin = self.client.get("/api/staff/audit-logs/")
+        self.assertEqual(res_admin.status_code, status.HTTP_200_OK)
+        self.assertIn("results", res_admin.data)
+        self.assertIn("category_counts", res_admin.data)
+
+        # 3. Test logging an event
+        log = log_audit_event(
+            action='TEST_ACTION',
+            category=CtmsAuditLog.CATEGORY_CONFIG,
+            actor=admin_user,
+            target_type='Config',
+            target_repr='Test Config Target',
+            office=self.office,
+            description='Test audit event description',
+            details={'test_key': 'test_val'}
+        )
+        self.assertIsNotNone(log)
+        self.assertEqual(log.action, 'TEST_ACTION')
+
+        # 4. Verify filtered retrieval
+        res_filter = self.client.get("/api/staff/audit-logs/?action=TEST_ACTION")
+        self.assertEqual(res_filter.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_filter.data['total_count'], 1)
+        self.assertEqual(res_filter.data['results'][0]['action'], 'TEST_ACTION')
+
+
 

@@ -34,6 +34,8 @@ from .models import (
     DolePersonnel,
     CtmsDisplayConfig,
     CtmsTransaction,
+    CtmsAuditLog,
+    log_audit_event,
 )
 from .serializers import (
     CsmDivisionSerializer,
@@ -48,6 +50,7 @@ from .serializers import (
     TicketPublicSerializer,
     StaffTransactionSerializer,
     StaffTokenObtainPairSerializer,
+    CtmsAuditLogSerializer,
 )
 from .throttling import CheckinThrottle, LoginThrottle
 from . import services
@@ -60,6 +63,23 @@ from . import services
 class StaffLoginView(TokenObtainPairView):
     serializer_class = StaffTokenObtainPairSerializer
     throttle_classes = [LoginThrottle]
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            username = request.data.get('username')
+            user_obj = User.objects.filter(username=username).first()
+            log_audit_event(
+                action='LOGIN',
+                category=CtmsAuditLog.CATEGORY_AUTH,
+                actor=user_obj,
+                request=request,
+                target_type='User',
+                target_id=user_obj.id if user_obj else '',
+                target_repr=f"User '{username}'",
+                description=f"User '{username}' successfully logged in."
+            )
+        return response
 
 
 class StaffMeView(APIView):
@@ -593,6 +613,25 @@ class StaffCreateWalkinView(APIView):
                 is_priority=data.get('is_priority', False),
                 source=CtmsTransaction.SOURCE_STAFF,
             )
+            log_audit_event(
+                action='CREATE_WALKIN',
+                category=CtmsAuditLog.CATEGORY_QUEUE,
+                actor=request.user,
+                request=request,
+                target_type='Transaction',
+                target_id=tx.id,
+                target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
+                office=tx.office,
+                division_name=tx.service.division.name if tx.service and tx.service.division else '',
+                description=f"Created walk-in ticket Queue #{tx.queue_no} for {tx.service.name if tx.service else 'Service'}",
+                details={
+                    'queue_no': tx.queue_no,
+                    'transaction_no': tx.transaction_no,
+                    'client_name': tx.client_name,
+                    'is_priority': tx.is_priority,
+                    'service': tx.service.name if tx.service else ''
+                }
+            )
             return Response(StaffTransactionSerializer(tx).data, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -653,6 +692,27 @@ class StaffCallNextView(APIView):
             tx = services.call_next_transaction(office=office, counter=counter, personnel=personnel)
             if not tx:
                 return Response({"detail": "No waiting clients in the queue."}, status=status.HTTP_204_NO_CONTENT)
+
+            log_audit_event(
+                action='CALL_NEXT',
+                category=CtmsAuditLog.CATEGORY_QUEUE,
+                actor=request.user,
+                request=request,
+                target_type='Transaction',
+                target_id=tx.id,
+                target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
+                office=tx.office,
+                division_name=tx.service.division.name if tx.service and tx.service.division else '',
+                description=f"Called next client Queue #{tx.queue_no} to {tx.counter.name if tx.counter else 'counter'} (Officer: {tx.assigned_personnel})",
+                details={
+                    'queue_no': tx.queue_no,
+                    'transaction_no': tx.transaction_no,
+                    'counter': tx.counter.name if tx.counter else '',
+                    'assigned_personnel': tx.assigned_personnel,
+                    'service': tx.service.name if tx.service else '',
+                }
+            )
+
             return Response(StaffTransactionSerializer(tx).data)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -725,6 +785,41 @@ class StaffTransactionActionView(APIView):
 
             else:
                 return Response({"detail": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Record audit log for queue actions
+            action_map = {
+                'assign': ('ASSIGN_OFFICER', f"Assigned officer '{tx.assigned_personnel}' to Queue #{tx.queue_no}"),
+                'call': ('CALL_CLIENT', f"Called Queue #{tx.queue_no} to {tx.counter.name if tx.counter else 'counter'} (Officer: {tx.assigned_personnel})"),
+                'recall': ('RECALL_CLIENT', f"Recalled Queue #{tx.queue_no} to {tx.counter.name if tx.counter else 'counter'}"),
+                'done': ('COMPLETE_SERVICE', f"Marked Queue #{tx.queue_no} as Done / Completed (Survey unlocked)"),
+                'undo-done': ('UNDO_DONE', f"Reopened / undone completed status for Queue #{tx.queue_no}"),
+                'no-show': ('MARK_NO_SHOW', f"Marked Queue #{tx.queue_no} as No-Show"),
+                'cancel': ('CANCEL_TICKET', f"Cancelled Queue #{tx.queue_no}"),
+                'pending': ('HOLD_PENDING', f"Placed Queue #{tx.queue_no} on Pending line (multi-day service)"),
+                'requeue': ('REQUEUE_TICKET', f"Returned Queue #{tx.queue_no} back to waiting line"),
+            }
+            if action in action_map:
+                act_code, act_desc = action_map[action]
+                log_audit_event(
+                    action=act_code,
+                    category=CtmsAuditLog.CATEGORY_QUEUE,
+                    actor=request.user,
+                    request=request,
+                    target_type='Transaction',
+                    target_id=tx.id,
+                    target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
+                    office=tx.office,
+                    division_name=tx.service.division.name if tx.service and tx.service.division else '',
+                    description=act_desc,
+                    details={
+                        'queue_no': tx.queue_no,
+                        'transaction_no': tx.transaction_no,
+                        'service': tx.service.name if tx.service else '',
+                        'counter': tx.counter.name if tx.counter else '',
+                        'assigned_personnel': tx.assigned_personnel,
+                        'status': tx.status,
+                    }
+                )
 
             return Response(StaffTransactionSerializer(tx).data)
 
@@ -1114,6 +1209,17 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                 CtmsStaffDivision.objects.get_or_create(user=user, division=div)
 
         serializer = self.get_serializer(user)
+        log_audit_event(
+            action='USER_CREATE',
+            category=CtmsAuditLog.CATEGORY_USER,
+            actor=request.user,
+            request=request,
+            target_type='User',
+            target_id=user.id,
+            target_repr=f"User '{user.username}'",
+            office=office,
+            description=f"Created user account '{user.username}' ({'Admin' if user.is_superuser else 'Staff'})"
+        )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @transaction.atomic
@@ -1163,6 +1269,16 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                 pass
 
         serializer = self.get_serializer(user)
+        log_audit_event(
+            action='USER_UPDATE',
+            category=CtmsAuditLog.CATEGORY_USER,
+            actor=request.user,
+            request=request,
+            target_type='User',
+            target_id=user.id,
+            target_repr=f"User '{user.username}'",
+            description=f"Updated user account '{user.username}' ({'Admin' if user.is_superuser else 'Staff'}, {'Active' if user.is_active else 'Inactive'})"
+        )
         return Response(serializer.data)
 
     @transaction.atomic
@@ -1170,7 +1286,19 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
         user = self.get_object()
         if user == request.user:
             return Response({"detail": "You cannot delete your own logged-in account."}, status=status.HTTP_400_BAD_REQUEST)
+        username = user.username
+        uid = user.id
         user.delete()
+        log_audit_event(
+            action='USER_DELETE',
+            category=CtmsAuditLog.CATEGORY_USER,
+            actor=request.user,
+            request=request,
+            target_type='User',
+            target_id=uid,
+            target_repr=f"User '{username}'",
+            description=f"Deleted user account '{username}'"
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'], url_path='reset-password')
@@ -1181,6 +1309,16 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             return Response({"detail": "New password cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(new_pwd)
         user.save()
+        log_audit_event(
+            action='USER_PASSWORD_RESET',
+            category=CtmsAuditLog.CATEGORY_USER,
+            actor=request.user,
+            request=request,
+            target_type='User',
+            target_id=user.id,
+            target_repr=f"User '{user.username}'",
+            description=f"Reset password for user '{user.username}'"
+        )
         return Response({
             "status": "success",
             "message": f"Password for {user.username} has been reset to '{new_pwd}'."
@@ -1193,6 +1331,16 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             return Response({"detail": "You cannot deactivate your own logged-in account."}, status=status.HTTP_400_BAD_REQUEST)
         user.is_active = not user.is_active
         user.save()
+        log_audit_event(
+            action='USER_TOGGLE_ACTIVE',
+            category=CtmsAuditLog.CATEGORY_USER,
+            actor=request.user,
+            request=request,
+            target_type='User',
+            target_id=user.id,
+            target_repr=f"User '{user.username}'",
+            description=f"Toggled user '{user.username}' status to {'active' if user.is_active else 'inactive'}"
+        )
         return Response({
             "status": "success",
             "is_active": user.is_active,
@@ -1485,6 +1633,18 @@ class StaffPersonnelViewSet(viewsets.ModelViewSet):
             matched_divisions = CsmDivision.objects.filter(id_filters | name_filters)
             personnel.divisions.set(matched_divisions)
 
+        log_audit_event(
+            action='PERSONNEL_CREATE',
+            category=CtmsAuditLog.CATEGORY_PERSONNEL,
+            actor=request.user,
+            request=request,
+            target_type='Personnel',
+            target_id=personnel.id,
+            target_repr=f"{personnel.full_name} ({personnel.employee_id})",
+            office=office,
+            description=f"Created personnel record for '{personnel.full_name}' ({personnel.position or 'Staff'})"
+        )
+
         return Response(DolePersonnelSerializer(personnel).data, status=status.HTTP_201_CREATED)
 
     @transaction.atomic
@@ -1519,17 +1679,156 @@ class StaffPersonnelViewSet(viewsets.ModelViewSet):
             matched_divisions = CsmDivision.objects.filter(id_filters | name_filters)
             instance.divisions.set(matched_divisions)
 
+        log_audit_event(
+            action='PERSONNEL_UPDATE',
+            category=CtmsAuditLog.CATEGORY_PERSONNEL,
+            actor=request.user,
+            request=request,
+            target_type='Personnel',
+            target_id=instance.id,
+            target_repr=f"{instance.full_name} ({instance.employee_id})",
+            office=instance.office,
+            description=f"Updated personnel record for '{instance.full_name}'"
+        )
+
         return Response(DolePersonnelSerializer(instance).data)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        name = instance.full_name
+        emp_id = instance.employee_id
+        office = instance.office
+        instance.delete()
+        log_audit_event(
+            action='PERSONNEL_DELETE',
+            category=CtmsAuditLog.CATEGORY_PERSONNEL,
+            actor=request.user,
+            request=request,
+            target_type='Personnel',
+            target_id=emp_id,
+            target_repr=f"{name} ({emp_id})",
+            office=office,
+            description=f"Deleted personnel record for '{name}'"
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):
         instance = self.get_object()
         instance.is_active = not instance.is_active
         instance.save()
+        log_audit_event(
+            action='PERSONNEL_TOGGLE_ACTIVE',
+            category=CtmsAuditLog.CATEGORY_PERSONNEL,
+            actor=request.user,
+            request=request,
+            target_type='Personnel',
+            target_id=instance.id,
+            target_repr=f"{instance.full_name} ({instance.employee_id})",
+            office=instance.office,
+            description=f"Toggled personnel '{instance.full_name}' status to {'active' if instance.is_active else 'inactive'}"
+        )
         return Response({
             "status": "success",
             "is_active": instance.is_active,
             "message": f"Personnel status set to {'active' if instance.is_active else 'inactive'}."
         })
+
+
+class StaffAuditLogListView(APIView):
+    """
+    Admin-only endpoint for querying, filtering, and inspecting system audit logs.
+    """
+    permission_classes = [IsStaffUser]
+
+    def get(self, request):
+        if not request.user.is_superuser:
+            return Response(
+                {"detail": "Forbidden: Audit logs are restricted to Administrator accounts."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        qs = CtmsAuditLog.objects.all().select_related('actor', 'office')
+
+        # Filters
+        category = request.query_params.get('category', '').strip().lower()
+        if category and category != 'all':
+            qs = qs.filter(category=category)
+
+        action_filter = request.query_params.get('action', '').strip()
+        if action_filter and action_filter != 'all':
+            qs = qs.filter(action=action_filter)
+
+        office_id = request.query_params.get('office', '').strip()
+        if office_id and office_id != 'all':
+            qs = qs.filter(office_id=office_id)
+
+        search = request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                models.Q(actor_username__icontains=search) |
+                models.Q(description__icontains=search) |
+                models.Q(target_repr__icontains=search) |
+                models.Q(action__icontains=search) |
+                models.Q(ip_address__icontains=search)
+            )
+
+        date_from = request.query_params.get('date_from', '').strip()
+        if date_from:
+            qs = qs.filter(timestamp__date__gte=date_from)
+
+        date_to = request.query_params.get('date_to', '').strip()
+        if date_to:
+            qs = qs.filter(timestamp__date__lte=date_to)
+
+        # Total count before pagination
+        total_count = qs.count()
+
+        # Category summary counts
+        category_counts = {
+            'all': CtmsAuditLog.objects.count(),
+            'queue': CtmsAuditLog.objects.filter(category=CtmsAuditLog.CATEGORY_QUEUE).count(),
+            'user': CtmsAuditLog.objects.filter(category=CtmsAuditLog.CATEGORY_USER).count(),
+            'personnel': CtmsAuditLog.objects.filter(category=CtmsAuditLog.CATEGORY_PERSONNEL).count(),
+            'auth': CtmsAuditLog.objects.filter(category=CtmsAuditLog.CATEGORY_AUTH).count(),
+            'config': CtmsAuditLog.objects.filter(category=CtmsAuditLog.CATEGORY_CONFIG).count(),
+        }
+
+        # Available actions for filter dropdown
+        distinct_actions = list(
+            CtmsAuditLog.objects.order_by('action').values_list('action', flat=True).distinct()
+        )
+
+        # Pagination
+        try:
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 25))
+        except ValueError:
+            page = 1
+            page_size = 25
+
+        page = max(1, page)
+        page_size = min(max(10, page_size), 100)
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        paged_qs = qs.order_by('-timestamp')[start:end]
+
+        import math
+        total_pages = math.ceil(total_count / page_size) if total_count > 0 else 1
+
+        serializer = CtmsAuditLogSerializer(paged_qs, many=True)
+
+        return Response({
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "category_counts": category_counts,
+            "available_actions": distinct_actions,
+            "results": serializer.data,
+        })
+
 
 

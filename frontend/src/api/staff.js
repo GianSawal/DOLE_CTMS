@@ -145,5 +145,14 @@ export const staffApi = {
       current_password: currentPassword,
     }),
   }),
+
+  // Audit Logs (Admin Only)
+  getAuditLogs: (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== '' && v !== null && v !== undefined) params.append(k, v);
+    });
+    return apiRequest(`/staff/audit-logs/?${params.toString()}`);
+  },
 };
 

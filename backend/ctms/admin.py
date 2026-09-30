@@ -9,6 +9,7 @@ from .models import (
     CtmsEmployee,
     CtmsDisplayConfig,
     CtmsTransaction,
+    CtmsAuditLog,
 )
 
 @admin.register(CsmDivision)
@@ -82,3 +83,35 @@ class CtmsTransactionAdmin(admin.ModelAdmin):
     list_filter = ('status', 'is_priority', 'office', 'queue_date')
     search_fields = ('transaction_no', 'queue_no', 'client_name', 'claim_code')
     readonly_fields = ('ticket_token', 'survey_token', 'claim_code', 'checked_in_at')
+
+
+@admin.register(CtmsAuditLog)
+class CtmsAuditLogAdmin(admin.ModelAdmin):
+    list_display = (
+        'timestamp',
+        'actor_username',
+        'actor_role',
+        'action',
+        'category',
+        'target_repr',
+        'office_name',
+        'ip_address',
+    )
+    list_filter = ('category', 'action', 'office', 'actor_role', 'timestamp')
+    search_fields = ('actor_username', 'description', 'target_repr', 'action', 'ip_address')
+    readonly_fields = [
+        'id', 'timestamp', 'actor', 'actor_username', 'actor_role',
+        'action', 'category', 'target_type', 'target_id', 'target_repr',
+        'office', 'office_name', 'division_name', 'ip_address',
+        'description', 'details'
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+

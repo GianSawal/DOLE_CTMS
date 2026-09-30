@@ -15,6 +15,7 @@ import StaffReports from './pages/staff/StaffReports';
 import StaffQr from './pages/staff/StaffQr';
 import StaffUsers from './pages/staff/StaffUsers';
 import StaffPersonnel from './pages/staff/StaffPersonnel';
+import StaffAuditLogs from './pages/staff/StaffAuditLogs';
 import StaffChangePassword from './pages/staff/StaffChangePassword';
 
 function ProtectedRoute({ children }) {
@@ -144,6 +145,14 @@ export default function App() {
             element={
               <AdminRoute>
                 <StaffUsers />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/staff/audit-logs"
+            element={
+              <AdminRoute>
+                <StaffAuditLogs />
               </AdminRoute>
             }
           />

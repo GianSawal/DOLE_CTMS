@@ -305,3 +305,119 @@ class CtmsTransaction(models.Model):
             base = settings.CSM_SURVEY_BASE_URL.rstrip('/')
             return f"{base}/survey/t/{self.survey_token}"
         return None
+
+
+# =====================================================================
+# Audit Log Model
+# =====================================================================
+
+class CtmsAuditLog(models.Model):
+    CATEGORY_AUTH = 'auth'
+    CATEGORY_QUEUE = 'queue'
+    CATEGORY_USER = 'user'
+    CATEGORY_PERSONNEL = 'personnel'
+    CATEGORY_CONFIG = 'config'
+
+    CATEGORY_CHOICES = [
+        (CATEGORY_AUTH, 'Authentication'),
+        (CATEGORY_QUEUE, 'Queue & Dispatch'),
+        (CATEGORY_USER, 'User Management'),
+        (CATEGORY_PERSONNEL, 'Personnel Directory'),
+        (CATEGORY_CONFIG, 'Configuration'),
+    ]
+
+    id = models.BigAutoField(primary_key=True)
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_logs')
+    actor_username = models.CharField(max_length=150, db_index=True)
+    actor_role = models.CharField(max_length=50, blank=True, default='')
+    action = models.CharField(max_length=50, db_index=True, help_text="e.g. LOGIN, CALL_CLIENT, MARK_DONE, CREATE_USER, etc.")
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default=CATEGORY_QUEUE, db_index=True)
+    target_type = models.CharField(max_length=50, blank=True, default='')
+    target_id = models.CharField(max_length=100, blank=True, default='')
+    target_repr = models.CharField(max_length=255, blank=True, default='')
+    office = models.ForeignKey(CsmOffice, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_logs')
+    office_name = models.CharField(max_length=200, blank=True, default='')
+    division_name = models.CharField(max_length=100, blank=True, default='')
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    description = models.TextField(blank=True, default='')
+    details = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = 'ctms_audit_log'
+        verbose_name = 'CTMS Audit Log'
+        verbose_name_plural = 'CTMS Audit Logs'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['-timestamp']),
+            models.Index(fields=['category', '-timestamp']),
+            models.Index(fields=['actor_username', '-timestamp']),
+            models.Index(fields=['office', '-timestamp']),
+        ]
+
+    def __str__(self):
+        return f"[{self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}] {self.actor_username} - {self.action} ({self.target_repr})"
+
+
+def log_audit_event(
+    action,
+    category=CtmsAuditLog.CATEGORY_QUEUE,
+    actor=None,
+    actor_username='',
+    actor_role='',
+    request=None,
+    target_type='',
+    target_id='',
+    target_repr='',
+    office=None,
+    division_name='',
+    description='',
+    details=None
+):
+    """Utility to record an audit log entry safely without interrupting primary flows."""
+    try:
+        actor_user = actor
+        resolved_username = actor_username or 'System'
+        resolved_role = actor_role or 'System'
+        ip_addr = None
+
+        if request:
+            if not actor_user and hasattr(request, 'user') and request.user.is_authenticated:
+                actor_user = request.user
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                ip_addr = x_forwarded_for.split(',')[0].strip()
+            else:
+                ip_addr = request.META.get('REMOTE_ADDR')
+
+        if actor_user and actor_user.is_authenticated:
+            resolved_username = actor_user.username
+            resolved_role = 'Administrator' if actor_user.is_superuser else 'Staff'
+
+        resolved_office = office
+        if not resolved_office and actor_user and hasattr(actor_user, 'staff_offices'):
+            staff_off = actor_user.staff_offices.select_related('office').first()
+            if staff_off:
+                resolved_office = staff_off.office
+
+        office_name = resolved_office.name if resolved_office else ''
+
+        return CtmsAuditLog.objects.create(
+            actor=actor_user if actor_user and actor_user.is_authenticated else None,
+            actor_username=resolved_username,
+            actor_role=resolved_role,
+            action=action,
+            category=category,
+            target_type=target_type,
+            target_id=str(target_id) if target_id else '',
+            target_repr=target_repr,
+            office=resolved_office,
+            office_name=office_name,
+            division_name=division_name,
+            ip_address=ip_addr,
+            description=description,
+            details=details or {}
+        )
+    except Exception as e:
+        print(f"Warning: Failed to create audit log entry: {e}")
+        return None

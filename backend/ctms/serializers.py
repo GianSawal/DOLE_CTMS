@@ -11,6 +11,7 @@ from .models import (
     CtmsEmployee,
     DolePersonnel,
     CtmsTransaction,
+    CtmsAuditLog,
 )
 
 User = get_user_model()
@@ -348,3 +349,36 @@ class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
             'assigned_divisions': assigned_divisions,
         }
         return data
+
+
+class CtmsAuditLogSerializer(serializers.ModelSerializer):
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    formatted_time = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CtmsAuditLog
+        fields = [
+            'id',
+            'timestamp',
+            'formatted_time',
+            'actor',
+            'actor_username',
+            'actor_role',
+            'action',
+            'category',
+            'category_display',
+            'target_type',
+            'target_id',
+            'target_repr',
+            'office',
+            'office_name',
+            'division_name',
+            'ip_address',
+            'description',
+            'details',
+        ]
+        read_only_fields = fields
+
+    def get_formatted_time(self, obj):
+        return obj.timestamp.strftime('%b %d, %Y %I:%M:%S %p')
+
