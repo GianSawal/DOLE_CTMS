@@ -292,6 +292,30 @@ export default function DisplayBoard() {
     return localStorage.getItem('ctms_tv_division_filter') || '';
   });
 
+  // Custom division display order for Now Serving drag-and-drop
+  const orderStorageKey = officeId ? `ctms_tv_division_order_${officeId}` : 'ctms_tv_division_order';
+  const [customDivisionOrder, setCustomDivisionOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem(orderStorageKey);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [draggedDiv, setDraggedDiv] = useState(null);
+  const [dragOverDiv, setDragOverDiv] = useState(null);
+
+  // Sync saved division order if officeId changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(orderStorageKey);
+      if (saved) {
+        setCustomDivisionOrder(JSON.parse(saved));
+      }
+    } catch {}
+  }, [orderStorageKey]);
+
   // Calculate divisions eligible for this account/screen
   const eligibleDivisions = useMemo(() => {
     // 1. URL search params override (?divisions=TSSD1,TSSD2 or ?division=TSSD1)
@@ -370,6 +394,8 @@ export default function DisplayBoard() {
 
   // Active divisions to render simultaneously (validated against eligibleDivisions)
   const activeDivisionsToRender = useMemo(() => {
+    let result = eligibleDivisions;
+
     if (selectedDivisionFilter && selectedDivisionFilter !== 'ALL') {
       // Check if it's comma-separated divisions (e.g. simultaneous pairs)
       if (selectedDivisionFilter.includes(',')) {
@@ -387,20 +413,98 @@ export default function DisplayBoard() {
           .filter(Boolean);
 
         if (matched.length === parts.length) {
-          return matched;
+          result = matched;
+        }
+      } else {
+        // Check if it's a single division
+        const validMatch = eligibleDivisions.find(
+          d => normalizeDiv(d) === normalizeDiv(selectedDivisionFilter)
+        );
+        if (validMatch) {
+          return [validMatch];
         }
       }
-
-      // Check if it's a single division
-      const validMatch = eligibleDivisions.find(
-        d => normalizeDiv(d) === normalizeDiv(selectedDivisionFilter)
-      );
-      if (validMatch) {
-        return [validMatch];
-      }
     }
-    return eligibleDivisions;
-  }, [eligibleDivisions, selectedDivisionFilter]);
+
+    if (!result || result.length <= 1) {
+      return result || [];
+    }
+
+    // Apply custom order if present
+    if (customDivisionOrder && customDivisionOrder.length > 0) {
+      const masterOrder = [...customDivisionOrder];
+      // Append any eligible divisions not yet recorded in masterOrder
+      eligibleDivisions.forEach(ed => {
+        if (!masterOrder.some(m => normalizeDiv(m) === normalizeDiv(ed))) {
+          masterOrder.push(ed);
+        }
+      });
+
+      return [...result].sort((a, b) => {
+        const idxA = masterOrder.findIndex(d => {
+          if (normalizeDiv(d) === normalizeDiv(a)) return true;
+          const ma = matchDivision(a);
+          const md = matchDivision(d);
+          return ma && md && ma.alias === md.alias;
+        });
+        const idxB = masterOrder.findIndex(d => {
+          if (normalizeDiv(d) === normalizeDiv(b)) return true;
+          const mb = matchDivision(b);
+          const md = matchDivision(d);
+          return mb && md && mb.alias === md.alias;
+        });
+
+        const posA = idxA !== -1 ? idxA : 999;
+        const posB = idxB !== -1 ? idxB : 999;
+        return posA - posB;
+      });
+    }
+
+    return result;
+  }, [eligibleDivisions, selectedDivisionFilter, customDivisionOrder]);
+
+  // Reorder divisions via drag-and-drop
+  const handleDropDivision = (sourceDivName, targetDivName) => {
+    if (!sourceDivName || !targetDivName || sourceDivName === targetDivName) return;
+
+    setCustomDivisionOrder(prev => {
+      const master = [...(prev || [])];
+      const allDivs = [...activeDivisionsToRender, ...(eligibleDivisions || [])];
+      allDivs.forEach(div => {
+        if (!master.some(m => normalizeDiv(m) === normalizeDiv(div))) {
+          master.push(div);
+        }
+      });
+
+      const sourceIdx = master.findIndex(d => {
+        if (normalizeDiv(d) === normalizeDiv(sourceDivName)) return true;
+        const m1 = matchDivision(d);
+        const m2 = matchDivision(sourceDivName);
+        return m1 && m2 && m1.alias === m2.alias;
+      });
+      const targetIdx = master.findIndex(d => {
+        if (normalizeDiv(d) === normalizeDiv(targetDivName)) return true;
+        const m1 = matchDivision(d);
+        const m2 = matchDivision(targetDivName);
+        return m1 && m2 && m1.alias === m2.alias;
+      });
+
+      if (sourceIdx === -1 || targetIdx === -1 || sourceIdx === targetIdx) {
+        return prev;
+      }
+
+      const [moved] = master.splice(sourceIdx, 1);
+      master.splice(targetIdx, 0, moved);
+
+      try {
+        localStorage.setItem(orderStorageKey, JSON.stringify(master));
+      } catch (e) {
+        console.warn('Failed to save TV division order:', e);
+      }
+
+      return master;
+    });
+  };
 
   // Helper to check if a division/counter string matches one of activeDivisionsToRender
   const findMatchingActiveDivision = useMemo(() => {
@@ -1307,23 +1411,80 @@ export default function DisplayBoard() {
               const isCrowded = activeDivisionsToRender.length >= 4;
               const scale = getDynamicScaling(divItems.length, activeDivisionsToRender.length);
 
+              const isDraggable = activeDivisionsToRender.length > 1;
+              const isBeingDragged = draggedDiv === divName;
+              const isDropTarget = dragOverDiv === divName && draggedDiv !== divName;
+
               return (
                 <div
                   key={divName}
+                  draggable={isDraggable}
+                  onDragStart={(e) => {
+                    if (!isDraggable) return;
+                    e.dataTransfer.setData('text/plain', divName);
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDraggedDiv(divName);
+                  }}
+                  onDragOver={(e) => {
+                    if (!isDraggable) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (draggedDiv && draggedDiv !== divName && dragOverDiv !== divName) {
+                      setDragOverDiv(divName);
+                    }
+                  }}
+                  onDragEnter={(e) => {
+                    if (!isDraggable) return;
+                    e.preventDefault();
+                    if (draggedDiv && draggedDiv !== divName) {
+                      setDragOverDiv(divName);
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    if (!isDraggable) return;
+                    if (!e.currentTarget.contains(e.relatedTarget)) {
+                      if (dragOverDiv === divName) {
+                        setDragOverDiv(null);
+                      }
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (!isDraggable) return;
+                    e.preventDefault();
+                    const source = e.dataTransfer.getData('text/plain') || draggedDiv;
+                    if (source && source !== divName) {
+                      handleDropDivision(source, divName);
+                    }
+                    setDraggedDiv(null);
+                    setDragOverDiv(null);
+                  }}
+                  onDragEnd={() => {
+                    setDraggedDiv(null);
+                    setDragOverDiv(null);
+                  }}
                   style={{
                     backgroundColor: themeStyles.cardBg,
                     borderRadius: '16px',
-                    border: `2px solid ${divMeta?.color || (isLight ? '#3b82f6' : 'rgba(3, 5, 186, 0.6)')}`,
-                    boxShadow: themeStyles.cardShadow,
+                    border: isDropTarget
+                      ? `2px dashed ${divMeta?.accent || '#10b981'}`
+                      : `2px solid ${divMeta?.color || (isLight ? '#3b82f6' : 'rgba(3, 5, 186, 0.6)')}`,
+                    boxShadow: isDropTarget
+                      ? `0 0 0 3px ${isLight ? 'rgba(16, 185, 129, 0.25)' : 'rgba(16, 185, 129, 0.4)'}, ${themeStyles.cardShadow}`
+                      : themeStyles.cardShadow,
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',
                     position: 'relative',
+                    opacity: isBeingDragged ? 0.45 : 1,
+                    transform: isDropTarget ? 'scale(1.015)' : 'none',
+                    transition: 'transform 0.15s ease, opacity 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
                   }}
                 >
                   {/* Division Header Banner */}
                   <div
                     style={{
+                      cursor: isDraggable ? (isBeingDragged ? 'grabbing' : 'grab') : 'default',
+                      userSelect: 'none',
                       padding: isCrowded ? '0.55rem 0.75rem' : (isSimultaneous ? '0.65rem 0.9rem' : '0.85rem 1.25rem'),
                       backgroundColor: isLight ? (divMeta?.bgLight || '#edf2f7') : (divMeta?.bgDark || '#1e293b'),
                       borderBottom: `2px solid ${divMeta?.color || (isLight ? '#cbd5e1' : 'rgba(255,255,255,0.1)')}`,
