@@ -395,20 +395,9 @@ class PublicDisplayBoardView(APIView):
         first_serving = filtered_serving_objs[0] if filtered_serving_objs else None
         latest_called_at = first_serving.called_at.isoformat() if first_serving and first_serving.called_at else None
 
-        display_config = CtmsDisplayConfig.objects.filter(office=office).first()
-        if not display_config or (not display_config.video_file and not display_config.arta_video_url):
-            fallback_cfg = CtmsDisplayConfig.objects.filter(video_file__isnull=False).exclude(video_file='').first()
-            if fallback_cfg:
-                display_config = fallback_cfg
 
+        # ARTA video is linked locally by staff on each TV display — not served from the server
         arta_video_url = ""
-        if display_config:
-            if display_config.video_file:
-                arta_video_url = display_config.video_file.url
-            elif display_config.is_active and display_config.arta_video_url:
-                url_val = display_config.arta_video_url.strip()
-                if "7uK7f0E4g2w" not in url_val and "mgpg54pyWio" not in url_val and "2e6i5GjD4iY" not in url_val and "D0EpyUudmkU" not in url_val:
-                    arta_video_url = url_val
 
         all_divisions = list(CsmDivision.objects.exclude(name__iexact='ALL').values_list('name', flat=True).order_by('id'))
 

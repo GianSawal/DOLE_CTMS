@@ -681,18 +681,8 @@ export default function DisplayBoard() {
 
   const isLight = theme === 'light';
   const [audioUnlocked, setAudioUnlocked] = useState(() => isAudioUnlocked());
-  const [artaVideoUrl, setArtaVideoUrl] = useState(() => {
-    try {
-      const cached = localStorage.getItem(`ctms_arta_video_${officeId}`) || localStorage.getItem('ctms_arta_video');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const active = parsed.isActive !== false && parsed.is_active !== false;
-        const url = active ? (parsed.videoUrl || parsed.url || '') : '';
-        if (url) return sanitizeVideoUrl(url);
-      }
-    } catch {}
-    return '';
-  });
+  // ARTA video is linked locally by staff on the TV display — not fetched from server
+  const [artaVideoUrl, setArtaVideoUrl] = useState('');
 
   const [playlist, setPlaylist] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -938,20 +928,8 @@ export default function DisplayBoard() {
         savedTvLink = null;
       }
 
-      // 3. Check uploaded / custom video URL
-      let candidateUrl = savedTvLink || artaVideoUrl;
-      if (!candidateUrl) {
-        try {
-          const cached = localStorage.getItem(`ctms_arta_video_${officeId}`) || localStorage.getItem('ctms_arta_video');
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            const active = parsed.isActive !== false && parsed.is_active !== false;
-            if (active) {
-              candidateUrl = parsed.videoUrl || parsed.url || '';
-            }
-          }
-        } catch {}
-      }
+      // 3. Use only locally saved folder link (no server video fallback)
+      const candidateUrl = savedTvLink || '';
 
       const targetUrl = candidateUrl ? sanitizeVideoUrl(candidateUrl) : '';
       if (!targetUrl) {
@@ -1307,19 +1285,7 @@ export default function DisplayBoard() {
           prevServingRef.current = data.serving || [];
         }
 
-        if (data.arta_video_url !== undefined) {
-          const hasLocal = (
-            localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true' ||
-            localStorage.getItem(`ctms_tv_has_local_video_${officeId}`) === 'true' ||
-            localStorage.getItem('ctms_tv_has_local_folder') === 'true' ||
-            localStorage.getItem('ctms_tv_has_local_video') === 'true'
-          );
-          if (!hasLocal && !isLocalPlaylistActiveRef.current) {
-            if (data.arta_video_url) {
-              setArtaVideoUrl(data.arta_video_url);
-            }
-          }
-        }
+        // ARTA video is linked locally — do not use server arta_video_url
         setDisplayData(data);
         setError('');
       } catch (err) {
@@ -1370,23 +1336,8 @@ export default function DisplayBoard() {
         videoBc.onmessage = (event) => {
           if (!isMounted) return;
           if (event.data?.type === 'ARTA_VIDEO_UPDATED') {
-            if (!event.data.officeId || String(event.data.officeId) === String(officeId)) {
-              const hasLocal = (
-                localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true' ||
-                localStorage.getItem(`ctms_tv_has_local_video_${officeId}`) === 'true' ||
-                localStorage.getItem('ctms_tv_has_local_folder') === 'true' ||
-                localStorage.getItem('ctms_tv_has_local_video') === 'true'
-              );
-              if (!hasLocal && !isLocalPlaylistActiveRef.current) {
-                const newUrl = (event.data.isActive !== false && event.data.is_active !== false)
-                  ? (event.data.videoUrl || event.data.url || '')
-                  : '';
-                if (newUrl) {
-                  setArtaVideoUrl(newUrl);
-                }
-              }
-              fetchDisplay();
-            }
+            // ARTA video is linked locally — ignore server video updates
+            fetchDisplay();
           }
         };
       }
@@ -1417,25 +1368,6 @@ export default function DisplayBoard() {
             }
             fetchDisplay();
           }
-        } catch {}
-      } else if ((e.key === `ctms_arta_video_${officeId}` || e.key === 'ctms_arta_video') && e.newValue) {
-        try {
-          const item = JSON.parse(e.newValue);
-          const hasLocal = (
-            localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true' ||
-            localStorage.getItem(`ctms_tv_has_local_video_${officeId}`) === 'true' ||
-            localStorage.getItem('ctms_tv_has_local_folder') === 'true' ||
-            localStorage.getItem('ctms_tv_has_local_video') === 'true'
-          );
-          if (!hasLocal && !isLocalPlaylistActiveRef.current) {
-            const newUrl = (item.isActive !== false && item.is_active !== false)
-              ? (item.videoUrl || item.url || '')
-              : '';
-            if (newUrl) {
-              setArtaVideoUrl(newUrl);
-            }
-          }
-          fetchDisplay();
         } catch {}
       }
     };
