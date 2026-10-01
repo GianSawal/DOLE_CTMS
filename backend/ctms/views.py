@@ -392,15 +392,19 @@ class PublicDisplayBoardView(APIView):
         latest_called_at = first_serving.called_at.isoformat() if first_serving and first_serving.called_at else None
 
         display_config = CtmsDisplayConfig.objects.filter(office=office).first()
-        if not display_config:
-            display_config = CtmsDisplayConfig.objects.filter(video_file__isnull=False).exclude(video_file='').first()
+        if not display_config or (not display_config.video_file and not display_config.arta_video_url):
+            fallback_cfg = CtmsDisplayConfig.objects.filter(video_file__isnull=False).exclude(video_file='').first()
+            if fallback_cfg:
+                display_config = fallback_cfg
 
         arta_video_url = ""
         if display_config:
             if display_config.video_file:
                 arta_video_url = display_config.video_file.url
-            elif display_config.is_active and display_config.arta_video_url and "7uK7f0E4g2w" not in display_config.arta_video_url:
-                arta_video_url = display_config.arta_video_url
+            elif display_config.is_active and display_config.arta_video_url:
+                url_val = display_config.arta_video_url.strip()
+                if "7uK7f0E4g2w" not in url_val and "mgpg54pyWio" not in url_val and "2e6i5GjD4iY" not in url_val and "D0EpyUudmkU" not in url_val:
+                    arta_video_url = url_val
 
         all_divisions = list(CsmDivision.objects.exclude(name__iexact='ALL').values_list('name', flat=True).order_by('id'))
 
@@ -1067,6 +1071,40 @@ class StaffDisplayVideoView(APIView):
             "video_file_name": file_name,
             "has_file": bool(config.video_file),
             "is_active": config.is_active,
+        })
+
+
+class PublicDisplayVideoUploadView(APIView):
+    permission_classes = [permissions.AllowAny]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, office_id):
+        office = get_object_or_404(CsmOffice, pk=office_id)
+        if 'video_file' not in request.FILES:
+            return Response({"detail": "No video file provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        file = request.FILES['video_file']
+        config, _ = CtmsDisplayConfig.objects.get_or_create(office=office)
+        if config.video_file:
+            try:
+                config.video_file.delete(save=False)
+            except Exception:
+                pass
+        config.video_file = file
+        config.arta_video_url = ''
+        config.is_active = True
+        config.save()
+
+        video_url = config.video_file.url
+        file_name = config.video_file.name.split('/')[-1]
+
+        return Response({
+            "status": "success",
+            "office_id": office.id,
+            "office_name": office.name,
+            "arta_video_url": video_url,
+            "video_file_name": file_name,
+            "is_active": True,
         })
 
 

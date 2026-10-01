@@ -11,4 +11,12 @@ export const publicApi = {
     const query = divisions ? `?divisions=${encodeURIComponent(divisions)}` : '';
     return apiRequest(`/public/display/${officeId}/${query}`);
   },
+  uploadDisplayVideo: (officeId, file) => {
+    const formData = new FormData();
+    formData.append('video_file', file);
+    return apiRequest(`/public/display-video-upload/${officeId}/`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
 };

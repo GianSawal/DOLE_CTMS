@@ -21,6 +21,7 @@ from .views import (
     StaffDisplayVideoView,
     PublicFolderVideosView,
     PublicStreamLocalVideoView,
+    PublicDisplayVideoUploadView,
     CsmDivisionListView,
     CsmOfficeListView,
     StaffPersonnelViewSet,
@@ -44,6 +45,7 @@ urlpatterns = [
     path('public/checkin/', PublicCheckinView.as_view(), name='public-checkin'),
     path('public/tickets/<str:ticket_token>/', PublicTicketDetailView.as_view(), name='public-ticket-detail'),
     path('public/display/<int:office_id>/', PublicDisplayBoardView.as_view(), name='public-display-board'),
+    path('public/display-video-upload/<int:office_id>/', PublicDisplayVideoUploadView.as_view(), name='public-display-video-upload'),
     path('public/folder-videos/', PublicFolderVideosView.as_view(), name='public-folder-videos'),
     path('public/stream-video/', PublicStreamLocalVideoView.as_view(), name='public-stream-video'),
 

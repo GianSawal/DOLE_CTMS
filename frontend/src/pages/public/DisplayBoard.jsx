@@ -608,14 +608,21 @@ export default function DisplayBoard() {
     localStorage.setItem('ctms_display_theme', nextTheme);
   };
 
-  const DEFAULT_ARTA_VIDEO = 'https://www.youtube.com/watch?v=mgpg54pyWio';
+  const DEFAULT_ARTA_VIDEO = '';
 
   const sanitizeVideoUrl = (url) => {
-    if (!url || typeof url !== 'string') return DEFAULT_ARTA_VIDEO;
-    if (url.includes('7uK7f0E4g2w') || url.includes('2e6i5GjD4iY') || url.includes('D0EpyUudmkU')) {
-      return DEFAULT_ARTA_VIDEO;
+    if (!url || typeof url !== 'string') return '';
+    const trimmed = url.trim();
+    if (!trimmed) return '';
+    if (
+      trimmed.includes('7uK7f0E4g2w') ||
+      trimmed.includes('2e6i5GjD4iY') ||
+      trimmed.includes('D0EpyUudmkU') ||
+      trimmed.includes('mgpg54pyWio')
+    ) {
+      return '';
     }
-    return url;
+    return trimmed;
   };
 
   const isLight = theme === 'light';
@@ -695,7 +702,7 @@ export default function DisplayBoard() {
     } catch {}
 
     // Only if local loading is finished and no uploaded or local video exists
-    return DEFAULT_ARTA_VIDEO;
+    return '';
   }, [currentVideoItem, isLocalPlaylistLoading, artaVideoUrl, officeId]);
 
   const artaEmbed = useMemo(() => {
@@ -892,8 +899,14 @@ export default function DisplayBoard() {
         } catch {}
       }
 
-      const targetUrl = candidateUrl ? sanitizeVideoUrl(candidateUrl) : DEFAULT_ARTA_VIDEO;
-      if (!targetUrl) return;
+      const targetUrl = candidateUrl ? sanitizeVideoUrl(candidateUrl) : '';
+      if (!targetUrl) {
+        if (isMounted) {
+          setPlaylist([]);
+          setCurrentIndex(0);
+        }
+        return;
+      }
 
       const ytEmbed = parseVideoEmbedUrl(targetUrl);
       if (ytEmbed && ytEmbed.type === 'youtube') {
@@ -972,6 +985,29 @@ export default function DisplayBoard() {
             }
           }
         }, 100);
+
+        // Upload first video file to backend server so it persists on database and all clients
+        if (officeId && files.length >= 1 && (files[0] instanceof File || files[0] instanceof Blob)) {
+          const firstFile = files[0];
+          publicApi.uploadDisplayVideo(officeId, firstFile)
+            .then((res) => {
+              if (res && res.arta_video_url) {
+                setArtaVideoUrl(res.arta_video_url);
+                const payload = {
+                  officeId,
+                  url: res.arta_video_url,
+                  videoUrl: res.arta_video_url,
+                  is_active: true,
+                  isActive: true,
+                };
+                localStorage.setItem(`ctms_arta_video_${officeId}`, JSON.stringify(payload));
+                localStorage.setItem('ctms_arta_video', JSON.stringify(payload));
+              }
+            })
+            .catch((err) => {
+              console.warn('Server video sync note (local playback active):', err);
+            });
+        }
       } else {
         setFolderStatusMessage('No supported video files (.mp4, .webm, .mkv, .avi, .mov, etc.) found in the selection.');
         setFolderStatusType('error');
@@ -1123,9 +1159,8 @@ export default function DisplayBoard() {
     localStorage.removeItem('ctms_arta_video');
     await clearPlaylistFromIndexedDB();
     setActiveFolderName('');
-    setArtaVideoUrl(DEFAULT_ARTA_VIDEO);
-    const ytEmbed = parseVideoEmbedUrl(DEFAULT_ARTA_VIDEO);
-    setPlaylist([{ id: 0, url: ytEmbed.url, name: "ARTA RA 11032 Citizen's Charter", isYouTube: true }]);
+    setArtaVideoUrl('');
+    setPlaylist([]);
     setCurrentIndex(0);
     setShowFolderModal(false);
     setFolderStatusMessage('');
@@ -2385,8 +2420,8 @@ export default function DisplayBoard() {
                     gap: '0.3rem',
                   }}
                 >
-                  <span>📁</span>
-                  <span>{playlist.length > 1 ? (activeFolderName || 'Local Folder') : 'Choose Folder'}</span>
+                  <span>🎬</span>
+                  <span>{playlist.length > 0 ? (activeFolderName || 'Video Options') : 'Choose Video'}</span>
                 </button>
                 <span style={{
                   fontSize: '0.7rem',
@@ -2435,7 +2470,7 @@ export default function DisplayBoard() {
                     borderRadius: '50%',
                     animation: 'spin 1s linear infinite',
                   }} />
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Loading Local Video Playlist...</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Loading Video...</span>
                 </div>
               ) : artaEmbed ? (
                 artaEmbed.type === 'youtube' || artaEmbed.type === 'embed' ? (
@@ -2487,7 +2522,7 @@ export default function DisplayBoard() {
                 )
               ) : (
                 <div
-                  onClick={handleSelectFolderClick}
+                  onClick={handleSelectFileClick}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -2504,13 +2539,53 @@ export default function DisplayBoard() {
                     backgroundColor: '#0b1120',
                   }}
                 >
-                  <span style={{ fontSize: '2.5rem', marginBottom: '0.4rem' }}>📁</span>
+                  <span style={{ fontSize: '2.5rem', marginBottom: '0.4rem' }}>🎬</span>
                   <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--dole-gold)', marginBottom: '0.25rem' }}>
-                    Click to Choose Local Video Folder
+                    Click to Upload or Select ARTA Video
                   </span>
-                  <span style={{ fontSize: '0.76rem', color: '#94a3b8', maxWidth: '300px', lineHeight: 1.35 }}>
-                    Select an entire folder on this computer to play videos continuously.
+                  <span style={{ fontSize: '0.76rem', color: '#cbd5e1', maxWidth: '320px', lineHeight: 1.35, marginBottom: '0.75rem' }}>
+                    Choose a video file (.mp4, .webm, .mov) or folder to play on this screen.
                   </span>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectFileClick();
+                      }}
+                      style={{
+                        backgroundColor: '#10b981',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '0.4rem 0.85rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🎬 Choose File...
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectFolderClick();
+                      }}
+                      style={{
+                        backgroundColor: '#2563eb',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '0.4rem 0.85rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      📂 Choose Folder...
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -2526,11 +2601,11 @@ export default function DisplayBoard() {
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
                 {playlist.length > 1
                   ? `Video ${currentIndex + 1}/${playlist.length}: ${currentVideoItem?.name || 'Local Video'}`
-                  : (currentVideoItem?.name || "ARTA RA 11032 Citizen's Charter")}
+                  : (currentVideoItem?.name || (artaEmbed ? "ARTA Video" : "No Video Uploaded"))}
               </span>
-              <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                {playlist.length > 1 ? `Looping (${playlist.length})` : 'Playing'}
+              <span style={{ color: artaEmbed ? '#10b981' : '#64748b', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: artaEmbed ? '#10b981' : '#475569' }} />
+                {artaEmbed ? (playlist.length > 1 ? `Looping (${playlist.length})` : 'Playing') : 'Idle'}
               </span>
             </div>
           </div>
@@ -2746,9 +2821,9 @@ export default function DisplayBoard() {
               <button
                 type="button"
                 onClick={handleResetToDefaultVideo}
-                style={{ background: 'none', border: 'none', color: '#93c5fd', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}
+                style={{ background: 'none', border: 'none', color: '#f87171', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}
               >
-                Reset to ARTA RA 11032 Video
+                Clear Active Video
               </button>
               <button
                 type="button"

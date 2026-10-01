@@ -9,9 +9,9 @@ export function parseVideoEmbedUrl(url) {
   let trimmed = url.trim();
   if (!trimmed) return null;
 
-  // Automatically replace deprecated / unavailable legacy video IDs
+  // Automatically ignore deprecated / unavailable legacy video IDs
   if (trimmed.includes('7uK7f0E4g2w') || trimmed.includes('2e6i5GjD4iY') || trimmed.includes('D0EpyUudmkU')) {
-    trimmed = 'https://www.youtube.com/watch?v=mgpg54pyWio';
+    return null;
   }
 
   // Match YouTube URLs
