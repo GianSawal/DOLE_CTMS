@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Navbar from '../../components/Navbar';
 import { staffApi } from '../../api/staff';
+import Pagination, { paginateArray } from '../../components/Pagination';
+
+const ITEMS_PER_PAGE = 10;
 
 export const DOLE_POSITIONS = [
   'Accountant II',
@@ -75,6 +78,7 @@ export default function StaffPersonnel() {
   const [searchQuery, setSearchQuery] = useState('');
   const [officeFilter, setOfficeFilter] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Toast / notification
   const [toast, setToast] = useState(null);
@@ -338,6 +342,14 @@ export default function StaffPersonnel() {
       return matchesSearch && matchesOffice && matchesDivision;
     });
   }, [personnelList, searchQuery, officeFilter, divisionFilter]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, officeFilter, divisionFilter]);
+
+  const totalPages = Math.ceil(filteredPersonnel.length / ITEMS_PER_PAGE);
+  const paginatedPersonnel = paginateArray(filteredPersonnel, currentPage, ITEMS_PER_PAGE);
 
   const totalPersonnel = personnelList.length;
   const activeCount = personnelList.filter((p) => p.is_active).length;
@@ -693,6 +705,7 @@ export default function StaffPersonnel() {
               </p>
             </div>
           ) : (
+            <>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
                 <thead>
@@ -714,7 +727,7 @@ export default function StaffPersonnel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPersonnel.map((p) => {
+                  {paginatedPersonnel.map((p) => {
                     return (
                       <tr
                         key={p.id}
@@ -890,6 +903,14 @@ export default function StaffPersonnel() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={filteredPersonnel.length}
+              pageSize={ITEMS_PER_PAGE}
+            />
+           </>
           )}
         </div>
       </main>

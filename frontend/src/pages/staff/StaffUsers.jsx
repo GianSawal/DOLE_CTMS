@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Navbar from '../../components/Navbar';
 import { staffApi } from '../../api/staff';
+import Pagination, { paginateArray } from '../../components/Pagination';
+
+const ITEMS_PER_PAGE = 10;
 
 const TARGET_DIVISIONS = [
   { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Support Services Division 1', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
@@ -18,6 +21,7 @@ export default function StaffUsers() {
   const [searchQuery, setSearchQuery] = useState('');
   const [officeFilter, setOfficeFilter] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Toast / notification
   const [toast, setToast] = useState(null);
@@ -287,6 +291,14 @@ export default function StaffUsers() {
       return matchesSearch && matchesOffice && matchesDivision;
     });
   }, [users, searchQuery, officeFilter, divisionFilter]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, officeFilter, divisionFilter]);
+
+  const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
+  const paginatedUsers = paginateArray(filteredUsers, currentPage, ITEMS_PER_PAGE);
 
   // Summary counts
   const totalUsers = users.length;
@@ -938,6 +950,7 @@ export default function StaffUsers() {
               )}
             </div>
           ) : (
+            <>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
                 <thead>
@@ -959,7 +972,7 @@ export default function StaffUsers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredUsers.map((u) => {
+                  {paginatedUsers.map((u) => {
                     return (
                       <tr
                         key={u.id}
@@ -1249,6 +1262,14 @@ export default function StaffUsers() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={filteredUsers.length}
+              pageSize={ITEMS_PER_PAGE}
+            />
+            </>
           )}
         </div>
       </main>

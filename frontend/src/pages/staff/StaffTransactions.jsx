@@ -4,6 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
 import Modal from '../../components/Modal';
 import PrintSlip from '../../components/PrintSlip';
+import Pagination, { paginateArray } from '../../components/Pagination';
+
+const ITEMS_PER_PAGE = 10;
 
 const DIVISION_BADGES = {
   'TSSD 1': { color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
@@ -31,6 +34,7 @@ export default function StaffTransactions() {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Strict RBAC: Default and lock to assigned office for non-superusers
   useEffect(() => {
@@ -91,6 +95,14 @@ export default function StaffTransactions() {
       (tx.claim_code && tx.claim_code.toLowerCase().includes(q))
     ));
   }, [transactions, searchQuery]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, officeFilter, divisionFilter, statusFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE);
+  const paginatedTransactions = paginateArray(filteredTransactions, currentPage, ITEMS_PER_PAGE);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -385,7 +397,7 @@ export default function StaffTransactions() {
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map(tx => (
+                  paginatedTransactions.map(tx => (
                     <tr key={tx.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '0.875rem 1rem' }}>
                         <span className="mono" style={{ fontWeight: 800, fontSize: '1.05rem', color: tx.is_priority ? 'var(--dole-gold-dark)' : 'var(--text-primary)' }}>
@@ -474,6 +486,13 @@ export default function StaffTransactions() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={filteredTransactions.length}
+            pageSize={ITEMS_PER_PAGE}
+          />
         </div>
       </main>
 

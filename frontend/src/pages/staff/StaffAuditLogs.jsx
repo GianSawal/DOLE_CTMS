@@ -17,7 +17,7 @@ export default function StaffAuditLogs() {
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(10);
   const [categoryCounts, setCategoryCounts] = useState({});
   const [availableActions, setAvailableActions] = useState([]);
   const [offices, setOffices] = useState([]);
