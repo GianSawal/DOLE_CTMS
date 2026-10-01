@@ -7,8 +7,9 @@
  */
 
 const DB_NAME = 'dole_ctms_video_playlist_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'videos';
+const META_STORE = 'meta';
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -20,6 +21,9 @@ function openDb() {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(META_STORE)) {
+        db.createObjectStore(META_STORE);
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -50,6 +54,43 @@ export function filterAndSortVideoFiles(files) {
   videoFiles.sort((a, b) => collator.compare(a.name, b.name));
 
   return videoFiles;
+}
+
+/**
+ * Native folder picker using File System Access API (window.showDirectoryPicker).
+ * Prompts user to select an entire folder once, and reads all video files automatically.
+ */
+export async function pickFolderNative() {
+  if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+    try {
+      const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+      if (!dirHandle) return null;
+
+      const fileList = [];
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file') {
+          try {
+            const f = await entry.getFile();
+            fileList.push(f);
+          } catch (e) {
+            console.warn('Could not read file from folder:', entry.name, e);
+          }
+        }
+      }
+
+      return {
+        files: fileList,
+        folderName: dirHandle.name,
+        dirHandle,
+      };
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return null; // User cancelled
+      }
+      console.warn('showDirectoryPicker unavailable, falling back:', err);
+    }
+  }
+  return null;
 }
 
 /**
@@ -147,7 +188,7 @@ export async function parseFolderLink(folderUrl) {
 /**
  * Saves a list of File objects to IndexedDB and returns working ObjectURL playlist items
  */
-export async function savePlaylistToIndexedDB(files) {
+export async function savePlaylistToIndexedDB(files, folderName = '', dirHandle = null) {
   const sorted = filterAndSortVideoFiles(files);
   if (!sorted.length) return [];
 
@@ -160,11 +201,12 @@ export async function savePlaylistToIndexedDB(files) {
     url: URL.createObjectURL(file),
   }));
 
-  // Persist files into IndexedDB for reload persistence
+  // Persist files and folder metadata into IndexedDB for reload persistence
   try {
     const db = await openDb();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = db.transaction([STORE_NAME, META_STORE], 'readwrite');
     const store = tx.objectStore(STORE_NAME);
+    const metaStore = tx.objectStore(META_STORE);
 
     // Queue clear and all put requests synchronously in the active transaction
     store.clear();
@@ -178,6 +220,13 @@ export async function savePlaylistToIndexedDB(files) {
         blob: file,
         order: i,
       });
+    }
+
+    if (folderName) {
+      metaStore.put(folderName, 'folder_name');
+    }
+    if (dirHandle) {
+      metaStore.put(dirHandle, 'active_folder_handle');
     }
 
     await new Promise((resolve, reject) => {
@@ -198,10 +247,50 @@ export async function savePlaylistToIndexedDB(files) {
 export async function loadPlaylistFromIndexedDB() {
   try {
     const db = await openDb();
+
+    // 1. Try reading from dirHandle if saved and permission is granted
+    try {
+      const metaTx = db.transaction(META_STORE, 'readonly');
+      const metaStore = metaTx.objectStore(META_STORE);
+      const dirHandle = await new Promise((resolve) => {
+        const req = metaStore.get('active_folder_handle');
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+
+      if (dirHandle && typeof dirHandle.queryPermission === 'function') {
+        const perm = await dirHandle.queryPermission({ mode: 'read' });
+        if (perm === 'granted') {
+          const files = [];
+          for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') {
+              try {
+                const f = await entry.getFile();
+                files.push(f);
+              } catch {}
+            }
+          }
+          const sorted = filterAndSortVideoFiles(files);
+          if (sorted.length > 0) {
+            return sorted.map((file, i) => ({
+              id: i,
+              name: file.name,
+              size: file.size,
+              type: file.type || 'video/mp4',
+              url: URL.createObjectURL(file),
+            }));
+          }
+        }
+      }
+    } catch (e) {
+      console.debug('dirHandle load note:', e);
+    }
+
+    // 2. Fallback: read stored blobs from STORE_NAME
     const tx = db.transaction(STORE_NAME, 'readonly');
     const store = tx.objectStore(STORE_NAME);
 
-    const records = await new Promise((resolve, reject) => {
+    const records = await new Promise((resolve) => {
       const req = store.getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => resolve([]);
@@ -220,6 +309,7 @@ export async function loadPlaylistFromIndexedDB() {
               id: r.id,
               name: r.name,
               size: r.size,
+              type: r.type || 'video/mp4',
               url,
             });
           }
@@ -242,9 +332,9 @@ export async function loadPlaylistFromIndexedDB() {
 export async function clearPlaylistFromIndexedDB() {
   try {
     const db = await openDb();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.clear();
+    const tx = db.transaction([STORE_NAME, META_STORE], 'readwrite');
+    tx.objectStore(STORE_NAME).clear();
+    tx.objectStore(META_STORE).clear();
     await new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
       tx.onerror = reject;
