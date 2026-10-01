@@ -136,17 +136,17 @@ def get_staff_divisions(user):
     if not user or not user.is_authenticated or not user.is_staff:
         return CsmDivision.objects.none()
     if user.is_superuser:
-        return CsmDivision.objects.all().order_by('id')
+        return CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
     div_ids = CtmsStaffDivision.objects.filter(user=user).values_list('division_id', flat=True)
     if div_ids.exists():
-        return CsmDivision.objects.filter(id__in=div_ids).order_by('id')
+        return CsmDivision.objects.filter(id__in=div_ids).exclude(name__iexact='ALL').order_by('id')
     try:
         profile = getattr(user, 'employee_profile', None)
         if profile and profile.divisions.exists():
-            return profile.divisions.all().order_by('id')
+            return profile.divisions.exclude(name__iexact='ALL').order_by('id')
     except Exception:
         pass
-    return CsmDivision.objects.all().order_by('id')
+    return CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
 
 
 class IsStaffUser(permissions.BasePermission):
@@ -311,7 +311,11 @@ class PublicDisplayBoardView(APIView):
             if has_explicit_divs:
                 allowed_divs = get_staff_divisions(user).exclude(name__iexact='ALL')
                 user_divisions = list(allowed_divs.values_list('name', flat=True))
-                restrict_to_divisions = bool(user_divisions)
+                all_ops_count = CsmDivision.objects.exclude(name__iexact='ALL').count()
+                if allowed_divs.count() < all_ops_count:
+                    restrict_to_divisions = bool(user_divisions)
+                else:
+                    restrict_to_divisions = False
 
         divisions_param = request.query_params.get('divisions') or request.query_params.get('division')
         if divisions_param:

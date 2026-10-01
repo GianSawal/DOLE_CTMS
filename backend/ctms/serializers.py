@@ -142,10 +142,16 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
         return staff_off.office.name if staff_off else ("All Offices" if obj.is_superuser else "Unassigned")
 
     def get_division_ids(self, obj):
-        return list(obj.staff_divisions.values_list('division_id', flat=True))
+        ids = list(obj.staff_divisions.values_list('division_id', flat=True))
+        if not ids and obj.is_superuser:
+            return list(CsmDivision.objects.exclude(name__iexact='ALL').values_list('id', flat=True).order_by('id'))
+        return ids
 
     def get_division_names(self, obj):
-        return list(obj.staff_divisions.values_list('division__name', flat=True))
+        names = list(obj.staff_divisions.values_list('division__name', flat=True))
+        if not names and obj.is_superuser:
+            return list(CsmDivision.objects.exclude(name__iexact='ALL').values_list('name', flat=True).order_by('id'))
+        return names
 
 
 class CtmsEmployeeSerializer(serializers.ModelSerializer):
@@ -322,11 +328,19 @@ class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
         else:
             try:
                 profile = self.user.employee_profile
-                assigned_divisions = [
-                    {'id': d.id, 'name': d.name} for d in profile.divisions.all()
-                ]
+                if profile and profile.divisions.exists():
+                    assigned_divisions = [
+                        {'id': d.id, 'name': d.name} for d in profile.divisions.all()
+                    ]
             except Exception:
                 pass
+
+        if not assigned_divisions:
+            # Superusers and unrestricted accounts have access to all operational divisions
+            all_divs = CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
+            assigned_divisions = [
+                {'id': d.id, 'name': d.name} for d in all_divs
+            ]
 
         must_change_password = False
         try:

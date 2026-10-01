@@ -60,6 +60,11 @@ const SIMULTANEOUS_PAIRS = [
     divisions: ['TSSD 1', 'TSSD 2'],
   },
   {
+    value: 'IMSD,MALSU',
+    label: 'Simultaneous (IMSD & MALSU Only)',
+    divisions: ['IMSD', 'MALSU'],
+  },
+  {
     value: 'IMSD,TSSD 1',
     label: 'Simultaneous (IMSD & TSSD 1 Only)',
     divisions: ['IMSD', 'TSSD 1'],
@@ -70,9 +75,24 @@ const SIMULTANEOUS_PAIRS = [
     divisions: ['IMSD', 'TSSD 2'],
   },
   {
-    value: 'IMSD,MALSU',
-    label: 'Simultaneous (IMSD & MALSU Only)',
-    divisions: ['IMSD', 'MALSU'],
+    value: 'TSSD 1,MALSU',
+    label: 'Simultaneous (TSSD 1 & MALSU Only)',
+    divisions: ['TSSD 1', 'MALSU'],
+  },
+  {
+    value: 'TSSD 2,MALSU',
+    label: 'Simultaneous (TSSD 2 & MALSU Only)',
+    divisions: ['TSSD 2', 'MALSU'],
+  },
+  {
+    value: 'TSSD 1,TSSD 2,IMSD',
+    label: 'Simultaneous (TSSD 1, TSSD 2 & IMSD)',
+    divisions: ['TSSD 1', 'TSSD 2', 'IMSD'],
+  },
+  {
+    value: 'TSSD 1,TSSD 2,MALSU',
+    label: 'Simultaneous (TSSD 1, TSSD 2 & MALSU)',
+    divisions: ['TSSD 1', 'TSSD 2', 'MALSU'],
   },
 ];
 
@@ -326,35 +346,67 @@ export default function DisplayBoard() {
       if (parts.length > 0) return parts;
     }
 
-    // 2. Logged in user assigned divisions (if not superuser)
-    if (user && !user.is_superuser && user.assigned_divisions && user.assigned_divisions.length > 0) {
-      return user.assigned_divisions.map(d => d.name);
+    const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
+
+    // 2. Check logged-in user assigned divisions
+    const userDivs = (user?.assigned_divisions || user?.division_names || [])
+      .map(d => (typeof d === 'string' ? d : d?.name))
+      .filter(Boolean);
+    const userDivNorms = userDivs.map(d => normalizeDiv(d));
+    const userHasAll = user?.is_superuser || (userDivs.length >= 4 && allDivNorms.every(req => userDivNorms.includes(req)));
+
+    // Restrict ONLY if staff user has a restricted subset (e.g. only 1 or 2 divisions, NOT all divisions)
+    if (user && !user.is_superuser && userDivs.length > 0 && !userHasAll) {
+      return userDivs;
     }
 
-    // 3. Backend response user_divisions
+    // 3. Backend response user_divisions (if backend specifically returned a restricted subset)
     if (displayData?.user_divisions && displayData.user_divisions.length > 0) {
-      return displayData.user_divisions;
+      const udNorms = displayData.user_divisions.map(d => normalizeDiv(d));
+      const backendHasAll = allDivNorms.every(req => udNorms.includes(req));
+      if (!backendHasAll) {
+        return displayData.user_divisions;
+      }
     }
 
-    // 4. Inspect active serving and next items
-    const detected = new Set();
+    // 4. For accounts with access to all divisions (or public TV display of all office divisions):
+    // Retrieve all operational divisions from backend response or fallback to KNOWN_DIVISIONS
+    let baseDivs = [];
+    if (displayData?.all_divisions && displayData.all_divisions.length > 0) {
+      baseDivs = displayData.all_divisions.filter(d => d && d.toUpperCase().trim() !== 'ALL');
+    }
+    if (baseDivs.length === 0) {
+      baseDivs = KNOWN_DIVISIONS.map(d => d.key);
+    }
+
+    // Also include any active division found in serving or upcoming queue
+    const resultDivs = [...baseDivs];
+    const existingNorms = new Set(resultDivs.map(d => normalizeDiv(d)));
+
     (displayData?.serving || []).forEach(s => {
-      if (s.division_name) detected.add(s.division_name);
+      if (s.division_name && !existingNorms.has(normalizeDiv(s.division_name))) {
+        resultDivs.push(s.division_name);
+        existingNorms.add(normalizeDiv(s.division_name));
+      }
     });
     (displayData?.next_details || []).forEach(n => {
-      if (n.division_name) detected.add(n.division_name);
+      if (n.division_name && !existingNorms.has(normalizeDiv(n.division_name))) {
+        resultDivs.push(n.division_name);
+        existingNorms.add(normalizeDiv(n.division_name));
+      }
     });
 
-    if (detected.size > 0) {
-      return Array.from(detected);
-    }
-
-    // 5. If nothing detected yet, check all_divisions from backend or fallback to TSSD 1 & TSSD 2
-    if (displayData?.all_divisions && displayData.all_divisions.length > 0) {
-      return displayData.all_divisions.slice(0, 2);
-    }
-
-    return ['TSSD 1', 'TSSD 2'];
+    // Canonical order: TSSD 1, TSSD 2, IMSD, MALSU, followed by any additional custom divisions
+    const standardOrder = ['TSSD 1', 'TSSD1', 'TSSD 2', 'TSSD2', 'IMSD', 'MALSU'];
+    return resultDivs.sort((a, b) => {
+      const normA = normalizeDiv(a);
+      const normB = normalizeDiv(b);
+      const idxA = standardOrder.findIndex(o => normalizeDiv(o) === normA);
+      const idxB = standardOrder.findIndex(o => normalizeDiv(o) === normB);
+      const posA = idxA !== -1 ? idxA : 999;
+      const posB = idxB !== -1 ? idxB : 999;
+      return posA - posB;
+    });
   }, [searchParams, user, displayData]);
 
   // Check if account has access to all divisions (Superuser, unconstrained TV display, or all 4 divisions accessible)
@@ -362,25 +414,27 @@ export default function DisplayBoard() {
     // 1. Superuser always has full access
     if (user?.is_superuser) return true;
 
+    const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
+
     // 2. If URL parameters restrict divisions
     const paramDivs = searchParams.get('divisions') || searchParams.get('division');
     if (paramDivs) {
       const parts = paramDivs.split(',').map(s => s.trim()).filter(Boolean);
-      const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
       if (!allDivNorms.every(req => parts.some(p => normalizeDiv(p) === req))) {
         return false;
       }
     }
 
-    // 3. If logged in staff user has assigned divisions, verify they have all 4 divisions
-    if (user && !user.is_superuser && Array.isArray(user.assigned_divisions) && user.assigned_divisions.length > 0) {
-      const userDivNorms = user.assigned_divisions.map(d => normalizeDiv(d.name || d));
-      const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
+    // 3. If logged in staff user has assigned divisions, verify if they have all 4 divisions
+    const userDivs = (user?.assigned_divisions || user?.division_names || [])
+      .map(d => (typeof d === 'string' ? d : d?.name))
+      .filter(Boolean);
+    if (user && !user.is_superuser && userDivs.length > 0) {
+      const userDivNorms = userDivs.map(d => normalizeDiv(d));
       return allDivNorms.every(req => userDivNorms.includes(req));
     }
 
     // 4. Verify all 4 required divisions exist in eligibleDivisions
-    const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
     const eligibleNorms = eligibleDivisions.map(d => normalizeDiv(d));
     return allDivNorms.every(req => eligibleNorms.includes(req));
   }, [user, searchParams, eligibleDivisions]);
@@ -535,8 +589,8 @@ export default function DisplayBoard() {
 
     const isRestrictedAccount = Boolean(
       (searchParams.get('divisions') || searchParams.get('division')) ||
-      (user && !user.is_superuser && user.assigned_divisions?.length > 0) ||
-      (displayData?.user_divisions?.length > 0)
+      (user && !user.is_superuser && user.assigned_divisions?.length > 0 && !hasAccessToAllDivisions) ||
+      (displayData?.user_divisions?.length > 0 && !hasAccessToAllDivisions)
     );
 
     (displayData?.serving || []).forEach(item => {
@@ -552,7 +606,7 @@ export default function DisplayBoard() {
     });
 
     return groups;
-  }, [activeDivisionsToRender, displayData?.serving, displayData?.user_divisions, findMatchingActiveDivision, searchParams, user]);
+  }, [activeDivisionsToRender, displayData?.serving, displayData?.user_divisions, findMatchingActiveDivision, searchParams, user, hasAccessToAllDivisions]);
 
   // Group upcoming tickets strictly by division
   const nextByDivision = useMemo(() => {
@@ -575,8 +629,8 @@ export default function DisplayBoard() {
   const filteredNextNumbers = useMemo(() => {
     const isRestrictedAccount = Boolean(
       (searchParams.get('divisions') || searchParams.get('division')) ||
-      (user && !user.is_superuser && user.assigned_divisions?.length > 0) ||
-      (displayData?.user_divisions?.length > 0) ||
+      (user && !user.is_superuser && user.assigned_divisions?.length > 0 && !hasAccessToAllDivisions) ||
+      (displayData?.user_divisions?.length > 0 && !hasAccessToAllDivisions) ||
       (selectedDivisionFilter && selectedDivisionFilter !== 'ALL')
     );
 
@@ -1217,11 +1271,17 @@ export default function DisplayBoard() {
   const divisionsQueryParam = useMemo(() => {
     const fromUrl = searchParams.get('divisions') || searchParams.get('division');
     if (fromUrl) return fromUrl;
-    if (user && !user.is_superuser && Array.isArray(user.assigned_divisions) && user.assigned_divisions.length > 0) {
-      return user.assigned_divisions.map(d => d.name).join(',');
+    const userDivs = (user?.assigned_divisions || user?.division_names || [])
+      .map(d => (typeof d === 'string' ? d : d?.name))
+      .filter(Boolean);
+    const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
+    const userDivNorms = userDivs.map(d => normalizeDiv(d));
+    const userHasAll = user?.is_superuser || (userDivs.length >= 4 && allDivNorms.every(req => userDivNorms.includes(req)));
+    if (user && !user.is_superuser && userDivs.length > 0 && !userHasAll) {
+      return userDivs.join(',');
     }
     return '';
-  }, [searchParams, user?.is_superuser, user?.assigned_divisions]);
+  }, [searchParams, user]);
 
   const processedCallIdsRef = useRef(new Set());
 
@@ -1661,7 +1721,9 @@ export default function DisplayBoard() {
                     color: isLight ? '#0f172a' : '#ffffff',
                   }}
                 >
-                  Simultaneous ({eligibleDivisions.map(d => matchDivision(d)?.alias || d).join(' & ')})
+                  {eligibleDivisions.length >= 4
+                    ? 'Simultaneous (All Divisions: TSSD 1, TSSD 2, IMSD & MALSU)'
+                    : `Simultaneous (${eligibleDivisions.map(d => matchDivision(d)?.alias || d).join(' & ')})`}
                 </option>
                 {hasAccessToAllDivisions && SIMULTANEOUS_PAIRS.filter(pair =>
                   pair.divisions.every(pDiv => eligibleDivisions.some(ed => normalizeDiv(ed) === normalizeDiv(pDiv)))
