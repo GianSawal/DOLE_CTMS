@@ -624,9 +624,13 @@ export default function DisplayBoard() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [folderInputVal, setFolderInputVal] = useState('');
+  const [folderStatusMessage, setFolderStatusMessage] = useState('');
+  const [folderStatusType, setFolderStatusType] = useState('info'); // 'info', 'success', 'error'
   const folderFileInputRef = useRef(null);
+  const filePickerInputRef = useRef(null);
   const videoRef = useRef(null);
   const isUserPausedRef = useRef(false);
+  const isLocalPlaylistActiveRef = useRef(false);
   const iframeRef = useRef(null);
   const defaultVideoVolumeRef = useRef(0.75);
   const isDuckingRef = useRef(false);
@@ -638,7 +642,7 @@ export default function DisplayBoard() {
     return t.includes(',') || t.includes('\n') || t.includes(';') || t.endsWith('/') || !/\.[a-zA-Z0-9]{2,5}($|\?)/.test(t);
   };
 
-  const currentVideoItem = playlist.length > 0 ? playlist[currentIndex] : null;
+  const currentVideoItem = playlist.length > 0 ? (playlist[currentIndex] || playlist[0]) : null;
   const currentVideoUrl = currentVideoItem
     ? currentVideoItem.url
     : (isFolderLike(artaVideoUrl) ? null : artaVideoUrl);
@@ -760,6 +764,32 @@ export default function DisplayBoard() {
     };
   }, []);
 
+  // Ensure webkitdirectory property is set on the DOM node for full browser compatibility
+  useEffect(() => {
+    if (folderFileInputRef.current) {
+      folderFileInputRef.current.setAttribute('webkitdirectory', '');
+      folderFileInputRef.current.setAttribute('directory', '');
+      folderFileInputRef.current.webkitdirectory = true;
+    }
+  }, []);
+
+  // Auto-play trigger whenever direct video src changes
+  useEffect(() => {
+    if (videoRef.current && artaEmbed && artaEmbed.type === 'direct') {
+      const v = videoRef.current;
+      v.volume = isDuckingRef.current ? 0.08 : defaultVideoVolumeRef.current;
+      const playPromise = v.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          if (!isUserPausedRef.current) {
+            v.muted = true;
+            v.play().catch(() => {});
+          }
+        });
+      }
+    }
+  }, [artaEmbed?.url]);
+
   // Load playlist: 1. IndexedDB local folder videos, 2. localStorage folder link, 3. backend artaVideoUrl
   useEffect(() => {
     let isMounted = true;
@@ -768,11 +798,17 @@ export default function DisplayBoard() {
       try {
         const dbItems = await loadPlaylistFromIndexedDB();
         if (isMounted && dbItems && dbItems.length > 0) {
+          isLocalPlaylistActiveRef.current = true;
           setPlaylist(dbItems);
           setCurrentIndex(0);
           return;
         }
-      } catch {}
+      } catch (err) {
+        console.warn('Error reading stored video playlist:', err);
+      }
+
+      // If active in-memory local folder playlist is already loaded, don't overwrite with backend polling
+      if (isLocalPlaylistActiveRef.current) return;
 
       // 2. Check locally saved folder link on this TV display
       const savedTvLink = localStorage.getItem(`ctms_tv_folder_link_${officeId}`);
@@ -804,20 +840,41 @@ export default function DisplayBoard() {
     return () => { isMounted = false; };
   }, [officeId, artaVideoUrl]);
 
-  // Handle local folder selection (0 server storage)
+  // Handle local folder or file selection (0 server storage)
   const handleFolderFilesSelected = async (e) => {
     const files = e.target.files;
-    if (!files || !files.length) return;
+    if (!files || !files.length) {
+      if (e.target) e.target.value = '';
+      return;
+    }
+
+    setFolderStatusMessage('Processing video files...');
+    setFolderStatusType('info');
+
     try {
       const saved = await savePlaylistToIndexedDB(files);
       if (saved && saved.length > 0) {
+        isUserPausedRef.current = false;
+        isLocalPlaylistActiveRef.current = true;
         setPlaylist(saved);
         setCurrentIndex(0);
         localStorage.removeItem(`ctms_tv_folder_link_${officeId}`);
-        setShowFolderModal(false);
+        setFolderStatusMessage(`Loaded ${saved.length} video file${saved.length > 1 ? 's' : ''}! Playing now...`);
+        setFolderStatusType('success');
+        setTimeout(() => {
+          setShowFolderModal(false);
+          setFolderStatusMessage('');
+        }, 700);
+      } else {
+        setFolderStatusMessage('No supported video files (.mp4, .webm, .mkv, .avi, .mov, etc.) found in selection.');
+        setFolderStatusType('error');
       }
     } catch (err) {
       console.error('Failed to save local folder:', err);
+      setFolderStatusMessage('Error loading local video files. Please try again.');
+      setFolderStatusType('error');
+    } finally {
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -827,34 +884,58 @@ export default function DisplayBoard() {
     const trimmed = folderInputVal.trim();
     if (!trimmed) return;
 
-    try {
-      localStorage.setItem(`ctms_tv_folder_link_${officeId}`, trimmed);
-      await clearPlaylistFromIndexedDB();
+    const isLocalDrivePath = /^[a-zA-Z]:[\\\/]/.test(trimmed) || trimmed.startsWith('file://');
 
+    setFolderStatusMessage('Connecting to folder...');
+    setFolderStatusType('info');
+
+    try {
       const ytEmbed = parseVideoEmbedUrl(trimmed);
       if (ytEmbed && ytEmbed.type === 'youtube') {
+        localStorage.setItem(`ctms_tv_folder_link_${officeId}`, trimmed);
+        await clearPlaylistFromIndexedDB();
+        isLocalPlaylistActiveRef.current = false;
+        isUserPausedRef.current = false;
         setPlaylist([{ id: 0, url: ytEmbed.url, name: "ARTA Video", isYouTube: true }]);
         setCurrentIndex(0);
         setShowFolderModal(false);
+        setFolderStatusMessage('');
         return;
       }
 
       const items = await parseFolderLink(trimmed);
       if (items && items.length > 0) {
+        localStorage.setItem(`ctms_tv_folder_link_${officeId}`, trimmed);
+        await clearPlaylistFromIndexedDB();
+        isLocalPlaylistActiveRef.current = true;
+        isUserPausedRef.current = false;
         setPlaylist(items);
         setCurrentIndex(0);
+        setShowFolderModal(false);
+        setFolderStatusMessage('');
+      } else if (isLocalDrivePath) {
+        setFolderStatusMessage('Local computer drive paths (e.g. C:\\...) cannot be opened directly by browser security. Please click "Browse Local Folder..." or "Select Video Files..." above to choose your videos directly.');
+        setFolderStatusType('error');
       } else {
+        localStorage.setItem(`ctms_tv_folder_link_${officeId}`, trimmed);
+        await clearPlaylistFromIndexedDB();
+        isLocalPlaylistActiveRef.current = false;
+        isUserPausedRef.current = false;
         setPlaylist([{ id: 0, url: trimmed, isYouTube: false }]);
         setCurrentIndex(0);
+        setShowFolderModal(false);
+        setFolderStatusMessage('');
       }
-      setShowFolderModal(false);
     } catch (err) {
       console.error('Failed to parse folder link:', err);
+      setFolderStatusMessage('Failed to connect to folder link.');
+      setFolderStatusType('error');
     }
   };
 
   // Reset to default ARTA YouTube video
   const handleResetToDefaultVideo = async () => {
+    isLocalPlaylistActiveRef.current = false;
     const defaultUrl = 'https://www.youtube.com/watch?v=7uK7f0E4g2w';
     localStorage.removeItem(`ctms_tv_folder_link_${officeId}`);
     await clearPlaylistFromIndexedDB();
@@ -862,6 +943,7 @@ export default function DisplayBoard() {
     setPlaylist([{ id: 0, url: ytEmbed.url, name: "ARTA RA 11032 Citizen's Charter", isYouTube: true }]);
     setCurrentIndex(0);
     setShowFolderModal(false);
+    setFolderStatusMessage('');
   };
 
   // Auto-advance to next video in folder when current video finishes
@@ -2221,14 +2303,19 @@ export default function DisplayBoard() {
         <span>Display updates automatically every 5 seconds</span>
       </footer>
 
-      {/* Hidden File Input for Local Folder Selection */}
+      {/* Hidden File Inputs for Local Folder Selection and Direct Video Files Selection */}
       <input
         ref={folderFileInputRef}
         type="file"
-        webkitdirectory=""
-        directory=""
         multiple
-        accept="video/*"
+        onChange={handleFolderFilesSelected}
+        style={{ display: 'none' }}
+      />
+      <input
+        ref={filePickerInputRef}
+        type="file"
+        multiple
+        accept="video/*,.mp4,.webm,.mkv,.avi,.mov,.wmv,.flv,.ts,.m4v"
         onChange={handleFolderFilesSelected}
         style={{ display: 'none' }}
       />
@@ -2276,7 +2363,7 @@ export default function DisplayBoard() {
               Play videos sequentially in a continuous loop with <strong>0 server storage used</strong>.
             </p>
 
-            {/* Option A: Select Local Folder from PC */}
+            {/* Option A: Select Local Folder or Video Files from PC */}
             <div style={{
               backgroundColor: '#1e293b',
               border: '1px dashed #3b82f6',
@@ -2286,27 +2373,76 @@ export default function DisplayBoard() {
               marginBottom: '1rem',
             }}>
               <div style={{ fontSize: '1.8rem', marginBottom: '0.25rem' }}>📂</div>
-              <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.25rem' }}>Select Local Video Folder</div>
-              <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
-                Select any folder on this TV / computer containing video files (.mp4, .webm)
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.25rem' }}>Select Local Video Folder or Files</div>
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.85rem' }}>
+                Select a folder or video files on this computer/TV (.mp4, .webm, .mkv, .avi)
               </div>
-              <button
-                type="button"
-                onClick={() => folderFileInputRef.current?.click()}
-                style={{
-                  backgroundColor: '#2563eb',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '0.55rem 1.25rem',
-                  fontWeight: 700,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                }}
-              >
-                Browse Local Folder...
-              </button>
+              <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => folderFileInputRef.current?.click()}
+                  style={{
+                    backgroundColor: '#2563eb',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.6rem 1.15rem',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    boxShadow: '0 2px 6px rgba(37, 99, 235, 0.4)',
+                  }}
+                >
+                  <span>📁</span> Browse Local Folder...
+                </button>
+                <button
+                  type="button"
+                  onClick={() => filePickerInputRef.current?.click()}
+                  style={{
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    color: '#93c5fd',
+                    border: '1px solid #3b82f6',
+                    borderRadius: '8px',
+                    padding: '0.6rem 1.15rem',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                  }}
+                >
+                  <span>🎬</span> Select Video Files...
+                </button>
+              </div>
             </div>
+
+            {/* Folder / File Loading Feedback Status */}
+            {folderStatusMessage && (
+              <div style={{
+                marginBottom: '1rem',
+                padding: '0.65rem 0.9rem',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                backgroundColor: folderStatusType === 'error'
+                  ? 'rgba(239, 68, 68, 0.15)'
+                  : (folderStatusType === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)'),
+                color: folderStatusType === 'error'
+                  ? '#fca5a5'
+                  : (folderStatusType === 'success' ? '#6ee7b7' : '#93c5fd'),
+                border: `1px solid ${folderStatusType === 'error' ? '#ef4444' : (folderStatusType === 'success' ? '#10b981' : '#3b82f6')}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+              }}>
+                <span>{folderStatusType === 'error' ? '⚠️' : (folderStatusType === 'success' ? '✅' : 'ℹ️')}</span>
+                <span>{folderStatusMessage}</span>
+              </div>
+            )}
 
             {/* Option B: Enter Folder Link or URLs */}
             <form onSubmit={handleSaveCustomFolderLink} style={{ marginBottom: '1rem' }}>

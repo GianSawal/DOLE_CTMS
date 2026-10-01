@@ -34,9 +34,15 @@ export function filterAndSortVideoFiles(files) {
   if (!files || !files.length) return [];
   const list = Array.from(files);
 
+  const videoExtensionsRegex = /\.(mp4|webm|ogg|mov|mkv|avi|m4v|wmv|flv|ts|3gp|m4p|mpg|mpeg)$/i;
+
   const videoFiles = list.filter((f) => {
-    const isVideoType = f.type && f.type.startsWith('video/');
-    const isVideoExt = /\.(mp4|webm|ogg|mov|mkv|avi|m4v)$/i.test(f.name);
+    if (!f || !f.name) return false;
+    // Exclude hidden files or AppleDouble files
+    if (f.name.startsWith('.') || f.name.startsWith('._')) return false;
+
+    const isVideoType = Boolean(f.type && f.type.toLowerCase().startsWith('video/'));
+    const isVideoExt = videoExtensionsRegex.test(f.name);
     return isVideoType || isVideoExt;
   });
 
@@ -103,7 +109,7 @@ export async function parseFolderLink(folderUrl) {
         } catch {}
 
         // Parse HTML directory index (e.g. Nginx autoindex, Apache directory)
-        const regex = /href=["']([^"']+\.(?:mp4|webm|ogg|mov|mkv|m4v))["']/gi;
+        const regex = /href=["']([^"']+\.(?:mp4|webm|ogg|mov|mkv|m4v|wmv|flv|ts|3gp|mpg|mpeg))["']/gi;
         const matches = [];
         let match;
         while ((match = regex.exec(text)) !== null) {
@@ -139,58 +145,51 @@ export async function parseFolderLink(folderUrl) {
 }
 
 /**
- * Saves a list of File objects to IndexedDB
+ * Saves a list of File objects to IndexedDB and returns working ObjectURL playlist items
  */
 export async function savePlaylistToIndexedDB(files) {
+  const sorted = filterAndSortVideoFiles(files);
+  if (!sorted.length) return [];
+
+  // Generate working ObjectURLs immediately for instant playback with 0 server storage
+  const playlistItems = sorted.map((file, i) => ({
+    id: i,
+    name: file.name,
+    size: file.size,
+    type: file.type || 'video/mp4',
+    url: URL.createObjectURL(file),
+  }));
+
+  // Persist files into IndexedDB for reload persistence
   try {
     const db = await openDb();
-    const sorted = filterAndSortVideoFiles(files);
-    if (!sorted.length) return [];
-
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
 
-    await new Promise((resolve, reject) => {
-      const req = store.clear();
-      req.onsuccess = resolve;
-      req.onerror = reject;
-    });
-
-    const savedItems = [];
+    // Queue clear and all put requests synchronously in the active transaction
+    store.clear();
     for (let i = 0; i < sorted.length; i++) {
       const file = sorted[i];
-      const record = {
+      store.put({
         id: i,
         name: file.name,
         size: file.size,
         type: file.type || 'video/mp4',
         blob: file,
         order: i,
-      };
-      store.put(record);
-      savedItems.push({
-        id: i,
-        name: file.name,
-        size: file.size,
-        url: URL.createObjectURL(file),
       });
     }
 
     await new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
-      tx.onerror = reject;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
     });
-
-    return savedItems;
   } catch (err) {
-    console.debug('IndexedDB playlist save note:', err);
-    return filterAndSortVideoFiles(files).map((f, i) => ({
-      id: i,
-      name: f.name,
-      size: f.size,
-      url: URL.createObjectURL(f),
-    }));
+    console.warn('IndexedDB playlist storage note (in-memory ObjectURLs active):', err);
   }
+
+  return playlistItems;
 }
 
 /**
@@ -205,18 +204,32 @@ export async function loadPlaylistFromIndexedDB() {
     const records = await new Promise((resolve, reject) => {
       const req = store.getAll();
       req.onsuccess = () => resolve(req.result || []);
-      req.onerror = reject;
+      req.onerror = () => resolve([]);
     });
 
-    if (!records.length) return [];
+    if (!records || !records.length) return [];
     records.sort((a, b) => a.order - b.order);
 
-    return records.map((r) => ({
-      id: r.id,
-      name: r.name,
-      size: r.size,
-      url: URL.createObjectURL(r.blob),
-    }));
+    const validItems = [];
+    for (const r of records) {
+      if (r && r.blob) {
+        try {
+          const url = URL.createObjectURL(r.blob);
+          if (url) {
+            validItems.push({
+              id: r.id,
+              name: r.name,
+              size: r.size,
+              url,
+            });
+          }
+        } catch (e) {
+          console.warn('Error creating ObjectURL for record:', r.name, e);
+        }
+      }
+    }
+
+    return validItems;
   } catch (err) {
     console.debug('IndexedDB playlist load note:', err);
     return [];
@@ -231,10 +244,10 @@ export async function clearPlaylistFromIndexedDB() {
     const db = await openDb();
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
+    store.clear();
     await new Promise((resolve, reject) => {
-      const req = store.clear();
-      req.onsuccess = resolve;
-      req.onerror = reject;
+      tx.oncomplete = resolve;
+      tx.onerror = reject;
     });
   } catch (err) {
     console.debug('IndexedDB playlist clear note:', err);
