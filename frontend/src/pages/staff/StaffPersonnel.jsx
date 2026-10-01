@@ -93,6 +93,7 @@ export default function StaffPersonnel() {
   const [lastName, setLastName] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [position, setPosition] = useState('');
+  const [officeId, setOfficeId] = useState('');
   const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
 
   // Delete Confirmation Modal
@@ -1183,7 +1184,7 @@ export default function StaffPersonnel() {
                     const fullName = targetDiv?.fullName || div.name;
                     const color = targetDiv?.color || '#1e40af';
                     const bg = targetDiv?.bg || '#eff6ff';
-                    const isChecked = selectedDivisionIds.some((id) => String(id) === String(div.id));
+                    const isChecked = Array.isArray(selectedDivisionIds) && selectedDivisionIds.some((id) => String(id) === String(div.id));
 
                     return (
                       <div
@@ -1206,7 +1207,11 @@ export default function StaffPersonnel() {
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          onChange={() => {}} // Handled by card click
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleToggleDivision(div.id);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
                           style={{
                             width: '16px',
                             height: '16px',
