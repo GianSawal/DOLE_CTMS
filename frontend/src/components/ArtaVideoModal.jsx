@@ -6,8 +6,13 @@ import { useAuth } from '../context/AuthContext';
 // Helper to convert any YouTube URL (standard, shortened, shorts, or embed) into an embeddable URL
 export function parseVideoEmbedUrl(url) {
   if (!url || typeof url !== 'string') return null;
-  const trimmed = url.trim();
+  let trimmed = url.trim();
   if (!trimmed) return null;
+
+  // Automatically replace deprecated / unavailable legacy video IDs
+  if (trimmed.includes('7uK7f0E4g2w') || trimmed.includes('2e6i5GjD4iY') || trimmed.includes('D0EpyUudmkU')) {
+    trimmed = 'https://www.youtube.com/watch?v=mgpg54pyWio';
+  }
 
   // Match YouTube URLs
   const ytMatch = trimmed.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/)|youtu\.be\/)([^"&?\/\s]{11})/i);
@@ -15,7 +20,7 @@ export function parseVideoEmbedUrl(url) {
     const videoId = ytMatch[1];
     return {
       type: 'youtube',
-      url: `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=1&modestbranding=1&rel=0`,
+      url: `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=1&modestbranding=1&rel=0`,
       raw: trimmed,
       videoId,
     };
@@ -632,7 +637,7 @@ export default function ArtaVideoModal({ isOpen, onClose, defaultOfficeId }) {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                   <button
                     type="button"
-                    onClick={() => setVideoUrl('https://www.youtube.com/watch?v=7uK7f0E4g2w')}
+                    onClick={() => setVideoUrl('https://www.youtube.com/watch?v=mgpg54pyWio')}
                     className="btn btn-outline btn-sm"
                     style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem', minHeight: '30px' }}
                   >
@@ -640,11 +645,11 @@ export default function ArtaVideoModal({ isOpen, onClose, defaultOfficeId }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setVideoUrl('https://www.youtube.com/watch?v=2e6i5GjD4iY')}
+                    onClick={() => setVideoUrl('https://www.youtube.com/watch?v=weFPvO0brfs')}
                     className="btn btn-outline btn-sm"
                     style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem', minHeight: '30px' }}
                   >
-                    📌 DOLE Anti-Fixer & Integrity
+                    📌 ARTA: No To Fixers
                   </button>
                 </div>
               </div>

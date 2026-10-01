@@ -396,10 +396,10 @@ class PublicDisplayBoardView(APIView):
         if display_config and display_config.is_active:
             if display_config.video_file:
                 arta_video_url = display_config.video_file.url
-            elif display_config.arta_video_url:
+            elif display_config.arta_video_url and "7uK7f0E4g2w" not in display_config.arta_video_url:
                 arta_video_url = display_config.arta_video_url
             else:
-                arta_video_url = "https://www.youtube.com/watch?v=7uK7f0E4g2w"
+                arta_video_url = "https://www.youtube.com/watch?v=mgpg54pyWio"
 
         all_divisions = list(CsmDivision.objects.exclude(name__iexact='ALL').values_list('name', flat=True).order_by('id'))
 

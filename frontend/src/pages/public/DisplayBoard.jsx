@@ -608,7 +608,15 @@ export default function DisplayBoard() {
     localStorage.setItem('ctms_display_theme', nextTheme);
   };
 
-  const DEFAULT_ARTA_VIDEO = 'https://www.youtube.com/watch?v=7uK7f0E4g2w';
+  const DEFAULT_ARTA_VIDEO = 'https://www.youtube.com/watch?v=mgpg54pyWio';
+
+  const sanitizeVideoUrl = (url) => {
+    if (!url || typeof url !== 'string') return DEFAULT_ARTA_VIDEO;
+    if (url.includes('7uK7f0E4g2w') || url.includes('2e6i5GjD4iY') || url.includes('D0EpyUudmkU')) {
+      return DEFAULT_ARTA_VIDEO;
+    }
+    return url;
+  };
 
   const isLight = theme === 'light';
   const [audioUnlocked, setAudioUnlocked] = useState(() => isAudioUnlocked());
@@ -617,7 +625,8 @@ export default function DisplayBoard() {
       const cached = localStorage.getItem(`ctms_arta_video_${officeId}`);
       if (cached) {
         const parsed = JSON.parse(cached);
-        return parsed.isActive !== false ? (parsed.videoUrl || DEFAULT_ARTA_VIDEO) : DEFAULT_ARTA_VIDEO;
+        const url = parsed.isActive !== false ? (parsed.videoUrl || DEFAULT_ARTA_VIDEO) : DEFAULT_ARTA_VIDEO;
+        return sanitizeVideoUrl(url);
       }
     } catch {}
     return DEFAULT_ARTA_VIDEO;
@@ -653,7 +662,7 @@ export default function DisplayBoard() {
   const currentVideoItem = playlist.length > 0 ? (playlist[currentIndex] || playlist[0]) : null;
   const currentVideoUrl = currentVideoItem
     ? currentVideoItem.url
-    : (isFolderLike(artaVideoUrl) ? DEFAULT_ARTA_VIDEO : (artaVideoUrl || DEFAULT_ARTA_VIDEO));
+    : sanitizeVideoUrl(isFolderLike(artaVideoUrl) ? DEFAULT_ARTA_VIDEO : (artaVideoUrl || DEFAULT_ARTA_VIDEO));
   const artaEmbed = parseVideoEmbedUrl(currentVideoUrl);
 
   const prevServingRef = useRef([]);
@@ -824,8 +833,12 @@ export default function DisplayBoard() {
       if (isLocalPlaylistActiveRef.current) return;
 
       // 2. Check locally saved folder link on this TV display
-      const savedTvLink = localStorage.getItem(`ctms_tv_folder_link_${officeId}`);
-      const targetUrl = savedTvLink || artaVideoUrl || DEFAULT_ARTA_VIDEO;
+      let savedTvLink = localStorage.getItem(`ctms_tv_folder_link_${officeId}`);
+      if (savedTvLink && (savedTvLink.includes('7uK7f0E4g2w') || savedTvLink.includes('2e6i5GjD4iY') || savedTvLink.includes('D0EpyUudmkU'))) {
+        localStorage.removeItem(`ctms_tv_folder_link_${officeId}`);
+        savedTvLink = null;
+      }
+      const targetUrl = sanitizeVideoUrl(savedTvLink || artaVideoUrl || DEFAULT_ARTA_VIDEO);
       if (!targetUrl) return;
 
       const ytEmbed = parseVideoEmbedUrl(targetUrl);
@@ -2284,10 +2297,36 @@ export default function DisplayBoard() {
               overflow: 'hidden',
               border: '1px solid rgba(255,255,255,0.1)',
             }}>
-              {artaEmbed ? (
+              {isLocalPlaylistLoading ? (
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#0b1120',
+                  color: '#94a3b8',
+                  gap: '0.65rem',
+                }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    border: '3px solid rgba(59, 130, 246, 0.2)',
+                    borderTop: '3px solid #3b82f6',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                  }} />
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Loading Local Video Playlist...</span>
+                </div>
+              ) : artaEmbed ? (
                 artaEmbed.type === 'youtube' || artaEmbed.type === 'embed' ? (
                   <iframe
                     ref={iframeRef}
+                    key={artaEmbed.url}
                     src={artaEmbed.url}
                     title="ARTA Awareness Video"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
