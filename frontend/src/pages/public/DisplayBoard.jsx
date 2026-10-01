@@ -1040,28 +1040,6 @@ export default function DisplayBoard() {
           }
         }, 100);
 
-        // Upload first video file to backend server so it persists on database and all clients
-        if (officeId && files.length >= 1 && (files[0] instanceof File || files[0] instanceof Blob)) {
-          const firstFile = files[0];
-          publicApi.uploadDisplayVideo(officeId, firstFile)
-            .then((res) => {
-              if (res && res.arta_video_url) {
-                setArtaVideoUrl(res.arta_video_url);
-                const payload = {
-                  officeId,
-                  url: res.arta_video_url,
-                  videoUrl: res.arta_video_url,
-                  is_active: true,
-                  isActive: true,
-                };
-                localStorage.setItem(`ctms_arta_video_${officeId}`, JSON.stringify(payload));
-                localStorage.setItem('ctms_arta_video', JSON.stringify(payload));
-              }
-            })
-            .catch((err) => {
-              console.warn('Server video sync note (local playback active):', err);
-            });
-        }
       } else {
         setFolderStatusMessage('No supported video files (.mp4, .webm, .mkv, .avi, .mov, etc.) found in the selection.');
         setFolderStatusType('error');
