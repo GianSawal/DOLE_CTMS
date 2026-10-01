@@ -93,8 +93,7 @@ export default function StaffPersonnel() {
   const [lastName, setLastName] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [position, setPosition] = useState('');
-  const [officeId, setOfficeId] = useState('');
-  const [selectedDivisionId, setSelectedDivisionId] = useState('');
+  const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
 
   // Delete Confirmation Modal
   const [deleteModalPersonnel, setDeleteModalPersonnel] = useState(null);
@@ -170,7 +169,7 @@ export default function StaffPersonnel() {
     setEmployeeId('');
     setPosition('');
     setOfficeId(offices[0]?.id || '');
-    setSelectedDivisionId('');
+    setSelectedDivisionIds([]);
     setShowModal(true);
   };
 
@@ -185,9 +184,42 @@ export default function StaffPersonnel() {
     setPosition(p.position || '');
     setOfficeId(p.office || p.office_id || '');
 
-    const currentDivId = (p.division_ids && p.division_ids.length > 0) ? String(p.division_ids[0]) : '';
-    setSelectedDivisionId(currentDivId);
+    let currentDivIds = [];
+    if (Array.isArray(p.division_ids) && p.division_ids.length > 0) {
+      currentDivIds = p.division_ids.map((id) => Number(id) || id);
+    } else if (Array.isArray(p.divisions_detail) && p.divisions_detail.length > 0) {
+      currentDivIds = p.divisions_detail.map((d) => Number(d.id) || d.id);
+    } else if (Array.isArray(p.division_names) && p.division_names.length > 0) {
+      currentDivIds = p.division_names
+        .map((name) => divisionMap[name] || divisionMap[name.replace(/\s+/g, '')])
+        .filter(Boolean);
+    }
+    setSelectedDivisionIds(currentDivIds);
     setShowModal(true);
+  };
+
+  // Toggle division selection
+  const handleToggleDivision = (divId) => {
+    const targetId = Number(divId) || divId;
+    setSelectedDivisionIds((prev) => {
+      const exists = prev.some((id) => String(id) === String(targetId));
+      if (exists) {
+        return prev.filter((id) => String(id) !== String(targetId));
+      } else {
+        return [...prev, targetId];
+      }
+    });
+  };
+
+  // Select all divisions
+  const handleSelectAllDivisions = () => {
+    const allIds = filteredDivisions.map((d) => Number(d.id) || d.id).filter(Boolean);
+    setSelectedDivisionIds(allIds);
+  };
+
+  // Clear all division selections
+  const handleClearAllDivisions = () => {
+    setSelectedDivisionIds([]);
   };
 
   // Format employee ID
@@ -215,8 +247,8 @@ export default function StaffPersonnel() {
       showToast('Please select an Office.', 'error');
       return;
     }
-    if (!selectedDivisionId) {
-      showToast('Please select a Division. The division determines which services this personnel can be assigned to.', 'error');
+    if (!selectedDivisionIds || selectedDivisionIds.length === 0) {
+      showToast('Please select at least one Division. The assigned division(s) determine which services this personnel can be assigned to.', 'error');
       return;
     }
 
@@ -230,7 +262,7 @@ export default function StaffPersonnel() {
           employee_id: employeeId.trim(),
           position: position.trim(),
           office: officeId,
-          division_ids: [selectedDivisionId],
+          division_ids: selectedDivisionIds,
         };
         await staffApi.createPersonnel(payload);
         showToast(`Personnel ${firstName.trim()} ${lastName.trim()} (${employeeId.trim()}) added successfully!`);
@@ -241,7 +273,7 @@ export default function StaffPersonnel() {
           last_name: lastName.trim(),
           position: position.trim(),
           office: officeId,
-          division_ids: [selectedDivisionId],
+          division_ids: selectedDivisionIds,
         };
         await staffApi.updatePersonnel(editingId, payload);
         showToast(`Personnel ${employeeId} updated successfully.`);
@@ -1088,41 +1120,125 @@ export default function StaffPersonnel() {
                 </span>
               </div>
 
-              {/* Row 4: Division Field (Single dropdown - only 1 division per personnel) */}
+              {/* Row 4: Division Field (Checkboxes for Multiple Selection) */}
               <div>
-                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                  DOLE Division <span style={{ color: 'var(--dole-red)' }}>*</span>
-                </label>
-                <select
-                  required
-                  value={selectedDivisionId ? String(selectedDivisionId) : ''}
-                  onChange={(e) => setSelectedDivisionId(e.target.value)}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', margin: 0 }}>
+                    DOLE Division(s) <span style={{ color: 'var(--dole-red)' }}>*</span>
+                    {selectedDivisionIds.length > 0 && (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--dole-blue)', marginLeft: '0.4rem' }}>
+                        ({selectedDivisionIds.length} selected)
+                      </span>
+                    )}
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllDivisions}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--dole-blue)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: '0.1rem 0.3rem',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      Select All
+                    </button>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>|</span>
+                    <button
+                      type="button"
+                      onClick={handleClearAllDivisions}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: '0.1rem 0.3rem',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div
                   style={{
-                    width: '100%',
-                    padding: '0.65rem 0.85rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-color)',
-                    fontSize: '0.9rem',
-                    backgroundColor: '#fff',
-                    outline: 'none',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                    gap: '0.65rem',
                   }}
                 >
-                  <option value="" disabled>-- Select DOLE Division (1 Division Only) --</option>
                   {filteredDivisions.map((div) => {
                     const targetDiv = TARGET_DIVISIONS.find(
                       (t) => t.key.toLowerCase() === (div.name || '').toLowerCase() || t.alias.toLowerCase() === (div.name || '').toLowerCase()
                     );
-                    const label = targetDiv ? `${targetDiv.label} — ${targetDiv.fullName}` : div.name;
+                    const label = targetDiv?.label || div.name;
+                    const fullName = targetDiv?.fullName || div.name;
+                    const color = targetDiv?.color || '#1e40af';
+                    const bg = targetDiv?.bg || '#eff6ff';
+                    const isChecked = selectedDivisionIds.some((id) => String(id) === String(div.id));
+
                     return (
-                      <option key={div.id} value={String(div.id)}>
-                        {label}
-                      </option>
+                      <div
+                        key={div.id}
+                        onClick={() => handleToggleDivision(div.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.65rem',
+                          padding: '0.65rem 0.85rem',
+                          borderRadius: 'var(--radius-md)',
+                          border: isChecked ? `2px solid ${color}` : '1px solid var(--border-color)',
+                          backgroundColor: isChecked ? bg : '#ffffff',
+                          cursor: 'pointer',
+                          userSelect: 'none',
+                          transition: 'all 0.15s ease',
+                          boxShadow: isChecked ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}} // Handled by card click
+                          style={{
+                            width: '16px',
+                            height: '16px',
+                            accentColor: color,
+                            cursor: 'pointer',
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, color: isChecked ? color : 'var(--text-primary)', fontSize: '0.84rem' }}>
+                            {label}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '0.72rem',
+                              color: 'var(--text-muted)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                            title={fullName}
+                          >
+                            {fullName}
+                          </div>
+                        </div>
+                      </div>
                     );
                   })}
-                </select>
+                </div>
+
                 <div
                   style={{
-                    marginTop: '0.5rem',
+                    marginTop: '0.65rem',
                     padding: '0.65rem 0.85rem',
                     backgroundColor: '#eff6ff',
                     border: '1px solid #bfdbfe',
@@ -1132,7 +1248,7 @@ export default function StaffPersonnel() {
                     lineHeight: 1.45,
                   }}
                 >
-                  🔒 <strong>Division Service Assignment Rule:</strong> Personnel can only be assigned to <strong>1 division</strong> (TSSD1, TSSD2, IMSD, or MALSU). The selected division strictly determines which queue services they can access and be assigned to.
+                  ℹ️ <strong>Multi-Division Service Assignment:</strong> Select one or multiple divisions (TSSD1, TSSD2, IMSD, MALSU). The assigned divisions determine which queue tickets and services this personnel can assist and be assigned to.
                 </div>
               </div>
 
