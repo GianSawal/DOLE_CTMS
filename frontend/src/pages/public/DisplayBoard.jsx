@@ -622,14 +622,15 @@ export default function DisplayBoard() {
   const [audioUnlocked, setAudioUnlocked] = useState(() => isAudioUnlocked());
   const [artaVideoUrl, setArtaVideoUrl] = useState(() => {
     try {
-      const cached = localStorage.getItem(`ctms_arta_video_${officeId}`);
+      const cached = localStorage.getItem(`ctms_arta_video_${officeId}`) || localStorage.getItem('ctms_arta_video');
       if (cached) {
         const parsed = JSON.parse(cached);
-        const url = parsed.isActive !== false ? (parsed.videoUrl || DEFAULT_ARTA_VIDEO) : DEFAULT_ARTA_VIDEO;
-        return sanitizeVideoUrl(url);
+        const active = parsed.isActive !== false && parsed.is_active !== false;
+        const url = active ? (parsed.videoUrl || parsed.url || '') : '';
+        if (url) return sanitizeVideoUrl(url);
       }
     } catch {}
-    return DEFAULT_ARTA_VIDEO;
+    return '';
   });
 
   const [playlist, setPlaylist] = useState([]);
@@ -639,12 +640,22 @@ export default function DisplayBoard() {
   const [folderStatusMessage, setFolderStatusMessage] = useState('');
   const [folderStatusType, setFolderStatusType] = useState('info'); // 'info', 'success', 'error'
   const [activeFolderName, setActiveFolderName] = useState(() => {
-    return localStorage.getItem(`ctms_tv_folder_name_${officeId}`) || '';
+    return localStorage.getItem(`ctms_tv_folder_name_${officeId}`) || localStorage.getItem('ctms_tv_folder_name') || '';
   });
   const [isLocalPlaylistLoading, setIsLocalPlaylistLoading] = useState(() => {
-    return localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true';
+    try {
+      return (
+        localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true' ||
+        localStorage.getItem(`ctms_tv_has_local_video_${officeId}`) === 'true' ||
+        localStorage.getItem('ctms_tv_has_local_folder') === 'true' ||
+        localStorage.getItem('ctms_tv_has_local_video') === 'true'
+      );
+    } catch {
+      return false;
+    }
   });
   const folderFileInputRef = useRef(null);
+  const singleFileInputRef = useRef(null);
   const videoRef = useRef(null);
   const isUserPausedRef = useRef(false);
   const isLocalPlaylistActiveRef = useRef(false);
@@ -660,10 +671,36 @@ export default function DisplayBoard() {
   };
 
   const currentVideoItem = playlist.length > 0 ? (playlist[currentIndex] || playlist[0]) : null;
-  const currentVideoUrl = currentVideoItem
-    ? currentVideoItem.url
-    : sanitizeVideoUrl(isFolderLike(artaVideoUrl) ? DEFAULT_ARTA_VIDEO : (artaVideoUrl || DEFAULT_ARTA_VIDEO));
-  const artaEmbed = parseVideoEmbedUrl(currentVideoUrl);
+  const currentVideoUrl = useMemo(() => {
+    if (currentVideoItem?.url) {
+      return currentVideoItem.url;
+    }
+    // If local videos are still loading from IndexedDB, do not render a fallback URL yet
+    if (isLocalPlaylistLoading) {
+      return null;
+    }
+    // If custom artaVideoUrl is present (e.g. backend uploaded file /media/arta_videos/xxx.mp4 or custom URL)
+    if (artaVideoUrl && !isFolderLike(artaVideoUrl)) {
+      return sanitizeVideoUrl(artaVideoUrl);
+    }
+    // Check localStorage cache as fallback
+    try {
+      const cached = localStorage.getItem(`ctms_arta_video_${officeId}`) || localStorage.getItem('ctms_arta_video');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const active = parsed.isActive !== false && parsed.is_active !== false;
+        const url = active ? (parsed.videoUrl || parsed.url) : null;
+        if (url && !isFolderLike(url)) return sanitizeVideoUrl(url);
+      }
+    } catch {}
+
+    // Only if local loading is finished and no uploaded or local video exists
+    return DEFAULT_ARTA_VIDEO;
+  }, [currentVideoItem, isLocalPlaylistLoading, artaVideoUrl, officeId]);
+
+  const artaEmbed = useMemo(() => {
+    return currentVideoUrl ? parseVideoEmbedUrl(currentVideoUrl) : null;
+  }, [currentVideoUrl]);
 
   const prevServingRef = useRef([]);
   const lastCalledRef = useRef(null);
@@ -833,12 +870,29 @@ export default function DisplayBoard() {
       if (isLocalPlaylistActiveRef.current) return;
 
       // 2. Check locally saved folder link on this TV display
-      let savedTvLink = localStorage.getItem(`ctms_tv_folder_link_${officeId}`);
+      let savedTvLink = localStorage.getItem(`ctms_tv_folder_link_${officeId}`) || localStorage.getItem('ctms_tv_folder_link');
       if (savedTvLink && (savedTvLink.includes('7uK7f0E4g2w') || savedTvLink.includes('2e6i5GjD4iY') || savedTvLink.includes('D0EpyUudmkU'))) {
         localStorage.removeItem(`ctms_tv_folder_link_${officeId}`);
+        localStorage.removeItem('ctms_tv_folder_link');
         savedTvLink = null;
       }
-      const targetUrl = sanitizeVideoUrl(savedTvLink || artaVideoUrl || DEFAULT_ARTA_VIDEO);
+
+      // 3. Check uploaded / custom video URL
+      let candidateUrl = savedTvLink || artaVideoUrl;
+      if (!candidateUrl) {
+        try {
+          const cached = localStorage.getItem(`ctms_arta_video_${officeId}`) || localStorage.getItem('ctms_arta_video');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            const active = parsed.isActive !== false && parsed.is_active !== false;
+            if (active) {
+              candidateUrl = parsed.videoUrl || parsed.url || '';
+            }
+          }
+        } catch {}
+      }
+
+      const targetUrl = candidateUrl ? sanitizeVideoUrl(candidateUrl) : DEFAULT_ARTA_VIDEO;
       if (!targetUrl) return;
 
       const ytEmbed = parseVideoEmbedUrl(targetUrl);
@@ -850,15 +904,21 @@ export default function DisplayBoard() {
         return;
       }
 
-      const items = await parseFolderLink(targetUrl);
-      if (isMounted) {
-        if (items && items.length > 0) {
-          setPlaylist(items);
-          setCurrentIndex(0);
-        } else {
-          setPlaylist([{ id: 0, url: targetUrl, isYouTube: false }]);
-          setCurrentIndex(0);
+      if (isFolderLike(targetUrl)) {
+        const items = await parseFolderLink(targetUrl);
+        if (isMounted) {
+          if (items && items.length > 0) {
+            setPlaylist(items);
+            setCurrentIndex(0);
+            return;
+          }
         }
+      }
+
+      if (isMounted) {
+        const fileName = targetUrl.split('/').pop().split('?')[0] || "ARTA Awareness Video";
+        setPlaylist([{ id: 0, url: targetUrl, name: fileName, isYouTube: false }]);
+        setCurrentIndex(0);
       }
     }
 
@@ -870,7 +930,7 @@ export default function DisplayBoard() {
   const processSelectedFolderFiles = async (files, folderName = '', dirHandle = null) => {
     if (!files || !files.length) return;
 
-    setFolderStatusMessage('Scanning folder video files...');
+    setFolderStatusMessage('Scanning video files...');
     setFolderStatusType('info');
 
     try {
@@ -880,12 +940,17 @@ export default function DisplayBoard() {
         isLocalPlaylistActiveRef.current = true;
         setPlaylist(saved);
         setCurrentIndex(0);
-        setActiveFolderName(folderName || 'Selected Folder');
+        setActiveFolderName(folderName || 'Selected Videos');
         localStorage.setItem(`ctms_tv_has_local_folder_${officeId}`, 'true');
+        localStorage.setItem(`ctms_tv_has_local_video_${officeId}`, 'true');
+        localStorage.setItem('ctms_tv_has_local_folder', 'true');
+        localStorage.setItem('ctms_tv_has_local_video', 'true');
         if (folderName) {
           localStorage.setItem(`ctms_tv_folder_name_${officeId}`, folderName);
+          localStorage.setItem('ctms_tv_folder_name', folderName);
         }
         localStorage.removeItem(`ctms_tv_folder_link_${officeId}`);
+        localStorage.removeItem('ctms_tv_folder_link');
         setIsLocalPlaylistLoading(false);
 
         // Auto-close modal immediately
@@ -908,14 +973,31 @@ export default function DisplayBoard() {
           }
         }, 100);
       } else {
-        setFolderStatusMessage('No supported video files (.mp4, .webm, .mkv, .avi, .mov, etc.) found in the selected folder.');
+        setFolderStatusMessage('No supported video files (.mp4, .webm, .mkv, .avi, .mov, etc.) found in the selection.');
         setFolderStatusType('error');
       }
     } catch (err) {
-      console.error('Failed to process local folder:', err);
-      setFolderStatusMessage('Error loading folder. Please try selecting the folder again.');
+      console.error('Failed to process local video files:', err);
+      setFolderStatusMessage('Error loading files. Please try selecting the files or folder again.');
       setFolderStatusType('error');
     }
+  };
+
+  const handleSelectFileClick = () => {
+    if (singleFileInputRef.current) {
+      singleFileInputRef.current.click();
+    }
+  };
+
+  const handleSingleFilesSelected = async (e) => {
+    const files = e.target.files;
+    if (!files || !files.length) {
+      if (e.target) e.target.value = '';
+      return;
+    }
+    const label = files.length === 1 ? files[0].name : `${files.length} Videos`;
+    await processSelectedFolderFiles(files, label);
+    if (e.target) e.target.value = '';
   };
 
   // Open native folder picker or fallback to webkitdirectory input
@@ -1030,8 +1112,15 @@ export default function DisplayBoard() {
   const handleResetToDefaultVideo = async () => {
     isLocalPlaylistActiveRef.current = false;
     localStorage.removeItem(`ctms_tv_has_local_folder_${officeId}`);
+    localStorage.removeItem(`ctms_tv_has_local_video_${officeId}`);
+    localStorage.removeItem('ctms_tv_has_local_folder');
+    localStorage.removeItem('ctms_tv_has_local_video');
     localStorage.removeItem(`ctms_tv_folder_name_${officeId}`);
+    localStorage.removeItem('ctms_tv_folder_name');
     localStorage.removeItem(`ctms_tv_folder_link_${officeId}`);
+    localStorage.removeItem('ctms_tv_folder_link');
+    localStorage.removeItem(`ctms_arta_video_${officeId}`);
+    localStorage.removeItem('ctms_arta_video');
     await clearPlaylistFromIndexedDB();
     setActiveFolderName('');
     setArtaVideoUrl(DEFAULT_ARTA_VIDEO);
@@ -1146,9 +1235,16 @@ export default function DisplayBoard() {
         }
 
         if (data.arta_video_url !== undefined) {
-          const hasLocal = localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true';
+          const hasLocal = (
+            localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true' ||
+            localStorage.getItem(`ctms_tv_has_local_video_${officeId}`) === 'true' ||
+            localStorage.getItem('ctms_tv_has_local_folder') === 'true' ||
+            localStorage.getItem('ctms_tv_has_local_video') === 'true'
+          );
           if (!hasLocal && !isLocalPlaylistActiveRef.current) {
-            setArtaVideoUrl(data.arta_video_url || DEFAULT_ARTA_VIDEO);
+            if (data.arta_video_url) {
+              setArtaVideoUrl(data.arta_video_url);
+            }
           }
         }
         setDisplayData(data);
@@ -1202,10 +1298,19 @@ export default function DisplayBoard() {
           if (!isMounted) return;
           if (event.data?.type === 'ARTA_VIDEO_UPDATED') {
             if (!event.data.officeId || String(event.data.officeId) === String(officeId)) {
-              const hasLocal = localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true';
+              const hasLocal = (
+                localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true' ||
+                localStorage.getItem(`ctms_tv_has_local_video_${officeId}`) === 'true' ||
+                localStorage.getItem('ctms_tv_has_local_folder') === 'true' ||
+                localStorage.getItem('ctms_tv_has_local_video') === 'true'
+              );
               if (!hasLocal && !isLocalPlaylistActiveRef.current) {
-                const newUrl = event.data.isActive !== false ? (event.data.videoUrl || DEFAULT_ARTA_VIDEO) : DEFAULT_ARTA_VIDEO;
-                setArtaVideoUrl(newUrl);
+                const newUrl = (event.data.isActive !== false && event.data.is_active !== false)
+                  ? (event.data.videoUrl || event.data.url || '')
+                  : '';
+                if (newUrl) {
+                  setArtaVideoUrl(newUrl);
+                }
               }
               fetchDisplay();
             }
@@ -1240,12 +1345,22 @@ export default function DisplayBoard() {
             fetchDisplay();
           }
         } catch {}
-      } else if (e.key === `ctms_arta_video_${officeId}` && e.newValue) {
+      } else if ((e.key === `ctms_arta_video_${officeId}` || e.key === 'ctms_arta_video') && e.newValue) {
         try {
           const item = JSON.parse(e.newValue);
-          const hasLocal = localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true';
+          const hasLocal = (
+            localStorage.getItem(`ctms_tv_has_local_folder_${officeId}`) === 'true' ||
+            localStorage.getItem(`ctms_tv_has_local_video_${officeId}`) === 'true' ||
+            localStorage.getItem('ctms_tv_has_local_folder') === 'true' ||
+            localStorage.getItem('ctms_tv_has_local_video') === 'true'
+          );
           if (!hasLocal && !isLocalPlaylistActiveRef.current) {
-            setArtaVideoUrl(item.isActive !== false ? (item.videoUrl || DEFAULT_ARTA_VIDEO) : DEFAULT_ARTA_VIDEO);
+            const newUrl = (item.isActive !== false && item.is_active !== false)
+              ? (item.videoUrl || item.url || '')
+              : '';
+            if (newUrl) {
+              setArtaVideoUrl(newUrl);
+            }
           }
           fetchDisplay();
         } catch {}
@@ -2435,6 +2550,16 @@ export default function DisplayBoard() {
         <span>Display updates automatically every 5 seconds</span>
       </footer>
 
+      {/* Hidden File Input for Single/Multiple Video File Selection */}
+      <input
+        ref={singleFileInputRef}
+        type="file"
+        accept="video/*,.mp4,.webm,.ogg,.mov,.mkv,.avi"
+        multiple
+        onChange={handleSingleFilesSelected}
+        style={{ display: 'none' }}
+      />
+
       {/* Hidden File Input for Whole Local Folder Selection */}
       <input
         ref={folderFileInputRef}
@@ -2489,50 +2614,67 @@ export default function DisplayBoard() {
               Play videos sequentially in a continuous loop with <strong>0 server storage used</strong>.
             </p>
 
-            {/* Option A: Select Whole Video Folder */}
+            {/* Option A: Select Local Video File(s) or Folder */}
             <div
-              onClick={handleSelectFolderClick}
               style={{
                 backgroundColor: '#1e293b',
                 border: '2px dashed #3b82f6',
                 borderRadius: '12px',
-                padding: '1.4rem 1.25rem',
+                padding: '1.25rem 1rem',
                 textAlign: 'center',
                 marginBottom: '1rem',
-                cursor: 'pointer',
                 transition: 'all 0.2s ease',
               }}
             >
-              <div style={{ fontSize: '2.2rem', marginBottom: '0.35rem' }}>📁</div>
-              <div style={{ fontWeight: 800, fontSize: '1rem', color: '#60a5fa', marginBottom: '0.3rem' }}>
-                Select Whole Video Folder
+              <div style={{ fontSize: '2.2rem', marginBottom: '0.25rem' }}>🎬 / 📁</div>
+              <div style={{ fontWeight: 800, fontSize: '1rem', color: '#60a5fa', marginBottom: '0.25rem' }}>
+                Select Video File or Folder
               </div>
-              <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '0.85rem', maxWidth: '400px', margin: '0 auto 0.85rem auto', lineHeight: 1.4 }}>
-                Select any folder on this computer. All videos in the folder will play automatically in a continuous loop with <strong>0 server storage used</strong>.
+              <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '0.85rem', maxWidth: '420px', margin: '0 auto 0.85rem auto', lineHeight: 1.4 }}>
+                Choose a video file (.mp4, .webm, .mov) or an entire folder on this computer. Selected video will play automatically and persist across page reloads with <strong>0 server storage used</strong>.
               </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSelectFolderClick();
-                }}
-                style={{
-                  backgroundColor: '#2563eb',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '0.65rem 1.35rem',
-                  fontWeight: 700,
-                  fontSize: '0.88rem',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.4)',
-                }}
-              >
-                <span>📂</span> Choose Video Folder...
-              </button>
+              <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handleSelectFileClick}
+                  style={{
+                    backgroundColor: '#10b981',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.65rem 1.15rem',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)',
+                  }}
+                >
+                  <span>🎬</span> Choose Video File...
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSelectFolderClick}
+                  style={{
+                    backgroundColor: '#2563eb',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '0.65rem 1.15rem',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.4)',
+                  }}
+                >
+                  <span>📂</span> Choose Video Folder...
+                </button>
+              </div>
             </div>
 
             {/* Folder / File Loading Feedback Status */}

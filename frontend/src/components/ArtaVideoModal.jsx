@@ -262,16 +262,19 @@ export default function ArtaVideoModal({ isOpen, onClose, defaultOfficeId }) {
       const payload = {
         officeId: selectedOfficeId,
         url: finalVideoUrl,
+        videoUrl: finalVideoUrl,
         is_active: isActive,
+        isActive: isActive,
         updated_at: new Date().toISOString(),
       };
       localStorage.setItem(`ctms_arta_video_${selectedOfficeId}`, JSON.stringify(payload));
+      localStorage.setItem('ctms_arta_video', JSON.stringify(payload));
       localStorage.setItem('dole_last_arta_video_update', JSON.stringify(payload));
 
       try {
         if (typeof BroadcastChannel !== 'undefined') {
           const bc = new BroadcastChannel('ctms_arta_video_channel');
-          bc.postMessage({ type: 'ARTA_VIDEO_UPDATED', ...payload });
+          bc.postMessage({ type: 'ARTA_VIDEO_UPDATED', ...payload, videoUrl: finalVideoUrl, url: finalVideoUrl });
           bc.close();
         }
       } catch {}

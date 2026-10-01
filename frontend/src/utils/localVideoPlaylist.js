@@ -7,7 +7,7 @@
  */
 
 const DB_NAME = 'dole_ctms_video_playlist_db';
-const DB_VERSION = 2;
+const DB_VERSION = 5;
 const STORE_NAME = 'videos';
 const META_STORE = 'meta';
 
@@ -204,9 +204,13 @@ export async function savePlaylistToIndexedDB(files, folderName = '', dirHandle 
   // Persist files and folder metadata into IndexedDB for reload persistence
   try {
     const db = await openDb();
-    const tx = db.transaction([STORE_NAME, META_STORE], 'readwrite');
+    const storesToUse = [STORE_NAME];
+    if (db.objectStoreNames.contains(META_STORE)) {
+      storesToUse.push(META_STORE);
+    }
+    const tx = db.transaction(storesToUse, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const metaStore = tx.objectStore(META_STORE);
+    const metaStore = storesToUse.includes(META_STORE) ? tx.objectStore(META_STORE) : null;
 
     // Queue clear and all put requests synchronously in the active transaction
     store.clear();
@@ -222,10 +226,10 @@ export async function savePlaylistToIndexedDB(files, folderName = '', dirHandle 
       });
     }
 
-    if (folderName) {
+    if (metaStore && folderName) {
       metaStore.put(folderName, 'folder_name');
     }
-    if (dirHandle) {
+    if (metaStore && dirHandle) {
       metaStore.put(dirHandle, 'active_folder_handle');
     }
 
@@ -234,6 +238,14 @@ export async function savePlaylistToIndexedDB(files, folderName = '', dirHandle 
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+
+    try {
+      localStorage.setItem('ctms_tv_has_local_folder', 'true');
+      localStorage.setItem('ctms_tv_has_local_video', 'true');
+      if (sorted[0]?.name) {
+        localStorage.setItem('ctms_tv_local_video_name', sorted[0].name);
+      }
+    } catch {}
   } catch (err) {
     console.warn('IndexedDB playlist storage note (in-memory ObjectURLs active):', err);
   }
@@ -249,77 +261,86 @@ export async function loadPlaylistFromIndexedDB() {
     const db = await openDb();
 
     // 1. Try reading from dirHandle if saved and permission is granted
-    try {
-      const metaTx = db.transaction(META_STORE, 'readonly');
-      const metaStore = metaTx.objectStore(META_STORE);
-      const dirHandle = await new Promise((resolve) => {
-        const req = metaStore.get('active_folder_handle');
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => resolve(null);
-      });
+    if (db.objectStoreNames.contains(META_STORE)) {
+      try {
+        const metaTx = db.transaction(META_STORE, 'readonly');
+        const metaStore = metaTx.objectStore(META_STORE);
+        const dirHandle = await new Promise((resolve) => {
+          const req = metaStore.get('active_folder_handle');
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        });
 
-      if (dirHandle && typeof dirHandle.queryPermission === 'function') {
-        const perm = await dirHandle.queryPermission({ mode: 'read' });
-        if (perm === 'granted') {
-          const files = [];
-          for await (const entry of dirHandle.values()) {
-            if (entry.kind === 'file') {
-              try {
-                const f = await entry.getFile();
-                files.push(f);
-              } catch {}
+        if (dirHandle && typeof dirHandle.queryPermission === 'function') {
+          const perm = await dirHandle.queryPermission({ mode: 'read' });
+          if (perm === 'granted') {
+            const files = [];
+            for await (const entry of dirHandle.values()) {
+              if (entry.kind === 'file') {
+                try {
+                  const f = await entry.getFile();
+                  files.push(f);
+                } catch {}
+              }
+            }
+            const sorted = filterAndSortVideoFiles(files);
+            if (sorted.length > 0) {
+              return sorted.map((file, i) => ({
+                id: i,
+                name: file.name,
+                size: file.size,
+                type: file.type || 'video/mp4',
+                url: URL.createObjectURL(file),
+              }));
             }
           }
-          const sorted = filterAndSortVideoFiles(files);
-          if (sorted.length > 0) {
-            return sorted.map((file, i) => ({
-              id: i,
-              name: file.name,
-              size: file.size,
-              type: file.type || 'video/mp4',
-              url: URL.createObjectURL(file),
-            }));
-          }
         }
+      } catch (e) {
+        console.debug('dirHandle load note:', e);
       }
-    } catch (e) {
-      console.debug('dirHandle load note:', e);
     }
 
     // 2. Fallback: read stored blobs from STORE_NAME
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
+    if (db.objectStoreNames.contains(STORE_NAME)) {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
 
-    const records = await new Promise((resolve) => {
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    });
+      const records = await new Promise((resolve) => {
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      });
 
-    if (!records || !records.length) return [];
-    records.sort((a, b) => a.order - b.order);
+      if (records && records.length > 0) {
+        records.sort((a, b) => a.order - b.order);
 
-    const validItems = [];
-    for (const r of records) {
-      if (r && r.blob) {
-        try {
-          const url = URL.createObjectURL(r.blob);
-          if (url) {
-            validItems.push({
-              id: r.id,
-              name: r.name,
-              size: r.size,
-              type: r.type || 'video/mp4',
-              url,
-            });
+        const validItems = [];
+        for (const r of records) {
+          if (r && r.blob) {
+            try {
+              const url = URL.createObjectURL(r.blob);
+              if (url) {
+                validItems.push({
+                  id: r.id,
+                  name: r.name,
+                  size: r.size,
+                  type: r.type || 'video/mp4',
+                  url,
+                });
+              }
+            } catch (e) {
+              console.warn('Error creating ObjectURL for record:', r.name, e);
+            }
           }
-        } catch (e) {
-          console.warn('Error creating ObjectURL for record:', r.name, e);
+        }
+
+        if (validItems.length > 0) {
+          return validItems;
         }
       }
     }
 
-    return validItems;
+    return [];
   } catch (err) {
     console.debug('IndexedDB playlist load note:', err);
     return [];
@@ -332,13 +353,24 @@ export async function loadPlaylistFromIndexedDB() {
 export async function clearPlaylistFromIndexedDB() {
   try {
     const db = await openDb();
-    const tx = db.transaction([STORE_NAME, META_STORE], 'readwrite');
-    tx.objectStore(STORE_NAME).clear();
-    tx.objectStore(META_STORE).clear();
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = reject;
-    });
+    const storesToClear = [];
+    if (db.objectStoreNames.contains(STORE_NAME)) storesToClear.push(STORE_NAME);
+    if (db.objectStoreNames.contains(META_STORE)) storesToClear.push(META_STORE);
+
+    if (storesToClear.length > 0) {
+      const tx = db.transaction(storesToClear, 'readwrite');
+      storesToClear.forEach(s => tx.objectStore(s).clear());
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = reject;
+      });
+    }
+
+    try {
+      localStorage.removeItem('ctms_tv_has_local_folder');
+      localStorage.removeItem('ctms_tv_has_local_video');
+      localStorage.removeItem('ctms_tv_local_video_name');
+    } catch {}
   } catch (err) {
     console.debug('IndexedDB playlist clear note:', err);
   }
