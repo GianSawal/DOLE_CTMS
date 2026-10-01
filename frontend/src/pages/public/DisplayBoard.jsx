@@ -52,6 +52,29 @@ const KNOWN_DIVISIONS = [
   { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation-Arbitration & Legal Services Unit', color: '#6d28d9', accent: '#8b5cf6', bgLight: '#ede9fe', bgDark: '#3b0764' },
 ];
 
+const SIMULTANEOUS_PAIRS = [
+  {
+    value: 'TSSD 1,TSSD 2',
+    label: 'Simultaneous (TSSD 1 & TSSD 2 Only)',
+    divisions: ['TSSD 1', 'TSSD 2'],
+  },
+  {
+    value: 'IMSD,TSSD 1',
+    label: 'Simultaneous (IMSD & TSSD 1 Only)',
+    divisions: ['IMSD', 'TSSD 1'],
+  },
+  {
+    value: 'IMSD,TSSD 2',
+    label: 'Simultaneous (IMSD & TSSD 2 Only)',
+    divisions: ['IMSD', 'TSSD 2'],
+  },
+  {
+    value: 'IMSD,MALSU',
+    label: 'Simultaneous (IMSD & MALSU Only)',
+    divisions: ['IMSD', 'MALSU'],
+  },
+];
+
 function normalizeDiv(name) {
   return (name || '').toUpperCase().replace(/[\s\-_]+/g, '');
 }
@@ -309,9 +332,66 @@ export default function DisplayBoard() {
     return ['TSSD 1', 'TSSD 2'];
   }, [searchParams, user, displayData]);
 
+  // Check if account has access to all divisions (Superuser, unconstrained TV display, or all 4 divisions accessible)
+  const hasAccessToAllDivisions = useMemo(() => {
+    // 1. Superuser always has full access
+    if (user?.is_superuser) return true;
+
+    // 2. If URL parameters restrict divisions
+    const paramDivs = searchParams.get('divisions') || searchParams.get('division');
+    if (paramDivs) {
+      const parts = paramDivs.split(',').map(s => s.trim()).filter(Boolean);
+      const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
+      if (!allDivNorms.every(req => parts.some(p => normalizeDiv(p) === req))) {
+        return false;
+      }
+    }
+
+    // 3. If logged in staff user has assigned divisions, verify they have all 4 divisions
+    if (user && !user.is_superuser && Array.isArray(user.assigned_divisions) && user.assigned_divisions.length > 0) {
+      const userDivNorms = user.assigned_divisions.map(d => normalizeDiv(d.name || d));
+      const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
+      return allDivNorms.every(req => userDivNorms.includes(req));
+    }
+
+    // 4. Verify all 4 required divisions exist in eligibleDivisions
+    const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
+    const eligibleNorms = eligibleDivisions.map(d => normalizeDiv(d));
+    return allDivNorms.every(req => eligibleNorms.includes(req));
+  }, [user, searchParams, eligibleDivisions]);
+
+  // Reset division filter if it's a restricted pair but the account no longer has full division access
+  useEffect(() => {
+    if (selectedDivisionFilter && selectedDivisionFilter.includes(',') && !hasAccessToAllDivisions) {
+      setSelectedDivisionFilter('');
+      localStorage.removeItem('ctms_tv_division_filter');
+    }
+  }, [hasAccessToAllDivisions, selectedDivisionFilter]);
+
   // Active divisions to render simultaneously (validated against eligibleDivisions)
   const activeDivisionsToRender = useMemo(() => {
     if (selectedDivisionFilter && selectedDivisionFilter !== 'ALL') {
+      // Check if it's comma-separated divisions (e.g. simultaneous pairs)
+      if (selectedDivisionFilter.includes(',')) {
+        const parts = selectedDivisionFilter.split(',').map(s => s.trim()).filter(Boolean);
+        const matched = parts
+          .map(part => {
+            const targetNorm = normalizeDiv(part);
+            return eligibleDivisions.find(ed => {
+              if (normalizeDiv(ed) === targetNorm) return true;
+              const m1 = matchDivision(ed);
+              const m2 = matchDivision(part);
+              return m1 && m2 && m1.alias === m2.alias;
+            });
+          })
+          .filter(Boolean);
+
+        if (matched.length === parts.length) {
+          return matched;
+        }
+      }
+
+      // Check if it's a single division
       const validMatch = eligibleDivisions.find(
         d => normalizeDiv(d) === normalizeDiv(selectedDivisionFilter)
       );
@@ -1142,6 +1222,20 @@ export default function DisplayBoard() {
                 >
                   Simultaneous ({eligibleDivisions.map(d => matchDivision(d)?.alias || d).join(' & ')})
                 </option>
+                {hasAccessToAllDivisions && SIMULTANEOUS_PAIRS.filter(pair =>
+                  pair.divisions.every(pDiv => eligibleDivisions.some(ed => normalizeDiv(ed) === normalizeDiv(pDiv)))
+                ).map(pair => (
+                  <option
+                    key={pair.value}
+                    value={pair.value}
+                    style={{
+                      backgroundColor: isLight ? '#ffffff' : '#0f172a',
+                      color: isLight ? '#0f172a' : '#ffffff',
+                    }}
+                  >
+                    {pair.label}
+                  </option>
+                ))}
                 {eligibleDivisions.map(d => (
                   <option
                     key={d}
