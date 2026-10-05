@@ -16,6 +16,7 @@ from .models import (
 from .services import (
     create_transaction,
     call_next_transaction,
+    call_specific_transaction,
     mark_done,
     undo_done,
 )
@@ -460,6 +461,55 @@ class CtmsCoreTestCase(TestCase):
         res_search = self.client.get(f"/api/staff/transactions/?office={self.office.id}&q=Teresa")
         self.assertEqual(res_search.status_code, status.HTTP_200_OK)
         self.assertTrue(any(t['transaction_no'] == tx.transaction_no for t in res_search.data))
+
+    def test_assigned_officer_unavailable_until_completed(self):
+        # 1. Create two transactions
+        tx1 = create_transaction(self.office, self.service, client_name="Client 1")
+        tx2 = create_transaction(self.office, self.service, client_name="Client 2")
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        # 2. Assign Officer Camille Santos to tx1
+        res1 = self.client.post(f"/api/staff/transactions/{tx1.id}/assign/", {
+            "personnel": "Camille Santos"
+        })
+        self.assertEqual(res1.status_code, status.HTTP_200_OK)
+        tx1.refresh_from_db()
+        self.assertEqual(tx1.assigned_personnel, "Camille Santos")
+
+        # 3. Verify active_assignments in queue endpoint
+        res_queue = self.client.get(f"/api/staff/queue/?office={self.office.id}")
+        self.assertEqual(res_queue.status_code, status.HTTP_200_OK)
+        self.assertIn("active_assignments", res_queue.data)
+        self.assertTrue(any(a['assigned_personnel'] == "Camille Santos" for a in res_queue.data['active_assignments']))
+
+        # 4. Attempt to assign Camille Santos to tx2 -> Must fail with HTTP 400
+        res2 = self.client.post(f"/api/staff/transactions/{tx2.id}/assign/", {
+            "personnel": "Camille Santos"
+        })
+        self.assertEqual(res2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("currently assigned to Queue", res2.data['detail'])
+
+        # 5. Reassigning Camille Santos to tx1 itself is permitted
+        res1_re = self.client.post(f"/api/staff/transactions/{tx1.id}/assign/", {
+            "personnel": "Camille Santos"
+        })
+        self.assertEqual(res1_re.status_code, status.HTTP_200_OK)
+
+        # 6. Complete tx1 (call and mark done)
+        call_specific_transaction(tx1, counter=self.counter1)
+        mark_done(tx1, self.staff_user)
+        tx1.refresh_from_db()
+        self.assertEqual(tx1.status, 'done')
+
+        # 7. Now Camille Santos should automatically become available again for tx2!
+        res2_after = self.client.post(f"/api/staff/transactions/{tx2.id}/assign/", {
+            "personnel": "Camille Santos"
+        })
+        self.assertEqual(res2_after.status_code, status.HTTP_200_OK)
+        tx2.refresh_from_db()
+        self.assertEqual(tx2.assigned_personnel, "Camille Santos")
+
 
 
 

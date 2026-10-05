@@ -227,6 +227,66 @@ export default function StaffQueue() {
     });
   }, [officePersonnel, txDivNorm]);
 
+  // Build a map of officers who are currently assigned to active clients (waiting, serving, pending)
+  // excluding the transaction currently being edited/reassigned (assignTx)
+  const busyPersonnelMap = useMemo(() => {
+    const map = new Map(); // key: lowercase normalized name, value: { queue_no, status, txId, rawName }
+
+    const registerAssignment = (tx) => {
+      if (!tx || !tx.assigned_personnel) return;
+      // Skip the current transaction being assigned/viewed
+      if (assignTx && String(tx.id) === String(assignTx.id)) return;
+
+      const status = tx.status?.toLowerCase();
+      // Only active transactions block the officer from reassignment
+      if (['waiting', 'serving', 'pending'].includes(status)) {
+        const raw = String(tx.assigned_personnel).trim();
+        const norm = raw.toLowerCase();
+        if (norm && !map.has(norm)) {
+          map.set(norm, {
+            queue_no: tx.queue_no,
+            status: tx.status,
+            txId: tx.id,
+            rawName: raw,
+          });
+        }
+      }
+    };
+
+    if (Array.isArray(queueData.active_assignments)) {
+      queueData.active_assignments.forEach(registerAssignment);
+    }
+    (queueData.waiting || []).forEach(registerAssignment);
+    (queueData.serving || []).forEach(registerAssignment);
+    (queueData.pending || []).forEach(registerAssignment);
+
+    return map;
+  }, [queueData, assignTx]);
+
+  const getBusyInfo = useCallback((nameOrObj) => {
+    if (!nameOrObj) return null;
+    if (typeof nameOrObj === 'string') {
+      const clean = nameOrObj.trim().toLowerCase();
+      return busyPersonnelMap.get(clean) || null;
+    }
+    const name = nameOrObj.full_name?.trim().toLowerCase();
+    if (name && busyPersonnelMap.has(name)) return busyPersonnelMap.get(name);
+    const empId = nameOrObj.employee_id?.trim().toLowerCase();
+    if (empId && busyPersonnelMap.has(empId)) return busyPersonnelMap.get(empId);
+    return null;
+  }, [busyPersonnelMap]);
+
+  // Check if currently selected / typed name matches an unavailable / busy officer
+  const matchedBusyOfficer = useMemo(() => {
+    if (!assignPersonnelName.trim()) return null;
+    return getBusyInfo(assignPersonnelName);
+  }, [assignPersonnelName, getBusyInfo]);
+
+  // Count available eligible personnel
+  const availableEligiblePersonnel = useMemo(() => {
+    return eligiblePersonnel.filter(p => !getBusyInfo(p));
+  }, [eligiblePersonnel, getBusyInfo]);
+
   // Check if currently selected / typed name matches an ineligible personnel
   const matchedIneligible = useMemo(() => {
     if (!assignPersonnelName.trim() || ineligiblePersonnel.length === 0) return null;
@@ -251,11 +311,15 @@ export default function StaffQueue() {
     const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(d.name));
     const canUserSelfAssign = user?.is_superuser || !txDiv || loggedInUserDivs.includes(txDiv);
 
-    const defaultName = tx?.assigned_personnel || (
-      canUserSelfAssign
-        ? (user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user?.username || ''))
-        : ''
-    );
+    let defaultName = tx?.assigned_personnel || '';
+    if (!defaultName && canUserSelfAssign) {
+      const candidate = (user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user?.username || ''));
+      // Only prefill self if not currently busy with another client
+      const selfBusy = getBusyInfo(candidate);
+      if (!selfBusy) {
+        defaultName = candidate;
+      }
+    }
     setAssignPersonnelName(defaultName);
     setShowAssignModal(true);
   };
@@ -266,6 +330,11 @@ export default function StaffQueue() {
 
     if (matchedIneligible) {
       setError(`Cannot assign ${matchedIneligible.full_name}: assigned to ${matchedIneligible.division_names.join(', ')} and cannot be assigned to ${assignTx.division_name || 'other'} division services.`);
+      return;
+    }
+
+    if (matchedBusyOfficer) {
+      setError(`Officer ${matchedBusyOfficer.rawName || assignPersonnelName} is currently assigned to Queue #${matchedBusyOfficer.queue_no} and cannot be assigned to another client until their current transaction is completed.`);
       return;
     }
 
@@ -1846,7 +1915,12 @@ export default function StaffQueue() {
                 Select DOLE Personnel (Instant Real-time Search) *
               </label>
               <span style={{ fontSize: '0.75rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
-                {eligiblePersonnel.length} available in {assignTx?.division_name || 'division'}
+                {availableEligiblePersonnel.length} available in {assignTx?.division_name || 'division'}
+                {eligiblePersonnel.length - availableEligiblePersonnel.length > 0 && (
+                  <span style={{ color: '#b91c1c', marginLeft: '0.35rem' }}>
+                    ({eligiblePersonnel.length - availableEligiblePersonnel.length} busy)
+                  </span>
+                )}
               </span>
             </div>
             <SearchablePersonnelSelect
@@ -1856,6 +1930,7 @@ export default function StaffQueue() {
               placeholder={`-- Select ${assignTx?.division_name || ''} Personnel --`}
               searchPlaceholder={`Type to search ${assignTx?.division_name || ''} personnel...`}
               serviceDivision={assignTx?.division_name}
+              isPersonnelBusy={getBusyInfo}
             />
           </div>
 
@@ -1873,12 +1948,26 @@ export default function StaffQueue() {
                 width: '100%',
                 padding: '0.65rem 0.75rem',
                 fontSize: '0.95rem',
-                borderColor: matchedIneligible ? 'var(--dole-red)' : undefined,
+                borderColor: (matchedIneligible || matchedBusyOfficer) ? 'var(--dole-red)' : undefined,
               }}
             />
             <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
               Select from dropdown above or type name manually.
             </span>
+            {matchedBusyOfficer && (
+              <div style={{
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.65rem 0.85rem',
+                color: '#991b1b',
+                fontSize: '0.84rem',
+                marginTop: '0.5rem',
+                lineHeight: 1.45,
+              }}>
+                🚫 <strong>Officer Unavailable:</strong> <strong>{matchedBusyOfficer.rawName || assignPersonnelName}</strong> is currently assigned to <strong>Queue #{matchedBusyOfficer.queue_no}</strong> ({matchedBusyOfficer.status}) and cannot be assigned to another client until their current transaction is completed.
+              </div>
+            )}
           </div>
 
           {matchedIneligible && (
@@ -1908,9 +1997,13 @@ export default function StaffQueue() {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
                 {recentPersonnel.map((name, idx) => {
+                  const busyInfo = getBusyInfo(name);
+                  const isBusy = Boolean(busyInfo);
                   const isIneligible = ineligiblePersonnel.some(
                     p => p.full_name?.toLowerCase().trim() === name.toLowerCase().trim()
                   );
+                  const isDisabled = isBusy || isIneligible;
+
                   return (
                     <div
                       key={idx}
@@ -1920,38 +2013,53 @@ export default function StaffQueue() {
                         borderRadius: '20px',
                         backgroundColor: assignPersonnelName === name
                           ? 'rgba(3, 5, 186, 0.1)'
-                          : isIneligible
+                          : isDisabled
                           ? '#f1f5f9'
                           : '#f8fafc',
                         border: assignPersonnelName === name
                           ? '1.5px solid var(--dole-blue)'
-                          : isIneligible
+                          : isDisabled
                           ? '1px dashed #cbd5e1'
                           : '1px solid #cbd5e1',
-                        opacity: isIneligible ? 0.6 : 1,
+                        opacity: isDisabled ? 0.6 : 1,
                         overflow: 'hidden',
                         transition: 'all 0.15s ease',
                       }}
                     >
                       <button
                         type="button"
-                        onClick={() => setAssignPersonnelName(name)}
+                        disabled={isDisabled}
+                        onClick={() => {
+                          if (!isDisabled) setAssignPersonnelName(name);
+                        }}
                         style={{
                           border: 'none',
                           background: 'transparent',
                           padding: '0.25rem 0.55rem',
-                          cursor: 'pointer',
+                          cursor: isDisabled ? 'not-allowed' : 'pointer',
                           fontWeight: assignPersonnelName === name ? 700 : 500,
-                          color: assignPersonnelName === name ? 'var(--dole-blue)' : 'var(--text-primary)',
+                          color: assignPersonnelName === name
+                            ? 'var(--dole-blue)'
+                            : isDisabled
+                            ? '#64748b'
+                            : 'var(--text-primary)',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '0.35rem',
                           fontSize: '0.8rem',
                         }}
-                        title={isIneligible ? `Cannot assign: belongs to another division` : `Select ${name}`}
+                        title={
+                          isBusy
+                            ? `Unavailable: Currently assigned to Queue #${busyInfo.queue_no} (${busyInfo.status})`
+                            : isIneligible
+                            ? `Cannot assign: belongs to another division`
+                            : `Select ${name}`
+                        }
                       >
-                        <span>{isIneligible ? '🚫' : '👤'}</span>
-                        <span style={{ textDecoration: isIneligible ? 'line-through' : 'none' }}>{name}</span>
+                        <span>{isDisabled ? '🚫' : '👤'}</span>
+                        <span style={{ textDecoration: isDisabled ? 'line-through' : 'none' }}>
+                          {name}
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -1997,7 +2105,7 @@ export default function StaffQueue() {
             </button>
             <button
               type="submit"
-              disabled={actionLoading || !assignPersonnelName.trim() || Boolean(matchedIneligible)}
+              disabled={actionLoading || !assignPersonnelName.trim() || Boolean(matchedIneligible) || Boolean(matchedBusyOfficer)}
               className="btn btn-primary"
               style={{ fontWeight: 700 }}
             >

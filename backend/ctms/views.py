@@ -525,11 +525,27 @@ class StaffQueueView(APIView):
         waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
         pending_qs = pending_qs.order_by('-is_priority', '-called_at', 'checked_in_at')
 
+        # Retrieve all currently active assignments in this office across all counters
+        active_assignments = list(
+            CtmsTransaction.objects.filter(
+                office=office,
+                status__in=[
+                    CtmsTransaction.STATUS_WAITING,
+                    CtmsTransaction.STATUS_SERVING,
+                    CtmsTransaction.STATUS_PENDING,
+                ],
+            )
+            .exclude(assigned_personnel__isnull=True)
+            .exclude(assigned_personnel='')
+            .values('id', 'queue_no', 'transaction_no', 'status', 'assigned_personnel')
+        )
+
         return Response({
             "office": CsmOfficeSerializer(office).data,
             "waiting": StaffTransactionSerializer(waiting_qs, many=True).data,
             "serving": StaffTransactionSerializer(serving_qs, many=True).data,
             "pending": StaffTransactionSerializer(pending_qs, many=True).data,
+            "active_assignments": active_assignments,
             "counters": CtmsCounterSerializer(counters_qs, many=True).data,
             "divisions": CsmDivisionSerializer(divisions_data, many=True).data,
         })
@@ -585,6 +601,50 @@ def validate_personnel_division_assignment(tx, personnel_name_or_id):
             return False, f"Cannot assign {personnel.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {tx.service.name} ({tx.service.division.name})."
 
     return True, None
+
+
+def validate_personnel_availability(office, personnel_name_or_id, current_tx_id=None):
+    """
+    Validates that an officer is not currently assigned to another active client.
+    An officer is unavailable if they are currently assigned to any transaction with
+    status 'waiting', 'serving', or 'pending' in the same office.
+    Once that transaction is completed (done), cancelled, or no-show, they become available again.
+    """
+    if not personnel_name_or_id or not str(personnel_name_or_id).strip():
+        return True, None, None
+
+    clean_str = str(personnel_name_or_id).strip().lower()
+
+    # Active transactions in the office
+    active_qs = CtmsTransaction.objects.filter(
+        office=office,
+        status__in=[
+            CtmsTransaction.STATUS_WAITING,
+            CtmsTransaction.STATUS_SERVING,
+            CtmsTransaction.STATUS_PENDING,
+        ],
+    ).exclude(assigned_personnel__isnull=True).exclude(assigned_personnel='')
+
+    if current_tx_id:
+        active_qs = active_qs.exclude(pk=current_tx_id)
+
+    # Collect known aliases for personnel
+    candidate_names = {clean_str}
+    personnel = DolePersonnel.objects.filter(
+        models.Q(employee_id__iexact=clean_str) | models.Q(first_name__iexact=clean_str)
+    ).first()
+    if personnel:
+        candidate_names.add(personnel.full_name.strip().lower())
+        if personnel.employee_id:
+            candidate_names.add(personnel.employee_id.strip().lower())
+
+    for active_tx in active_qs:
+        assigned_clean = (active_tx.assigned_personnel or '').strip().lower()
+        if assigned_clean in candidate_names:
+            status_text = active_tx.get_status_display()
+            return False, f"Officer '{active_tx.assigned_personnel}' is currently assigned to Queue #{active_tx.queue_no} ({status_text}) and cannot be assigned to another client until their current transaction is completed.", active_tx
+
+    return True, None, None
 
 
 class StaffCreateWalkinView(APIView):
@@ -744,6 +804,11 @@ class StaffTransactionActionView(APIView):
                 valid, err_msg = validate_personnel_division_assignment(tx, clean_personnel)
                 if not valid:
                     return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
+
+                avail, avail_err, _ = validate_personnel_availability(tx.office, clean_personnel, current_tx_id=tx.pk)
+                if not avail:
+                    return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
+
                 tx = services.assign_personnel_to_transaction(tx, clean_personnel)
 
             elif action == 'call':

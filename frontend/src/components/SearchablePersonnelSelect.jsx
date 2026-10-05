@@ -22,6 +22,7 @@ export default function SearchablePersonnelSelect({
   disabled = false,
   dropDirection = 'auto',
   maxListHeight = '240px',
+  isPersonnelBusy = null,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
@@ -163,7 +164,9 @@ export default function SearchablePersonnelSelect({
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (filteredPersonnel[highlightedIndex]) {
-        handleSelect(filteredPersonnel[highlightedIndex]);
+        const p = filteredPersonnel[highlightedIndex];
+        if (isPersonnelBusy && isPersonnelBusy(p)) return;
+        handleSelect(p);
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -172,6 +175,7 @@ export default function SearchablePersonnelSelect({
   };
 
   const handleSelect = (personnelObj) => {
+    if (isPersonnelBusy && isPersonnelBusy(personnelObj)) return;
     if (onChange) {
       onChange(personnelObj.full_name, personnelObj);
     }
@@ -402,27 +406,35 @@ export default function SearchablePersonnelSelect({
           </div>
 
           {/* Results Summary Bar */}
-          <div
-            style={{
-              padding: '0.35rem 0.75rem',
-              backgroundColor: '#f1f5f9',
-              fontSize: '0.74rem',
-              color: '#64748b',
-              fontWeight: 600,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              borderBottom: '1px solid #e2e8f0',
-            }}
-          >
-            <span>
-              {filteredPersonnel.length} {filteredPersonnel.length === 1 ? 'personnel' : 'personnel'} available
-              {serviceDivision ? ` under ${serviceDivision}` : ''}
-            </span>
-            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-              ↑↓ Navigate · ↵ Select
-            </span>
-          </div>
+          {(() => {
+            const busyCount = isPersonnelBusy
+              ? filteredPersonnel.filter((p) => Boolean(isPersonnelBusy(p))).length
+              : 0;
+            const availableCount = filteredPersonnel.length - busyCount;
+            return (
+              <div
+                style={{
+                  padding: '0.35rem 0.75rem',
+                  backgroundColor: '#f1f5f9',
+                  fontSize: '0.74rem',
+                  color: '#64748b',
+                  fontWeight: 600,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid #e2e8f0',
+                }}
+              >
+                <span>
+                  {availableCount} available{busyCount > 0 ? ` (${busyCount} busy)` : ''}
+                  {serviceDivision ? ` under ${serviceDivision}` : ''}
+                </span>
+                <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                  ↑↓ Navigate · ↵ Select
+                </span>
+              </div>
+            );
+          })()}
 
           {/* Filtered Personnel List */}
           <div
@@ -462,26 +474,38 @@ export default function SearchablePersonnelSelect({
               filteredPersonnel.map((p, index) => {
                 const isSelected = selectedPersonnel?.id === p.id || value === p.full_name;
                 const isHighlighted = highlightedIndex === index;
+                const busyInfo = isPersonnelBusy ? isPersonnelBusy(p) : null;
+                const isBusy = Boolean(busyInfo);
 
                 return (
                   <div
                     key={p.id}
-                    onClick={() => handleSelect(p)}
+                    onClick={() => {
+                      if (!isBusy) handleSelect(p);
+                    }}
                     onMouseEnter={() => setHighlightedIndex(index)}
+                    title={
+                      isBusy
+                        ? `Unavailable: Currently assigned to Queue #${busyInfo.queue_no} (${busyInfo.status || 'Active'})`
+                        : `Select ${p.full_name}`
+                    }
                     style={{
                       padding: '0.65rem 0.85rem',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      backgroundColor: isHighlighted
+                      cursor: isBusy ? 'not-allowed' : 'pointer',
+                      opacity: isBusy ? 0.65 : 1,
+                      backgroundColor: isBusy
+                        ? '#f8fafc'
+                        : isHighlighted
                         ? 'rgba(3, 5, 186, 0.08)'
                         : isSelected
                         ? 'rgba(3, 5, 186, 0.04)'
                         : 'transparent',
                       borderLeft: isSelected
                         ? '3px solid var(--dole-blue)'
-                        : isHighlighted
+                        : isHighlighted && !isBusy
                         ? '3px solid #94a3b8'
                         : '3px solid transparent',
                       transition: 'background-color 0.1s ease',
@@ -490,7 +514,15 @@ export default function SearchablePersonnelSelect({
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                        <span style={{ fontSize: '0.85rem' }}>{isBusy ? '🚫' : '👤'}</span>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            fontSize: '0.9rem',
+                            color: isBusy ? '#64748b' : 'var(--text-primary)',
+                            textDecoration: isBusy ? 'line-through' : 'none',
+                          }}
+                        >
                           {p.full_name}
                         </span>
                         {p.employee_id && (
@@ -499,8 +531,8 @@ export default function SearchablePersonnelSelect({
                             style={{
                               fontSize: '0.72rem',
                               fontWeight: 700,
-                              color: 'var(--dole-blue)',
-                              backgroundColor: 'rgba(3, 5, 186, 0.06)',
+                              color: isBusy ? '#94a3b8' : 'var(--dole-blue)',
+                              backgroundColor: isBusy ? '#f1f5f9' : 'rgba(3, 5, 186, 0.06)',
                               padding: '0.1rem 0.35rem',
                               borderRadius: '3px',
                             }}
@@ -518,8 +550,28 @@ export default function SearchablePersonnelSelect({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-                      {p.division_names?.map((d) => getDivisionBadge(d))}
-                      {isSelected && (
+                      {isBusy ? (
+                        <span
+                          style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            color: '#b91c1c',
+                            backgroundColor: '#fef2f2',
+                            border: '1px solid #fecaca',
+                            padding: '0.15rem 0.45rem',
+                            borderRadius: '4px',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                          }}
+                        >
+                          🚫 Busy · #{busyInfo.queue_no}
+                        </span>
+                      ) : (
+                        p.division_names?.map((d) => getDivisionBadge(d))
+                      )}
+                      {isSelected && !isBusy && (
                         <span style={{ color: 'var(--dole-blue)', fontWeight: 800, fontSize: '0.9rem', marginLeft: '0.25rem' }}>
                           ✓
                         </span>
