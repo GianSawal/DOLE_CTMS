@@ -1029,7 +1029,7 @@ export default function StaffQueue() {
                           </span>
                         ) : (
                           <span style={{ color: '#b45309', fontWeight: 700 }}>
-                            ⚠️ No officer assigned yet {tx.default_officer && <span style={{ fontWeight: 600, fontSize: '0.8rem', color: '#64748b' }}>· Default: {tx.default_officer}</span>}
+                            ⚠️ No officer assigned yet
                           </span>
                         )}
                       </div>
@@ -1316,7 +1316,7 @@ export default function StaffQueue() {
                             </span>
                           ) : (
                             <span style={{ color: '#b45309', fontWeight: 700 }}>
-                              No officer assigned {tx.default_officer && <span style={{ fontWeight: 600, fontSize: '0.78rem', color: '#64748b' }}>· Default: {tx.default_officer}</span>}
+                              No officer assigned
                             </span>
                           )}
                         </div>
@@ -1509,7 +1509,7 @@ export default function StaffQueue() {
                             }}
                             title="Assign personnel to enable Call"
                           >
-                            👤 Assign {tx.default_officer ? `(${tx.default_officer})` : 'Officer'}
+                            👤 Assign Officer
                           </button>
                         )}
 
