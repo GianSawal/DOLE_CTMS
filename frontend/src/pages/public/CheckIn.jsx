@@ -23,6 +23,7 @@ export default function CheckIn() {
   const [isGroup, setIsGroup] = useState(false);
   const [representativeName, setRepresentativeName] = useState('');
   const [groupSize, setGroupSize] = useState('2');
+  const [memberNames, setMemberNames] = useState(['', '']);
   const [isPriority, setIsPriority] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsAgreedCheckbox, setTermsAgreedCheckbox] = useState(false);
@@ -53,11 +54,18 @@ export default function CheckIn() {
     }
 
     let finalClientName = '';
+    let groupMemberNamesList = null;
     if (isGroup) {
       const parsedSize = parseInt(groupSize, 10);
       const count = isNaN(parsedSize) || parsedSize < 2 ? 2 : parsedSize;
       const rep = isAnonymous ? 'Anonymous' : (representativeName.trim() || 'Anonymous');
       finalClientName = `${rep} (Group of ${count})`;
+      // Collect and validate member names
+      groupMemberNamesList = memberNames.slice(0, count).map(n => n.trim()).filter(Boolean);
+      if (groupMemberNamesList.length < count) {
+        setError(lang === 'fil' ? 'Mangyaring ilagay ang pangalan ng bawat miyembro ng grupo.' : 'Please enter the name for every group member.');
+        return;
+      }
     } else {
       finalClientName = isAnonymous ? 'Anonymous' : (clientName.trim() || null);
     }
@@ -70,6 +78,7 @@ export default function CheckIn() {
         service: Number(serviceId),
         client_name: finalClientName,
         is_priority: isPriority,
+        group_member_names: groupMemberNamesList,
       });
 
       // Redirect to client live ticket
@@ -433,9 +442,19 @@ export default function CheckIn() {
                           if (isAnonymous) {
                             setIsAnonymous(false);
                             setRepresentativeName('');
+                            setMemberNames(prev => {
+                              const updated = [...prev];
+                              if (updated[0] === 'Anonymous') updated[0] = '';
+                              return updated;
+                            });
                           } else {
                             setIsAnonymous(true);
                             setRepresentativeName('Anonymous');
+                            setMemberNames(prev => {
+                              const updated = [...prev];
+                              if (!updated[0] || updated[0] === representativeName) updated[0] = 'Anonymous';
+                              return updated;
+                            });
                           }
                         }}
                         className="btn btn-sm"
@@ -464,10 +483,18 @@ export default function CheckIn() {
                         required={!isAnonymous}
                         value={representativeName}
                         onChange={(e) => {
-                          setRepresentativeName(e.target.value);
-                          if (e.target.value.trim().toLowerCase() === 'anonymous') {
+                          const val = e.target.value;
+                          setRepresentativeName(val);
+                          setMemberNames(prev => {
+                            const updated = [...prev];
+                            if (!updated[0] || updated[0] === representativeName) {
+                              updated[0] = val;
+                            }
+                            return updated;
+                          });
+                          if (val.trim().toLowerCase() === 'anonymous') {
                             setIsAnonymous(true);
-                          } else if (isAnonymous && e.target.value.trim().toLowerCase() !== 'anonymous') {
+                          } else if (isAnonymous && val.trim().toLowerCase() !== 'anonymous') {
                             setIsAnonymous(false);
                           }
                         }}
@@ -485,6 +512,11 @@ export default function CheckIn() {
                           onClick={() => {
                             setIsAnonymous(false);
                             setRepresentativeName('');
+                            setMemberNames(prev => {
+                              const updated = [...prev];
+                              if (updated[0] === 'Anonymous') updated[0] = '';
+                              return updated;
+                            });
                           }}
                           style={{
                             position: 'absolute',
@@ -519,10 +551,21 @@ export default function CheckIn() {
                           id="group-size"
                           type="number"
                           min="2"
-                          max="999"
+                          max="50"
                           required
                           value={groupSize}
-                          onChange={(e) => setGroupSize(e.target.value)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setGroupSize(val);
+                            const size = parseInt(val, 10);
+                            if (!isNaN(size) && size >= 2 && size <= 50) {
+                              setMemberNames(prev => {
+                                const arr = [...prev];
+                                while (arr.length < size) arr.push('');
+                                return arr.slice(0, size);
+                              });
+                            }
+                          }}
                           placeholder={t.group_size_placeholder}
                           style={{
                             width: '100%',
@@ -548,6 +591,64 @@ export default function CheckIn() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Dynamic Member Name Inputs */}
+                  {(() => {
+                    const size = parseInt(groupSize, 10);
+                    const count = isNaN(size) || size < 2 ? 2 : Math.min(size, 50);
+                    return count > 0 && (
+                      <div style={{ marginBottom: '1.25rem' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, fontSize: '0.9rem' }}>
+                          👤 {t.member_names_label || 'Member Names'} *
+                        </label>
+                        <div style={{
+                          maxHeight: '240px',
+                          overflowY: 'auto',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.45rem',
+                          padding: '0.85rem',
+                          background: '#f8fafc',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-color)',
+                        }}>
+                          {Array.from({ length: count }).map((_, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                color: 'var(--text-muted)',
+                                minWidth: '22px',
+                                textAlign: 'right',
+                              }}>
+                                {i + 1}.
+                              </span>
+                              <input
+                                type="text"
+                                required
+                                value={memberNames[i] || ''}
+                                onChange={(e) => {
+                                  const updated = [...memberNames];
+                                  updated[i] = e.target.value;
+                                  setMemberNames(updated);
+                                }}
+                                placeholder={i === 0 ? `${t.member_placeholder || 'Member'} 1 (${t.representative_name || 'Representative'})` : `${t.member_placeholder || 'Member'} ${i + 1}`}
+                                style={{
+                                  flex: 1,
+                                  fontSize: '0.88rem',
+                                  padding: '0.45rem 0.7rem',
+                                  minHeight: '38px',
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                          {t.member_names_note || 'Enter the full name of each group member. All names are required.'}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </>
               )}
 

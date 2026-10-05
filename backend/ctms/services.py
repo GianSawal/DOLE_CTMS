@@ -12,7 +12,7 @@ from .models import (
     generate_token,
 )
 
-def create_transaction(office, service, client_name=None, is_priority=False, source='qr'):
+def create_transaction(office, service, client_name=None, is_priority=False, source='qr', group_member_names=None):
     """
     Creates a new queue transaction atomically.
     Generates queue_seq restartable daily per office, transaction_no, queue_no,
@@ -22,6 +22,13 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
         raise ValueError("Office is inactive.")
     if not service.is_active:
         raise ValueError("Service is inactive.")
+
+    # Clean up group_member_names: strip whitespace, filter out empty strings
+    cleaned_member_names = None
+    if group_member_names and isinstance(group_member_names, list):
+        cleaned_member_names = [name.strip() for name in group_member_names if name and name.strip()]
+        if not cleaned_member_names:
+            cleaned_member_names = None
 
     with transaction.atomic():
         # Lock office row if managed/available
@@ -63,6 +70,7 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
             queue_no=queue_no,
             is_priority=bool(is_priority),
             client_name=client_name.strip() if client_name else None,
+            group_member_names=cleaned_member_names,
             status=CtmsTransaction.STATUS_WAITING,
             source=source,
             checked_in_at=now,

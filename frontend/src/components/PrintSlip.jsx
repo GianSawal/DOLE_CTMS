@@ -69,6 +69,24 @@ export default function PrintSlip({ transaction, onClose }) {
               <strong>Client:</strong> {transaction.client_name}
             </div>
           )}
+          {transaction.group_member_names && Array.isArray(transaction.group_member_names) && transaction.group_member_names.length > 0 && (
+            <div style={{ marginTop: '0.15rem' }}>
+              <strong>Group Members ({transaction.group_member_names.length}):</strong>
+              <div style={{
+                marginTop: '0.2rem',
+                padding: '0.35rem 0.5rem',
+                backgroundColor: '#f8fafc',
+                borderRadius: '4px',
+                border: '1px solid #e2e8f0',
+                fontSize: '0.72rem',
+                lineHeight: '1.35',
+              }}>
+                {transaction.group_member_names.map((name, idx) => (
+                  <div key={idx}>• {name}</div>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <strong>Tx No:</strong> <span className="mono">{transaction.transaction_no}</span>
           </div>

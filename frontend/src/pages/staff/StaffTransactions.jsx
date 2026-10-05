@@ -88,6 +88,7 @@ export default function StaffTransactions() {
       (tx.queue_no && tx.queue_no.toLowerCase().includes(q)) ||
       (tx.transaction_no && tx.transaction_no.toLowerCase().includes(q)) ||
       (tx.client_name && tx.client_name.toLowerCase().includes(q)) ||
+      (Array.isArray(tx.group_member_names) && tx.group_member_names.some(m => m && m.toLowerCase().includes(q))) ||
       (tx.assigned_personnel && tx.assigned_personnel.toLowerCase().includes(q)) ||
       (tx.division_name && tx.division_name.toLowerCase().includes(q)) ||
       (tx.service_name && tx.service_name.toLowerCase().includes(q)) ||
@@ -443,7 +444,12 @@ export default function StaffTransactions() {
                         )}
                       </td>
                       <td style={{ padding: '0.875rem 1rem' }}>
-                        {tx.client_name || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Anonymous</span>}
+                        <div>{tx.client_name || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Anonymous</span>}</div>
+                        {Array.isArray(tx.group_member_names) && tx.group_member_names.length > 0 && (
+                          <div style={{ marginTop: '0.25rem', fontSize: '0.73rem', color: '#475569', lineHeight: 1.35 }}>
+                            <span style={{ fontWeight: 600, color: 'var(--dole-blue)' }}>👥 Members ({tx.group_member_names.length}):</span> {tx.group_member_names.join(', ')}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '0.875rem 1rem' }}>
                         {getStatusBadge(tx.status)}

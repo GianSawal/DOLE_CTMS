@@ -203,6 +203,7 @@ class PublicCheckinView(APIView):
                 client_name=data.get('client_name'),
                 is_priority=data.get('is_priority', False),
                 source=CtmsTransaction.SOURCE_QR,
+                group_member_names=data.get('group_member_names'),
             )
             return Response({
                 "ticket_token": tx.ticket_token,
@@ -612,6 +613,7 @@ class StaffCreateWalkinView(APIView):
                 client_name=data.get('client_name'),
                 is_priority=data.get('is_priority', False),
                 source=CtmsTransaction.SOURCE_STAFF,
+                group_member_names=data.get('group_member_names'),
             )
             log_audit_event(
                 action='CREATE_WALKIN',
@@ -628,6 +630,7 @@ class StaffCreateWalkinView(APIView):
                     'queue_no': tx.queue_no,
                     'transaction_no': tx.transaction_no,
                     'client_name': tx.client_name,
+                    'group_member_names': tx.group_member_names,
                     'is_priority': tx.is_priority,
                     'service': tx.service.name if tx.service else ''
                 }
@@ -881,6 +884,7 @@ class StaffTransactionsListView(APIView):
                 models.Q(transaction_no__icontains=q) |
                 models.Q(queue_no__icontains=q) |
                 models.Q(client_name__icontains=q) |
+                models.Q(group_member_names__icontains=q) |
                 models.Q(assigned_personnel__icontains=q) |
                 models.Q(service__division__name__icontains=q)
             )

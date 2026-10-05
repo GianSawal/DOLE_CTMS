@@ -210,6 +210,11 @@ class CheckinRequestSerializer(serializers.Serializer):
     service = serializers.PrimaryKeyRelatedField(queryset=CsmService.objects.filter(is_active=True))
     client_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     is_priority = serializers.BooleanField(required=False, default=False)
+    group_member_names = serializers.ListField(
+        child=serializers.CharField(max_length=200),
+        required=False, default=None, allow_null=True,
+        help_text="List of individual member names for group registrations"
+    )
 
 
 class TicketPublicSerializer(serializers.ModelSerializer):
@@ -286,6 +291,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'division_id',
             'is_priority',
             'client_name',
+            'group_member_names',
             'status',
             'counter',
             'counter_name',

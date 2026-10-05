@@ -424,5 +424,43 @@ class CtmsCoreTestCase(TestCase):
         self.assertEqual(res_filter.data['total_count'], 1)
         self.assertEqual(res_filter.data['results'][0]['action'], 'TEST_ACTION')
 
+    def test_group_registration_with_member_names(self):
+        # 1. Test public check-in endpoint with a group of 8 members
+        members_8 = [
+            "Juan Dela Cruz", "Maria Santos", "Pedro Penduko", "Ana Reyes",
+            "Carlos Garcia", "Elena Bautista", "Ramon Ramos", "Teresa Cruz"
+        ]
+        res_pub = self.client.post("/api/public/checkin/", {
+            "office": self.office.id,
+            "service": self.service.id,
+            "client_name": "Juan Dela Cruz (Group of 8)",
+            "is_priority": False,
+            "group_member_names": members_8,
+        })
+        self.assertEqual(res_pub.status_code, status.HTTP_201_CREATED)
+        tx_id = res_pub.data['transaction_no']
+        tx = CtmsTransaction.objects.get(transaction_no=tx_id)
+        self.assertEqual(len(tx.group_member_names), 8)
+        self.assertEqual(tx.group_member_names, members_8)
+
+        # 2. Test staff walkin endpoint with group members
+        self.client.force_authenticate(user=self.staff_user)
+        members_3 = ["Alice Bob", "Charlie Dave", "Eve Frank"]
+        res_walkin = self.client.post("/api/staff/transactions/walkin/", {
+            "office": self.office.id,
+            "service": self.service.id,
+            "client_name": "Alice Bob (Group of 3)",
+            "is_priority": False,
+            "group_member_names": members_3,
+        })
+        self.assertEqual(res_walkin.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res_walkin.data['group_member_names'], members_3)
+
+        # 3. Test searching transactions by a member name in staff history
+        res_search = self.client.get(f"/api/staff/transactions/?office={self.office.id}&q=Teresa")
+        self.assertEqual(res_search.status_code, status.HTTP_200_OK)
+        self.assertTrue(any(t['transaction_no'] == tx.transaction_no for t in res_search.data))
+
+
 
 

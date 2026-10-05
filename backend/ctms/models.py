@@ -263,6 +263,10 @@ class CtmsTransaction(models.Model):
     queue_no = models.CharField(max_length=8, help_text="e.g. 042 or P-007")
     is_priority = models.BooleanField(default=False, help_text="Senior / PWD / Pregnant")
     client_name = models.CharField(max_length=200, null=True, blank=True)
+    group_member_names = models.JSONField(
+        null=True, blank=True, default=None,
+        help_text="List of individual member names for group registrations, e.g. ['Juan', 'Maria', ...]"
+    )
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_WAITING, db_index=True)
     counter = models.ForeignKey(CtmsCounter, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default=SOURCE_QR)

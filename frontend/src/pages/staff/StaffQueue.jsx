@@ -29,6 +29,7 @@ export default function StaffQueue() {
   const [walkinIsGroup, setWalkinIsGroup] = useState(false);
   const [walkinRepName, setWalkinRepName] = useState('');
   const [walkinGroupSize, setWalkinGroupSize] = useState('2');
+  const [walkinMemberNames, setWalkinMemberNames] = useState(['', '']);
 
   // Slip modal state
   const [printedTx, setPrintedTx] = useState(null);
@@ -431,6 +432,7 @@ export default function StaffQueue() {
     if (!walkinService) return;
 
     let finalClientName = '';
+    let memberNames = null;
     if (walkinIsGroup) {
       const parsedSize = parseInt(walkinGroupSize, 10);
       const count = isNaN(parsedSize) || parsedSize < 2 ? 2 : parsedSize;
@@ -438,6 +440,12 @@ export default function StaffQueue() {
         ? 'Anonymous' 
         : walkinRepName.trim();
       finalClientName = `${rep} (Group of ${count})`;
+      // Collect all member names (trimmed, non-empty)
+      memberNames = walkinMemberNames.slice(0, count).map(n => n.trim()).filter(Boolean);
+      if (memberNames.length < count) {
+        setError('Please enter the name for every group member.');
+        return;
+      }
     } else {
       finalClientName = walkinName;
     }
@@ -450,6 +458,7 @@ export default function StaffQueue() {
         service: Number(walkinService),
         client_name: finalClientName,
         is_priority: walkinPriority,
+        group_member_names: memberNames,
       });
       setShowWalkinModal(false);
       setWalkinName('');
@@ -458,6 +467,7 @@ export default function StaffQueue() {
       setWalkinIsGroup(false);
       setWalkinRepName('');
       setWalkinGroupSize('2');
+      setWalkinMemberNames(['', '']);
       setPrintedTx(newTx);
       await fetchQueue();
     } catch (err) {
@@ -827,6 +837,35 @@ export default function StaffQueue() {
                           Client: <strong>{tx.client_name}</strong>
                         </div>
                       )}
+                      {Array.isArray(tx.group_member_names) && tx.group_member_names.length > 0 && (
+                        <div style={{
+                          marginTop: '0.35rem',
+                          padding: '0.45rem 0.65rem',
+                          backgroundColor: '#f1f5f9',
+                          borderRadius: '6px',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '0.78rem',
+                          color: '#334155'
+                        }}>
+                          <div style={{ fontWeight: 600, color: 'var(--dole-blue)', marginBottom: '0.25rem' }}>
+                            👥 Group Members ({tx.group_member_names.length}):
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                            {tx.group_member_names.map((name, idx) => (
+                              <span key={idx} style={{
+                                backgroundColor: '#ffffff',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '4px',
+                                padding: '0.15rem 0.45rem',
+                                fontSize: '0.74rem',
+                                fontWeight: 500,
+                              }}>
+                                {idx + 1}. {name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <circle cx="12" cy="12" r="10"></circle>
@@ -1084,6 +1123,34 @@ export default function StaffQueue() {
                         {tx.client_name && (
                           <div style={{ color: '#475569', fontSize: '0.85rem' }}>
                             Client: <strong>{tx.client_name}</strong>
+                          </div>
+                        )}
+                        {Array.isArray(tx.group_member_names) && tx.group_member_names.length > 0 && (
+                          <div style={{
+                            marginTop: '0.3rem',
+                            padding: '0.35rem 0.55rem',
+                            backgroundColor: '#f8fafc',
+                            borderRadius: '5px',
+                            border: '1px solid #e2e8f0',
+                            fontSize: '0.75rem',
+                            color: '#334155'
+                          }}>
+                            <div style={{ fontWeight: 600, color: 'var(--dole-blue)', marginBottom: '0.15rem', fontSize: '0.72rem' }}>
+                              👥 Members ({tx.group_member_names.length}):
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                              {tx.group_member_names.map((name, idx) => (
+                                <span key={idx} style={{
+                                  backgroundColor: '#ffffff',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: '3px',
+                                  padding: '0.1rem 0.35rem',
+                                  fontSize: '0.7rem',
+                                }}>
+                                  {idx + 1}. {name}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         )}
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -1352,6 +1419,11 @@ export default function StaffQueue() {
                         )}
                       </div>
                       {tx.client_name && <div style={{ marginTop: '0.2rem', color: '#475569' }}>Client: <strong>{tx.client_name}</strong></div>}
+                      {Array.isArray(tx.group_member_names) && tx.group_member_names.length > 0 && (
+                        <div style={{ marginTop: '0.25rem', fontSize: '0.74rem', color: '#475569' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--dole-blue)' }}>👥 Members:</span> {tx.group_member_names.join(', ')}
+                        </div>
+                      )}
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <circle cx="12" cy="12" r="10"></circle>
@@ -1508,7 +1580,19 @@ export default function StaffQueue() {
                   <label style={{ margin: 0 }}>Representative Name</label>
                   <button
                     type="button"
-                    onClick={() => setWalkinRepName(walkinRepName === 'Anonymous' ? '' : 'Anonymous')}
+                    onClick={() => {
+                      const next = walkinRepName === 'Anonymous' ? '' : 'Anonymous';
+                      setWalkinRepName(next);
+                      if (next === 'Anonymous') {
+                        setWalkinMemberNames(prev => {
+                          const updated = [...prev];
+                          if (!updated[0] || updated[0] === walkinRepName) {
+                            updated[0] = 'Anonymous';
+                          }
+                          return updated;
+                        });
+                      }
+                    }}
                     className="btn btn-sm"
                     style={{
                       minHeight: '26px',
@@ -1529,7 +1613,17 @@ export default function StaffQueue() {
                 <input
                   type="text"
                   value={walkinRepName}
-                  onChange={(e) => setWalkinRepName(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setWalkinRepName(val);
+                    setWalkinMemberNames(prev => {
+                      const updated = [...prev];
+                      if (!updated[0] || updated[0] === walkinRepName) {
+                        updated[0] = val;
+                      }
+                      return updated;
+                    });
+                  }}
                   placeholder="e.g. Maria Santos (Representative)"
                   style={{
                     backgroundColor: walkinRepName === 'Anonymous' ? 'rgba(3, 5, 186, 0.04)' : '#ffffff',
@@ -1549,10 +1643,21 @@ export default function StaffQueue() {
                     <input
                       type="number"
                       min="2"
-                      max="999"
+                      max="50"
                       required
                       value={walkinGroupSize}
-                      onChange={(e) => setWalkinGroupSize(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setWalkinGroupSize(val);
+                        const size = parseInt(val, 10);
+                        if (!isNaN(size) && size >= 2 && size <= 50) {
+                          setWalkinMemberNames(prev => {
+                            const arr = [...prev];
+                            while (arr.length < size) arr.push('');
+                            return arr.slice(0, size);
+                          });
+                        }
+                      }}
                       placeholder="e.g. 5"
                       style={{
                         width: '100%',
@@ -1576,6 +1681,64 @@ export default function StaffQueue() {
                   </span>
                 </div>
               </div>
+
+              {/* Dynamic Member Name Inputs */}
+              {(() => {
+                const size = parseInt(walkinGroupSize, 10);
+                const count = isNaN(size) || size < 2 ? 2 : Math.min(size, 50);
+                return count > 0 && (
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                      👤 Member Names *
+                    </label>
+                    <div style={{
+                      maxHeight: '220px',
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.4rem',
+                      padding: '0.75rem',
+                      background: '#f8fafc',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-color)',
+                    }}>
+                      {Array.from({ length: count }).map((_, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            color: 'var(--text-muted)',
+                            minWidth: '18px',
+                            textAlign: 'right',
+                          }}>
+                            {i + 1}.
+                          </span>
+                          <input
+                            type="text"
+                            required
+                            value={walkinMemberNames[i] || ''}
+                            onChange={(e) => {
+                              const updated = [...walkinMemberNames];
+                              updated[i] = e.target.value;
+                              setWalkinMemberNames(updated);
+                            }}
+                            placeholder={i === 0 ? "Member 1 (Representative full name)" : `Member ${i + 1} full name`}
+                            style={{
+                              flex: 1,
+                              fontSize: '0.85rem',
+                              padding: '0.4rem 0.65rem',
+                              minHeight: '36px',
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                      Enter the full name of each group member. All names are required.
+                    </p>
+                  </div>
+                );
+              })()}
             </>
           )}
 
