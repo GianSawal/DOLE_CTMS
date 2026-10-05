@@ -23,7 +23,6 @@ export default function SearchablePersonnelSelect({
   dropDirection = 'auto',
   maxListHeight = '240px',
   isPersonnelBusy = null,
-  defaultOfficerName = '',
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
@@ -551,25 +550,6 @@ export default function SearchablePersonnelSelect({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-                      {defaultOfficerName && p.full_name?.toLowerCase().trim() === defaultOfficerName.toLowerCase().trim() && (
-                        <span
-                          style={{
-                            fontSize: '0.7rem',
-                            fontWeight: 700,
-                            color: '#1d4ed8',
-                            backgroundColor: '#eff6ff',
-                            border: '1px solid #bfdbfe',
-                            padding: '0.12rem 0.4rem',
-                            borderRadius: '4px',
-                            whiteSpace: 'nowrap',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.2rem',
-                          }}
-                        >
-                          ⭐ Default
-                        </span>
-                      )}
                       {isBusy ? (
                         <span
                           style={{

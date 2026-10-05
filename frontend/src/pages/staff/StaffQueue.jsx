@@ -118,7 +118,6 @@ export default function StaffQueue() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignTx, setAssignTx] = useState(null);
   const [assignPersonnelName, setAssignPersonnelName] = useState('');
-  const [modalDefaultOfficer, setModalDefaultOfficer] = useState('');
   const [officePersonnel, setOfficePersonnel] = useState([]);
   const [recentPersonnel, setRecentPersonnel] = useState(() => {
     try {
@@ -384,31 +383,28 @@ export default function StaffQueue() {
   const handleOpenAssignModal = (tx) => {
     setAssignTx(tx);
 
-    // Pick a randomized default officer for this transaction based on service/division
-    const randomizedOfficer = pickRandomDefaultOfficer(tx, officePersonnel, busyPersonnelMap);
-    setModalDefaultOfficer(randomizedOfficer);
+    // If client already has an assigned officer, retain it;
+    // otherwise automatically prefill a single randomized available officer from this division
+    let defaultName = tx?.assigned_personnel ? tx.assigned_personnel.trim() : '';
+    if (!defaultName) {
+      defaultName = pickRandomDefaultOfficer(tx, officePersonnel, busyPersonnelMap);
+    }
 
     if (selectedOffice) {
       staffApi.getPersonnel({ office: selectedOffice, active_only: 'true' })
         .then(data => {
           const list = Array.isArray(data) ? data : [];
           setOfficePersonnel(list);
-          setModalDefaultOfficer(prev => {
-            if (prev) return prev;
-            const chosen = pickRandomDefaultOfficer(tx, list, busyPersonnelMap);
-            if (!tx.assigned_personnel) {
-              setAssignPersonnelName(chosen);
-            }
-            return chosen;
+          // If no officer was pre-filled yet, select an available one from the loaded list
+          setAssignPersonnelName(curr => {
+            if (curr && curr.trim()) return curr;
+            return pickRandomDefaultOfficer(tx, list, busyPersonnelMap);
           });
         })
         .catch(() => {});
     }
 
-    // If client already has an assigned officer, retain it; otherwise automatically display the randomized default officer
-    let defaultName = tx?.assigned_personnel ? tx.assigned_personnel.trim() : randomizedOfficer;
-
-    // Fallback: If no default officer found and staff can self-assign, fallback to self if available
+    // Fallback: If still no officer found and staff can self-assign, fallback to self if available
     if (!defaultName) {
       const txDiv = normalizeDiv(tx?.division_name);
       const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(d.name));
@@ -421,6 +417,7 @@ export default function StaffQueue() {
         }
       }
     }
+
     setAssignPersonnelName(defaultName);
     setShowAssignModal(true);
   };
@@ -428,7 +425,6 @@ export default function StaffQueue() {
   const handleShuffleDefaultOfficer = () => {
     if (!assignTx) return;
     const newOfficer = pickRandomDefaultOfficer(assignTx, officePersonnel, busyPersonnelMap);
-    setModalDefaultOfficer(newOfficer);
     setAssignPersonnelName(newOfficer);
   };
 
@@ -2014,121 +2010,45 @@ export default function StaffQueue() {
             <div style={{ fontSize: '0.82rem', color: '#1e3a8a', lineHeight: 1.4 }}>
               🔒 <strong>Division Access Policy:</strong> Only personnel assigned to the <strong>{assignTx?.division_name || 'same'}</strong> division are permitted to access and be assigned to this transaction.
             </div>
-
-            {modalDefaultOfficer && (
-              <div style={{
-                marginTop: '0.65rem',
-                padding: '0.5rem 0.75rem',
-                backgroundColor: '#ffffff',
-                border: '1.5px solid #93c5fd',
-                borderRadius: 'var(--radius-sm)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '0.5rem',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 700, color: '#1e40af', fontSize: '0.84rem' }}>
-                    ⭐ Default Officer (Randomized):
-                  </span>
-                  <strong style={{ color: '#0f172a', fontSize: '0.88rem' }}>{modalDefaultOfficer}</strong>
-                  {(() => {
-                    const busy = getBusyInfo(modalDefaultOfficer);
-                    if (busy) {
-                      return (
-                        <span style={{
-                          backgroundColor: '#fee2e2',
-                          color: '#b91c1c',
-                          fontSize: '0.74rem',
-                          fontWeight: 700,
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '4px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.2rem',
-                        }}>
-                          🚫 Unavailable (Handling Queue #{busy.queue_no})
-                        </span>
-                      );
-                    }
-                    return (
-                      <span style={{
-                        backgroundColor: '#dcfce7',
-                        color: '#15803d',
-                        fontSize: '0.74rem',
-                        fontWeight: 700,
-                        padding: '0.15rem 0.5rem',
-                        borderRadius: '4px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.2rem',
-                      }}>
-                        ✓ Available
-                      </span>
-                    );
-                  })()}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={handleShuffleDefaultOfficer}
-                    className="btn btn-ghost btn-xs"
-                    style={{
-                      fontSize: '0.76rem',
-                      fontWeight: 700,
-                      color: 'var(--dole-blue)',
-                      backgroundColor: '#f1f5f9',
-                      border: '1px solid #cbd5e1',
-                      padding: '0.2rem 0.55rem',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.25rem',
-                    }}
-                    title="Randomly pick another available officer for this division"
-                  >
-                    🔀 Pick Another
-                  </button>
-                  {assignPersonnelName !== modalDefaultOfficer && (
-                    <button
-                      type="button"
-                      onClick={() => setAssignPersonnelName(modalDefaultOfficer)}
-                      className="btn btn-ghost btn-xs"
-                      style={{
-                        fontSize: '0.76rem',
-                        fontWeight: 700,
-                        color: 'var(--dole-blue)',
-                        backgroundColor: '#eff6ff',
-                        border: '1px solid #bfdbfe',
-                        padding: '0.2rem 0.55rem',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Select Default
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Select Registered DOLE Personnel with Instant Real-Time Search */}
           <div style={{ marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.4rem' }}>
               <label style={{ fontWeight: 700, fontSize: '0.86rem', margin: 0 }}>
                 Select DOLE Personnel (Instant Real-time Search) *
               </label>
-              <span style={{ fontSize: '0.75rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
-                {availableEligiblePersonnel.length} available in {assignTx?.division_name || 'division'}
-                {eligiblePersonnel.length - availableEligiblePersonnel.length > 0 && (
-                  <span style={{ color: '#b91c1c', marginLeft: '0.35rem' }}>
-                    ({eligiblePersonnel.length - availableEligiblePersonnel.length} busy)
-                  </span>
-                )}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={handleShuffleDefaultOfficer}
+                  className="btn btn-ghost btn-xs"
+                  style={{
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    color: 'var(--dole-blue)',
+                    backgroundColor: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                  }}
+                  title="Randomly pick another available officer for this division"
+                >
+                  🔀 Pick Another Officer
+                </button>
+                <span style={{ fontSize: '0.75rem', color: 'var(--dole-blue)', fontWeight: 600 }}>
+                  {availableEligiblePersonnel.length} available in {assignTx?.division_name || 'division'}
+                  {eligiblePersonnel.length - availableEligiblePersonnel.length > 0 && (
+                    <span style={{ color: '#b91c1c', marginLeft: '0.35rem' }}>
+                      ({eligiblePersonnel.length - availableEligiblePersonnel.length} busy)
+                    </span>
+                  )}
+                </span>
+              </div>
             </div>
             <SearchablePersonnelSelect
               personnel={eligiblePersonnel}
@@ -2138,7 +2058,6 @@ export default function StaffQueue() {
               searchPlaceholder={`Type to search ${assignTx?.division_name || ''} personnel...`}
               serviceDivision={assignTx?.division_name}
               isPersonnelBusy={getBusyInfo}
-              defaultOfficerName={modalDefaultOfficer}
             />
           </div>
 
