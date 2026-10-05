@@ -8,7 +8,7 @@ import qrcode
 from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import models, transaction
+from django.db import models, transaction, IntegrityError
 from django.db.models import Avg, F, ExpressionWrapper, fields
 from django.http import HttpResponse, FileResponse, Http404
 from django.shortcuts import get_object_or_404
@@ -1281,60 +1281,91 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
         if User.objects.filter(username__iexact=username).exists():
             return Response({"detail": f"A user with username '{username}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Check if an existing employee record with this employee_id is already assigned to a different user
+        existing_emp = CtmsEmployee.objects.filter(employee_id__iexact=username).first()
+        if existing_emp and existing_emp.user is not None:
+            return Response(
+                {"detail": f"An employee profile with ID '{username}' is already linked to user '{existing_emp.user.username}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         is_superuser = (role in ('admin', 'administrator', 'true', '1'))
-        user = User.objects.create_user(
-            username=username,
-            password=password,
-            first_name=first_name,
-            last_name=last_name,
-            is_staff=True,
-            is_superuser=is_superuser,
-            is_active=True,
-        )
+        try:
+            user = User.objects.create_user(
+                username=username,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                is_staff=True,
+                is_superuser=is_superuser,
+                is_active=True,
+            )
 
-        office = None
-        if office_id:
-            office = get_object_or_404(CsmOffice, pk=office_id)
-            CtmsStaffOffice.objects.create(user=user, office=office)
+            office = None
+            if office_id:
+                office = get_object_or_404(CsmOffice, pk=office_id)
+                CtmsStaffOffice.objects.get_or_create(user=user, office=office)
 
-        # Create/link CtmsEmployee for backwards compatibility with legacy tests
-        emp = CtmsEmployee.objects.create(
-            user=user,
-            employee_id=username,
-            first_name=first_name,
-            middle_name=middle_name,
-            last_name=last_name,
-            position=position,
-            office=office or CsmOffice.objects.first(),
-            is_active=True,
-            must_change_password=True,
-        )
+            # Create or link CtmsEmployee for backwards compatibility with legacy tests
+            if existing_emp:
+                emp = existing_emp
+                emp.user = user
+                emp.employee_id = username
+                if first_name:
+                    emp.first_name = first_name
+                if middle_name:
+                    emp.middle_name = middle_name
+                if last_name:
+                    emp.last_name = last_name
+                if position:
+                    emp.position = position
+                if office:
+                    emp.office = office
+                elif not emp.office_id:
+                    emp.office = CsmOffice.objects.first()
+                emp.is_active = True
+                emp.must_change_password = True
+                emp.save()
+            else:
+                emp = CtmsEmployee.objects.create(
+                    user=user,
+                    employee_id=username,
+                    first_name=first_name,
+                    middle_name=middle_name,
+                    last_name=last_name,
+                    position=position,
+                    office=office or CsmOffice.objects.first(),
+                    is_active=True,
+                    must_change_password=True,
+                )
 
-        if division_ids:
-            id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
-            name_filters = models.Q(name__in=[str(x) for x in division_ids])
-            if 'TSSD1' in division_ids:
-                name_filters |= models.Q(name='TSSD 1')
-            if 'TSSD2' in division_ids:
-                name_filters |= models.Q(name='TSSD 2')
-            matched = CsmDivision.objects.filter(id_filters | name_filters)
-            emp.divisions.set(matched)
-            for div in matched:
-                CtmsStaffDivision.objects.get_or_create(user=user, division=div)
+            if division_ids:
+                id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
+                name_filters = models.Q(name__in=[str(x) for x in division_ids])
+                if 'TSSD1' in division_ids:
+                    name_filters |= models.Q(name='TSSD 1')
+                if 'TSSD2' in division_ids:
+                    name_filters |= models.Q(name='TSSD 2')
+                matched = CsmDivision.objects.filter(id_filters | name_filters)
+                emp.divisions.set(matched)
+                for div in matched:
+                    CtmsStaffDivision.objects.get_or_create(user=user, division=div)
 
-        serializer = self.get_serializer(user)
-        log_audit_event(
-            action='USER_CREATE',
-            category=CtmsAuditLog.CATEGORY_USER,
-            actor=request.user,
-            request=request,
-            target_type='User',
-            target_id=user.id,
-            target_repr=f"User '{user.username}'",
-            office=office,
-            description=f"Created user account '{user.username}' ({'Admin' if user.is_superuser else 'Staff'})"
-        )
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+            serializer = self.get_serializer(user)
+            log_audit_event(
+                action='USER_CREATE',
+                category=CtmsAuditLog.CATEGORY_USER,
+                actor=request.user,
+                request=request,
+                target_type='User',
+                target_id=user.id,
+                target_repr=f"User '{user.username}'",
+                office=office,
+                description=f"Created user account '{user.username}' ({'Admin' if user.is_superuser else 'Staff'})"
+            )
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except IntegrityError as err:
+            return Response({"detail": f"Database integrity error: {str(err)}"}, status=status.HTTP_400_BAD_REQUEST)
 
     @transaction.atomic
     def update(self, request, *args, **kwargs):
@@ -1355,12 +1386,13 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             user.set_password(str(data['temporary_password']).strip())
         user.save()
 
+        office = None
         if 'office' in data:
             office_id = data['office']
             CtmsStaffOffice.objects.filter(user=user).delete()
             if office_id:
                 office = get_object_or_404(CsmOffice, pk=office_id)
-                CtmsStaffOffice.objects.create(user=user, office=office)
+                CtmsStaffOffice.objects.get_or_create(user=user, office=office)
 
         if 'division_ids' in data:
             division_ids = data.get('division_ids', [])
@@ -1382,6 +1414,23 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
+        try:
+            if hasattr(user, 'employee_profile') and user.employee_profile:
+                emp = user.employee_profile
+                if 'first_name' in data:
+                    emp.first_name = user.first_name
+                if 'last_name' in data:
+                    emp.last_name = user.last_name
+                if 'position' in data:
+                    emp.position = str(data['position']).strip()
+                if office:
+                    emp.office = office
+                if 'is_active' in data:
+                    emp.is_active = user.is_active
+                emp.save()
+        except Exception:
+            pass
+
         serializer = self.get_serializer(user)
         log_audit_event(
             action='USER_UPDATE',
@@ -1402,6 +1451,11 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             return Response({"detail": "You cannot delete your own logged-in account."}, status=status.HTTP_400_BAD_REQUEST)
         username = user.username
         uid = user.id
+        try:
+            if hasattr(user, 'employee_profile') and user.employee_profile:
+                user.employee_profile.delete()
+        except Exception:
+            pass
         user.delete()
         log_audit_event(
             action='USER_DELETE',
@@ -1423,6 +1477,12 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             return Response({"detail": "New password cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(new_pwd)
         user.save()
+        try:
+            if hasattr(user, 'employee_profile') and user.employee_profile:
+                user.employee_profile.must_change_password = True
+                user.employee_profile.save(update_fields=['must_change_password'])
+        except Exception:
+            pass
         log_audit_event(
             action='USER_PASSWORD_RESET',
             category=CtmsAuditLog.CATEGORY_USER,
@@ -1445,6 +1505,12 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             return Response({"detail": "You cannot deactivate your own logged-in account."}, status=status.HTTP_400_BAD_REQUEST)
         user.is_active = not user.is_active
         user.save()
+        try:
+            if hasattr(user, 'employee_profile') and user.employee_profile:
+                user.employee_profile.is_active = user.is_active
+                user.employee_profile.save(update_fields=['is_active'])
+        except Exception:
+            pass
         log_audit_event(
             action='USER_TOGGLE_ACTIVE',
             category=CtmsAuditLog.CATEGORY_USER,
