@@ -104,6 +104,10 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
     office = serializers.SerializerMethodField()
     office_name = serializers.SerializerMethodField()
+    office_ids = serializers.SerializerMethodField()
+    office_names = serializers.SerializerMethodField()
+    all_offices_access = serializers.SerializerMethodField()
+    all_divisions_access = serializers.SerializerMethodField()
     division_ids = serializers.SerializerMethodField()
     division_names = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
@@ -124,6 +128,10 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
             'is_active',
             'office',
             'office_name',
+            'office_ids',
+            'office_names',
+            'all_offices_access',
+            'all_divisions_access',
             'division_ids',
             'division_names',
             'date_joined',
@@ -138,13 +146,45 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
         name = f"{obj.first_name} {obj.last_name}".strip()
         return name if name else obj.username
 
+    def get_all_offices_access(self, obj):
+        if not obj.is_superuser:
+            return False
+        total_active_offices = CsmOffice.objects.filter(is_active=True).count()
+        assigned_count = obj.staff_offices.count()
+        return assigned_count == 0 or (total_active_offices > 0 and assigned_count >= total_active_offices)
+
+    def get_all_divisions_access(self, obj):
+        if not obj.is_superuser:
+            return False
+        total_divisions = CsmDivision.objects.exclude(name__iexact='ALL').count()
+        assigned_count = obj.staff_divisions.count()
+        return assigned_count == 0 or (total_divisions > 0 and assigned_count >= total_divisions)
+
     def get_office(self, obj):
         staff_off = obj.staff_offices.select_related('office').first()
         return staff_off.office_id if staff_off else None
 
+    def get_office_ids(self, obj):
+        ids = list(obj.staff_offices.values_list('office_id', flat=True))
+        if not ids and obj.is_superuser:
+            return list(CsmOffice.objects.filter(is_active=True).values_list('id', flat=True).order_by('id'))
+        return ids
+
+    def get_office_names(self, obj):
+        names = list(obj.staff_offices.values_list('office__name', flat=True))
+        if not names and obj.is_superuser:
+            return list(CsmOffice.objects.filter(is_active=True).values_list('name', flat=True).order_by('name'))
+        return names
+
     def get_office_name(self, obj):
-        staff_off = obj.staff_offices.select_related('office').first()
-        return staff_off.office.name if staff_off else ("All Offices" if obj.is_superuser else "Unassigned")
+        if self.get_all_offices_access(obj):
+            return "All Offices"
+        office_names = self.get_office_names(obj)
+        if not office_names:
+            return "All Offices" if obj.is_superuser else "Unassigned"
+        if len(office_names) == 1:
+            return office_names[0]
+        return f"{office_names[0]} (+{len(office_names) - 1} more)"
 
     def get_division_ids(self, obj):
         ids = list(obj.staff_divisions.values_list('division_id', flat=True))

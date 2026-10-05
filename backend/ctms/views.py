@@ -118,11 +118,11 @@ def get_staff_offices(user):
     """Returns queryset of CsmOffices the staff user has access to."""
     if not user or not user.is_authenticated or not user.is_staff:
         return CsmOffice.objects.none()
-    if user.is_superuser:
-        return CsmOffice.objects.filter(is_active=True)
     assigned_ids = CtmsStaffOffice.objects.filter(user=user).values_list('office_id', flat=True)
     if assigned_ids.exists():
         return CsmOffice.objects.filter(id__in=assigned_ids, is_active=True)
+    if user.is_superuser:
+        return CsmOffice.objects.filter(is_active=True)
     # Strict RBAC: Staff without an explicit office assignment have access to NONE
     return CsmOffice.objects.none()
 
@@ -130,16 +130,16 @@ def get_staff_offices(user):
 def get_staff_divisions(user):
     """
     Returns queryset of CsmDivision the staff user is allowed to access.
-    Superusers have access to all divisions.
+    Superusers have access to all divisions unless assigned specific divisions.
     Staff members with assigned divisions have access to their assigned divisions.
     """
     if not user or not user.is_authenticated or not user.is_staff:
         return CsmDivision.objects.none()
-    if user.is_superuser:
-        return CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
     div_ids = CtmsStaffDivision.objects.filter(user=user).values_list('division_id', flat=True)
     if div_ids.exists():
         return CsmDivision.objects.filter(id__in=div_ids).exclude(name__iexact='ALL').order_by('id')
+    if user.is_superuser:
+        return CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
     try:
         profile = getattr(user, 'employee_profile', None)
         if profile and profile.divisions.exists():
@@ -1220,7 +1220,7 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
         qs = User.objects.all().prefetch_related('staff_offices__office', 'staff_divisions__division').order_by('-is_superuser', 'username')
         office_id = self.request.query_params.get('office')
         if office_id:
-            qs = qs.filter(staff_offices__office_id=office_id)
+            qs = qs.filter(models.Q(staff_offices__office_id=office_id) | models.Q(is_superuser=True))
         search = self.request.query_params.get('search')
         if search:
             qs = qs.filter(
@@ -1240,7 +1240,7 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                 names = ['IMSD']
             elif div_clean.upper() == 'MALSU':
                 names = ['MALSU']
-            qs = qs.filter(models.Q(staff_divisions__division__name__in=names) | models.Q(staff_divisions__division__id__in=[div_clean] if div_clean.isdigit() else []))
+            qs = qs.filter(models.Q(staff_divisions__division__name__in=names) | models.Q(staff_divisions__division__id__in=[div_clean] if div_clean.isdigit() else []) | models.Q(is_superuser=True))
         return qs.distinct()
 
     def get_object(self):
@@ -1271,7 +1271,10 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
         position = str(data.get('position', '')).strip()
         role = str(data.get('role', 'staff')).strip().lower()
         office_id = data.get('office')
+        office_ids = data.get('office_ids', [])
+        all_offices = bool(data.get('all_offices', False))
         division_ids = data.get('division_ids', [])
+        all_divisions = bool(data.get('all_divisions', False))
 
         if not username:
             return Response({"detail": "Username is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1301,10 +1304,30 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                 is_active=True,
             )
 
-            office = None
-            if office_id:
-                office = get_object_or_404(CsmOffice, pk=office_id)
-                CtmsStaffOffice.objects.get_or_create(user=user, office=office)
+            # Resolve Office assignments
+            target_offices = CsmOffice.objects.none()
+            if is_superuser:
+                if all_offices or office_ids == 'all' or (not office_ids and not office_id):
+                    target_offices = CsmOffice.objects.filter(is_active=True)
+                elif office_ids:
+                    if isinstance(office_ids, (list, tuple)):
+                        target_offices = CsmOffice.objects.filter(id__in=office_ids, is_active=True)
+                    elif str(office_ids).isdigit():
+                        target_offices = CsmOffice.objects.filter(id=office_ids, is_active=True)
+                elif office_id:
+                    target_offices = CsmOffice.objects.filter(id=office_id, is_active=True)
+            else:
+                if office_ids and isinstance(office_ids, (list, tuple)) and len(office_ids) > 0:
+                    target_offices = CsmOffice.objects.filter(id__in=office_ids, is_active=True)
+                elif office_id:
+                    target_offices = CsmOffice.objects.filter(id=office_id, is_active=True)
+                elif CsmOffice.objects.exists():
+                    target_offices = CsmOffice.objects.filter(id=CsmOffice.objects.first().id)
+
+            for off in target_offices:
+                CtmsStaffOffice.objects.get_or_create(user=user, office=off)
+
+            primary_office = target_offices.first() or CsmOffice.objects.filter(is_active=True).first()
 
             # Create or link CtmsEmployee for backwards compatibility with legacy tests
             if existing_emp:
@@ -1319,8 +1342,8 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                     emp.last_name = last_name
                 if position:
                     emp.position = position
-                if office:
-                    emp.office = office
+                if primary_office:
+                    emp.office = primary_office
                 elif not emp.office_id:
                     emp.office = CsmOffice.objects.first()
                 emp.is_active = True
@@ -1334,22 +1357,27 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                     middle_name=middle_name,
                     last_name=last_name,
                     position=position,
-                    office=office or CsmOffice.objects.first(),
+                    office=primary_office or CsmOffice.objects.first(),
                     is_active=True,
                     must_change_password=True,
                 )
 
-            if division_ids:
-                id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
+            # Resolve Division assignments
+            target_divisions = CsmDivision.objects.none()
+            if is_superuser and (all_divisions or division_ids == 'all' or not division_ids):
+                target_divisions = CsmDivision.objects.exclude(name__iexact='ALL')
+            elif division_ids:
+                id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and str(x).isdigit())])
                 name_filters = models.Q(name__in=[str(x) for x in division_ids])
                 if 'TSSD1' in division_ids:
                     name_filters |= models.Q(name='TSSD 1')
                 if 'TSSD2' in division_ids:
                     name_filters |= models.Q(name='TSSD 2')
-                matched = CsmDivision.objects.filter(id_filters | name_filters)
-                emp.divisions.set(matched)
-                for div in matched:
-                    CtmsStaffDivision.objects.get_or_create(user=user, division=div)
+                target_divisions = CsmDivision.objects.filter(id_filters | name_filters).exclude(name__iexact='ALL')
+
+            emp.divisions.set(target_divisions)
+            for div in target_divisions:
+                CtmsStaffDivision.objects.get_or_create(user=user, division=div)
 
             serializer = self.get_serializer(user)
             log_audit_event(
@@ -1360,7 +1388,7 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                 target_type='User',
                 target_id=user.id,
                 target_repr=f"User '{user.username}'",
-                office=office,
+                office=primary_office,
                 description=f"Created user account '{user.username}' ({'Admin' if user.is_superuser else 'Staff'})"
             )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -1386,31 +1414,50 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             user.set_password(str(data['temporary_password']).strip())
         user.save()
 
-        office = None
-        if 'office' in data:
-            office_id = data['office']
+        primary_office = None
+        if 'office_ids' in data or 'office' in data or 'all_offices' in data:
             CtmsStaffOffice.objects.filter(user=user).delete()
-            if office_id:
-                office = get_object_or_404(CsmOffice, pk=office_id)
-                CtmsStaffOffice.objects.get_or_create(user=user, office=office)
+            target_offices = CsmOffice.objects.none()
+            if user.is_superuser and (data.get('all_offices') or data.get('office_ids') == 'all'):
+                target_offices = CsmOffice.objects.filter(is_active=True)
+            elif 'office_ids' in data and data['office_ids']:
+                off_ids = data['office_ids']
+                if isinstance(off_ids, (list, tuple)):
+                    target_offices = CsmOffice.objects.filter(id__in=off_ids, is_active=True)
+                elif str(off_ids).isdigit():
+                    target_offices = CsmOffice.objects.filter(id=off_ids, is_active=True)
+            elif 'office' in data and data['office']:
+                target_offices = CsmOffice.objects.filter(id=data['office'], is_active=True)
+            elif user.is_superuser:
+                target_offices = CsmOffice.objects.filter(is_active=True)
 
-        if 'division_ids' in data:
-            division_ids = data.get('division_ids', [])
+            for off in target_offices:
+                CtmsStaffOffice.objects.get_or_create(user=user, office=off)
+            primary_office = target_offices.first()
+
+        if 'division_ids' in data or 'all_divisions' in data:
             CtmsStaffDivision.objects.filter(user=user).delete()
-            matched = CsmDivision.objects.none()
-            if division_ids:
-                id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
-                name_filters = models.Q(name__in=[str(x) for x in division_ids])
-                if 'TSSD1' in division_ids:
+            target_divisions = CsmDivision.objects.none()
+            if user.is_superuser and (data.get('all_divisions') or data.get('division_ids') == 'all'):
+                target_divisions = CsmDivision.objects.exclude(name__iexact='ALL')
+            elif 'division_ids' in data and data['division_ids']:
+                div_ids = data['division_ids']
+                id_filters = models.Q(id__in=[x for x in div_ids if isinstance(x, int) or (isinstance(x, str) and str(x).isdigit())])
+                name_filters = models.Q(name__in=[str(x) for x in div_ids])
+                if 'TSSD1' in div_ids:
                     name_filters |= models.Q(name='TSSD 1')
-                if 'TSSD2' in division_ids:
+                if 'TSSD2' in div_ids:
                     name_filters |= models.Q(name='TSSD 2')
-                matched = CsmDivision.objects.filter(id_filters | name_filters)
-                for div in matched:
-                    CtmsStaffDivision.objects.get_or_create(user=user, division=div)
+                target_divisions = CsmDivision.objects.filter(id_filters | name_filters).exclude(name__iexact='ALL')
+            elif user.is_superuser:
+                target_divisions = CsmDivision.objects.exclude(name__iexact='ALL')
+
+            for div in target_divisions:
+                CtmsStaffDivision.objects.get_or_create(user=user, division=div)
+
             try:
                 if hasattr(user, 'employee_profile') and user.employee_profile:
-                    user.employee_profile.divisions.set(matched)
+                    user.employee_profile.divisions.set(target_divisions)
             except Exception:
                 pass
 
@@ -1423,8 +1470,8 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                     emp.last_name = user.last_name
                 if 'position' in data:
                     emp.position = str(data['position']).strip()
-                if office:
-                    emp.office = office
+                if primary_office:
+                    emp.office = primary_office
                 if 'is_active' in data:
                     emp.is_active = user.is_active
                 emp.save()

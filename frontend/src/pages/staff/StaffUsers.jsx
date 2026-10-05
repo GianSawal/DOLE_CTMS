@@ -40,7 +40,10 @@ export default function StaffUsers() {
   const [lastName, setLastName] = useState('');
   const [role, setRole] = useState('staff'); // 'staff' | 'admin'
   const [officeId, setOfficeId] = useState('');
+  const [selectedOfficeIds, setSelectedOfficeIds] = useState([]);
+  const [allOfficesSelected, setAllOfficesSelected] = useState(false);
   const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
+  const [allDivisionsSelected, setAllDivisionsSelected] = useState(false);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -99,6 +102,72 @@ export default function StaffUsers() {
     return map;
   }, [divisions]);
 
+  // Handle role change (staff <-> admin)
+  const handleRoleChange = (newRole) => {
+    setRole(newRole);
+    if (newRole === 'admin') {
+      // By default when choosing an ADMIN role, grant access to all offices & all divisions
+      setAllOfficesSelected(true);
+      setSelectedOfficeIds(offices.map((o) => o.id));
+      setAllDivisionsSelected(true);
+      const allDivIds = divisions.map((d) => d.id);
+      setSelectedDivisionIds(
+        allDivIds.length > 0
+          ? allDivIds
+          : TARGET_DIVISIONS.map((td) => divisionMap[td.key] || divisionMap[td.alias]).filter(Boolean)
+      );
+    } else {
+      setAllOfficesSelected(false);
+      setAllDivisionsSelected(false);
+      if (selectedOfficeIds.length > 0) {
+        setOfficeId(selectedOfficeIds[0]);
+      } else if (offices.length > 0) {
+        setOfficeId(offices[0].id);
+      }
+    }
+  };
+
+  // Toggle individual office selection
+  const handleToggleOffice = (id) => {
+    setSelectedOfficeIds((prev) => {
+      let updated;
+      if (prev.includes(id)) {
+        updated = prev.filter((oId) => oId !== id);
+      } else {
+        updated = [...prev, id];
+      }
+      setAllOfficesSelected(updated.length === offices.length && offices.length > 0);
+      return updated;
+    });
+  };
+
+  // Toggle All Offices
+  const handleToggleAllOffices = () => {
+    if (allOfficesSelected) {
+      setAllOfficesSelected(false);
+      setSelectedOfficeIds([]);
+    } else {
+      setAllOfficesSelected(true);
+      setSelectedOfficeIds(offices.map((o) => o.id));
+    }
+  };
+
+  // Toggle All Divisions
+  const handleToggleAllDivisions = () => {
+    if (allDivisionsSelected) {
+      setAllDivisionsSelected(false);
+      setSelectedDivisionIds([]);
+    } else {
+      setAllDivisionsSelected(true);
+      const allDivIds = divisions.map((d) => d.id);
+      setSelectedDivisionIds(
+        allDivIds.length > 0
+          ? allDivIds
+          : TARGET_DIVISIONS.map((td) => divisionMap[td.key] || divisionMap[td.alias]).filter(Boolean)
+      );
+    }
+  };
+
   // Open Create Modal
   const openCreateModal = () => {
     setModalMode('create');
@@ -108,7 +177,10 @@ export default function StaffUsers() {
     setLastName('');
     setRole('staff');
     setOfficeId(offices[0]?.id || '');
+    setSelectedOfficeIds(offices[0] ? [offices[0].id] : []);
+    setAllOfficesSelected(false);
     setSelectedDivisionIds([]);
+    setAllDivisionsSelected(false);
     setPassword('');
     setShowPassword(false);
     setShowModal(true);
@@ -121,11 +193,42 @@ export default function StaffUsers() {
     setUsername(u.username || '');
     setFirstName(u.first_name || '');
     setLastName(u.last_name || '');
-    setRole(u.is_superuser ? 'admin' : 'staff');
-    setOfficeId(u.office || '');
+    const isAdmin = Boolean(u.is_superuser);
+    setRole(isAdmin ? 'admin' : 'staff');
 
-    const currentDivIds = u.division_ids || [];
-    setSelectedDivisionIds(currentDivIds);
+    // Office assignments
+    const userOffIds = Array.isArray(u.office_ids) && u.office_ids.length > 0
+      ? u.office_ids
+      : (u.office ? [u.office] : []);
+
+    if (isAdmin) {
+      const isAllOffices = Boolean(
+        u.all_offices_access ||
+        u.office_name === 'All Offices' ||
+        (userOffIds.length >= offices.length && offices.length > 0)
+      );
+      setAllOfficesSelected(isAllOffices);
+      setSelectedOfficeIds(isAllOffices ? offices.map((o) => o.id) : userOffIds);
+    } else {
+      setAllOfficesSelected(false);
+      setSelectedOfficeIds(userOffIds);
+      setOfficeId(u.office || offices[0]?.id || '');
+    }
+
+    // Division assignments
+    const currentDivIds = Array.isArray(u.division_ids) ? u.division_ids : [];
+    if (isAdmin) {
+      const isAllDivs = Boolean(
+        u.all_divisions_access ||
+        (currentDivIds.length >= divisions.length && divisions.length > 0)
+      );
+      setAllDivisionsSelected(isAllDivs);
+      setSelectedDivisionIds(isAllDivs ? divisions.map((d) => d.id) : currentDivIds);
+    } else {
+      setAllDivisionsSelected(false);
+      setSelectedDivisionIds(currentDivIds);
+    }
+
     setPassword('');
     setShowPassword(false);
     setShowModal(true);
@@ -144,11 +247,14 @@ export default function StaffUsers() {
     if (!targetId) return;
 
     setSelectedDivisionIds((prev) => {
+      let updated;
       if (prev.includes(targetId)) {
-        return prev.filter((id) => id !== targetId);
+        updated = prev.filter((id) => id !== targetId);
       } else {
-        return [...prev, targetId];
+        updated = [...prev, targetId];
       }
+      setAllDivisionsSelected(updated.length === TARGET_DIVISIONS.length && TARGET_DIVISIONS.length > 0);
+      return updated;
     });
   };
 
@@ -163,42 +269,71 @@ export default function StaffUsers() {
       showToast('Password is required for creating a new user account.', 'error');
       return;
     }
-    if (!officeId) {
-      showToast('Please select an Office.', 'error');
-      return;
+
+    const isAdmin = role === 'admin';
+    if (isAdmin) {
+      if (!allOfficesSelected && selectedOfficeIds.length === 0) {
+        showToast('Please select at least one Office for this Administrator account.', 'error');
+        return;
+      }
+    } else {
+      if (!officeId) {
+        showToast('Please select an Office.', 'error');
+        return;
+      }
+      if (selectedDivisionIds.length === 0) {
+        showToast('Please select at least one Division queue line.', 'error');
+        return;
+      }
     }
 
     setSubmitting(true);
     try {
+      const effectiveOfficeIds = isAdmin
+        ? (allOfficesSelected ? offices.map((o) => o.id) : selectedOfficeIds)
+        : [officeId];
+      const effectivePrimaryOffice = effectiveOfficeIds[0] || officeId || offices[0]?.id || null;
+      const effectiveDivisionIds = isAdmin
+        ? (allDivisionsSelected ? divisions.map((d) => d.id) : selectedDivisionIds)
+        : selectedDivisionIds;
+
+      const payload = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        role: role,
+        office: effectivePrimaryOffice,
+        office_ids: effectiveOfficeIds,
+        all_offices: isAdmin && allOfficesSelected,
+        division_ids: effectiveDivisionIds,
+        all_divisions: isAdmin && allDivisionsSelected,
+      };
+
       if (modalMode === 'create') {
-        const payload = {
-          username: username.trim(),
-          password: password.trim(),
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          role: role,
-          office: officeId,
-          division_ids: selectedDivisionIds,
-        };
+        payload.username = username.trim();
+        payload.password = password.trim();
         await staffApi.createEmployee(payload);
+
+        let officeDisplay = 'Assigned Office';
+        if (isAdmin) {
+          if (allOfficesSelected || effectiveOfficeIds.length >= offices.length) {
+            officeDisplay = 'All Offices (Full DOLE System Access)';
+          } else {
+            officeDisplay = `${effectiveOfficeIds.length} Assigned Office(s)`;
+          }
+        } else {
+          officeDisplay = offices.find((o) => String(o.id) === String(officeId))?.name || 'Assigned Office';
+        }
 
         setCreatedAccountInfo({
           name: `${firstName.trim()} ${lastName.trim()}`.trim() || username.trim(),
           username: username.trim(),
           password: password.trim(),
-          role: role === 'admin' ? 'Administrator' : 'Staff',
-          office: offices.find((o) => String(o.id) === String(officeId))?.name || 'Assigned Office',
+          role: isAdmin ? 'Administrator' : 'Staff',
+          office: officeDisplay,
         });
 
         showToast(`User account '${username.trim()}' created successfully!`);
       } else {
-        const payload = {
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          role: role,
-          office: officeId,
-          division_ids: selectedDivisionIds,
-        };
         if (password.trim()) {
           payload.password = password.trim();
         }
@@ -278,15 +413,22 @@ export default function StaffUsers() {
       const matchesSearch =
         !q ||
         (u.username && u.username.toLowerCase().includes(q)) ||
+        (u.full_name && u.full_name.toLowerCase().includes(q)) ||
         (u.first_name && u.first_name.toLowerCase().includes(q)) ||
         (u.last_name && u.last_name.toLowerCase().includes(q)) ||
         (u.office_name && u.office_name.toLowerCase().includes(q));
 
-      const matchesOffice = !officeFilter || String(u.office) === String(officeFilter);
+      const matchesOffice =
+        !officeFilter ||
+        (u.is_superuser && (u.all_offices_access || u.office_name === 'All Offices')) ||
+        String(u.office) === String(officeFilter) ||
+        (Array.isArray(u.office_ids) && u.office_ids.map(String).includes(String(officeFilter)));
 
       const matchesDivision =
         !divisionFilter ||
-        (u.division_names && u.division_names.some((d) => d.toLowerCase().includes(divisionFilter.toLowerCase())));
+        (u.is_superuser && (u.all_divisions_access || !u.division_ids || u.division_ids.length >= TARGET_DIVISIONS.length)) ||
+        (Array.isArray(u.division_names) && u.division_names.some((d) => d.toLowerCase() === divisionFilter.toLowerCase())) ||
+        (Array.isArray(u.division_ids) && u.division_ids.map(String).includes(String(divisionFilter)));
 
       return matchesSearch && matchesOffice && matchesDivision;
     });
@@ -1057,18 +1199,60 @@ export default function StaffUsers() {
 
                         {/* Office */}
                         <td style={{ padding: '0.9rem 1.15rem' }}>
-                          <div style={{ fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#94a3b8' }}>
-                              <path d="M3 21h18"></path>
-                              <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
-                            </svg>
-                            <span>{u.office_name}</span>
-                          </div>
+                          {u.is_superuser && (u.all_offices_access || u.office_name === 'All Offices' || (Array.isArray(u.office_ids) && offices.length > 0 && u.office_ids.length >= offices.length)) ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                padding: '0.25rem 0.65rem',
+                                borderRadius: '9999px',
+                                backgroundColor: '#eff6ff',
+                                color: '#1d4ed8',
+                                border: '1px solid #bfdbfe',
+                              }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M3 21h18"></path>
+                                <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                              </svg>
+                              <span>All Offices Access</span>
+                            </span>
+                          ) : u.office_names && u.office_names.length > 1 ? (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', maxWidth: '280px' }}>
+                              {u.office_names.map((offName) => (
+                                <span
+                                  key={offName}
+                                  style={{
+                                    fontSize: '0.73rem',
+                                    fontWeight: 600,
+                                    padding: '0.15rem 0.5rem',
+                                    borderRadius: '4px',
+                                    backgroundColor: '#f1f5f9',
+                                    color: '#334155',
+                                    border: '1px solid #e2e8f0',
+                                  }}
+                                >
+                                  {offName}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#94a3b8' }}>
+                                <path d="M3 21h18"></path>
+                                <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                              </svg>
+                              <span>{u.office_name}</span>
+                            </div>
+                          )}
                         </td>
 
                         {/* Assigned Divisions */}
                         <td style={{ padding: '0.9rem 1.15rem' }}>
-                          {u.is_superuser ? (
+                          {u.is_superuser && (u.all_divisions_access || !u.division_ids || u.division_ids.length >= TARGET_DIVISIONS.length) ? (
                             <span
                               style={{
                                 display: 'inline-flex',
@@ -1296,7 +1480,7 @@ export default function StaffUsers() {
             style={{
               backgroundColor: 'var(--bg-card)',
               borderRadius: 'var(--radius-lg)',
-              maxWidth: '600px',
+              maxWidth: '660px',
               width: '100%',
               maxHeight: '92vh',
               overflowY: 'auto',
@@ -1351,8 +1535,8 @@ export default function StaffUsers() {
                   </h2>
                   <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     {modalMode === 'create'
-                      ? 'Configure login credentials, role, office, and division queue access.'
-                      : 'Update account details, role, and division queue permissions.'}
+                      ? 'Configure login credentials, role, office access, and division queue permissions.'
+                      : 'Update account details, role, and office/division queue permissions.'}
                   </p>
                 </div>
               </div>
@@ -1411,7 +1595,7 @@ export default function StaffUsers() {
                   </label>
                   <select
                     value={role}
-                    onChange={(e) => setRole(e.target.value)}
+                    onChange={(e) => handleRoleChange(e.target.value)}
                     style={{
                       width: '100%',
                       padding: '0.6rem 0.8rem',
@@ -1465,32 +1649,153 @@ export default function StaffUsers() {
                 </div>
               </div>
 
-              {/* Row 3: Office Field */}
+              {/* Row 3: Office Field (Dropdown for Staff, Checkboxes with All Offices for Admin) */}
               <div>
-                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                  DOLE Office Assignment <span style={{ color: 'var(--dole-red)' }}>*</span>
-                </label>
-                <select
-                  required
-                  value={officeId}
-                  onChange={(e) => setOfficeId(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.65rem 0.85rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-color)',
-                    fontSize: '0.9rem',
-                    backgroundColor: '#fff',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="" disabled>-- Select DOLE Office --</option>
-                  {offices.map((off) => (
-                    <option key={off.id} value={off.id}>
-                      {off.name} {off.code ? `(${off.code})` : ''}
-                    </option>
-                  ))}
-                </select>
+                {role === 'admin' ? (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div>
+                        <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', margin: 0 }}>
+                          DOLE Office Access Permissions <span style={{ color: 'var(--dole-red)' }}>*</span>
+                        </label>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                          Choose which DOLE offices this Administrator can manage and access.
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleToggleAllOffices}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          cursor: 'pointer',
+                          backgroundColor: allOfficesSelected ? '#1d4ed8' : '#ffffff',
+                          color: allOfficesSelected ? '#ffffff' : '#1d4ed8',
+                          padding: '0.3rem 0.75rem',
+                          borderRadius: '6px',
+                          border: '1.5px solid #1d4ed8',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          userSelect: 'none',
+                          transition: 'all 0.15s ease',
+                          minHeight: 'auto',
+                          boxShadow: allOfficesSelected ? '0 2px 6px rgba(29, 78, 216, 0.25)' : 'none',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={allOfficesSelected}
+                          onChange={() => {}} // Handled by button click
+                          style={{ width: '15px', height: '15px', accentColor: '#1d4ed8', cursor: 'pointer' }}
+                        />
+                        <span>All Offices Access ({offices.length})</span>
+                      </button>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                        gap: '0.65rem',
+                        maxHeight: '220px',
+                        overflowY: 'auto',
+                        padding: '0.2rem',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: '#fafafa',
+                      }}
+                    >
+                      {offices.map((off) => {
+                        const isChecked = allOfficesSelected || selectedOfficeIds.includes(off.id);
+                        return (
+                          <div
+                            key={off.id}
+                            onClick={() => handleToggleOffice(off.id)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '0.65rem',
+                              padding: '0.65rem 0.85rem',
+                              borderRadius: 'var(--radius-sm)',
+                              border: isChecked ? '2px solid #1d4ed8' : '1px solid #e2e8f0',
+                              backgroundColor: isChecked ? '#eff6ff' : '#ffffff',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {}}
+                                style={{ width: '16px', height: '16px', accentColor: '#1d4ed8', cursor: 'pointer', flexShrink: 0 }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: '0.84rem',
+                                  fontWeight: isChecked ? 700 : 500,
+                                  color: isChecked ? '#1e40af' : 'var(--text-primary)',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                title={off.name}
+                              >
+                                {off.name}
+                              </span>
+                            </div>
+                            {off.code && (
+                              <span
+                                style={{
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  padding: '0.15rem 0.45rem',
+                                  borderRadius: '4px',
+                                  backgroundColor: isChecked ? '#dbeafe' : '#f1f5f9',
+                                  color: isChecked ? '#1d4ed8' : '#64748b',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {off.code}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
+                      DOLE Office Assignment <span style={{ color: 'var(--dole-red)' }}>*</span>
+                    </label>
+                    <select
+                      required
+                      value={officeId}
+                      onChange={(e) => setOfficeId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border-color)',
+                        fontSize: '0.9rem',
+                        backgroundColor: '#fff',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="" disabled>-- Select DOLE Office --</option>
+                      {offices.map((off) => (
+                        <option key={off.id} value={off.id}>
+                          {off.name} {off.code ? `(${off.code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* Row 4: Password Field (Required for create, optional for edit) */}
@@ -1551,13 +1856,47 @@ export default function StaffUsers() {
 
               {/* Row 5: Division Queue Access Checklist */}
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', margin: 0 }}>
-                    Assigned Division(s) & Queue Counter Lines
-                  </label>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    Dictates which division queue services this staff can serve
-                  </span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', margin: 0 }}>
+                      Assigned Division(s) & Queue Counter Lines
+                    </label>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      Dictates which division queue services this account can manage and serve.
+                    </div>
+                  </div>
+
+                  {role === 'admin' && (
+                    <button
+                      type="button"
+                      onClick={handleToggleAllDivisions}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        cursor: 'pointer',
+                        backgroundColor: allDivisionsSelected ? '#047857' : '#ffffff',
+                        color: allDivisionsSelected ? '#ffffff' : '#047857',
+                        padding: '0.3rem 0.75rem',
+                        borderRadius: '6px',
+                        border: '1.5px solid #047857',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        userSelect: 'none',
+                        transition: 'all 0.15s ease',
+                        minHeight: 'auto',
+                        boxShadow: allDivisionsSelected ? '0 2px 6px rgba(4, 120, 87, 0.25)' : 'none',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={allDivisionsSelected}
+                        onChange={() => {}} // Handled by button click
+                        style={{ width: '15px', height: '15px', accentColor: '#047857', cursor: 'pointer' }}
+                      />
+                      <span>All Divisions Access ({TARGET_DIVISIONS.length})</span>
+                    </button>
+                  )}
                 </div>
 
                 <div
@@ -1569,7 +1908,9 @@ export default function StaffUsers() {
                 >
                   {TARGET_DIVISIONS.map((tDiv) => {
                     const targetId = divisionMap[tDiv.key] || divisionMap[tDiv.alias];
-                    const isChecked = Boolean(targetId && selectedDivisionIds.includes(targetId));
+                    const isChecked = Boolean(
+                      allDivisionsSelected || (targetId && selectedDivisionIds.includes(targetId))
+                    );
 
                     return (
                       <div

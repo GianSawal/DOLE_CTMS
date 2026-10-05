@@ -578,6 +578,62 @@ class CtmsCoreTestCase(TestCase):
         tx2.refresh_from_db()
         self.assertEqual(tx2.assigned_personnel, "CAMILLE SANTOS")
 
+    def test_admin_user_office_and_division_access_options(self):
+        admin_creator = User.objects.create_superuser(username="superadmin", password="superpassword")
+        self.client.force_authenticate(user=admin_creator)
+
+        office2 = CsmOffice.objects.create(name="Zambales Field Office", code="ZFO", is_active=True)
+        div_tssd1 = CsmDivision.objects.create(name="TSSD 1")
+        div_tssd2 = CsmDivision.objects.create(name="TSSD 2")
+        div_imsd = CsmDivision.objects.create(name="IMSD")
+
+        # 1. Create an admin with all offices & all divisions (default)
+        res_full_admin = self.client.post("/api/staff/users/", data={
+            "username": "full_admin",
+            "password": "Password123!",
+            "role": "admin",
+            "all_offices": True,
+            "all_divisions": True,
+        }, format='json')
+        self.assertEqual(res_full_admin.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(res_full_admin.data["all_offices_access"])
+        self.assertTrue(res_full_admin.data["all_divisions_access"])
+        self.assertEqual(res_full_admin.data["office_name"], "All Offices")
+
+        full_admin_user = User.objects.get(username="full_admin")
+        from .views import get_staff_offices, get_staff_divisions
+        offices_allowed = get_staff_offices(full_admin_user)
+        self.assertIn(self.office, offices_allowed)
+        self.assertIn(office2, offices_allowed)
+
+        # 2. Create an admin with specific office choice (e.g. only Zambales)
+        res_specific_admin = self.client.post("/api/staff/users/", data={
+            "username": "zambales_admin",
+            "password": "Password123!",
+            "role": "admin",
+            "office_ids": [office2.id],
+            "division_ids": [div_tssd1.id],
+        }, format='json')
+        self.assertEqual(res_specific_admin.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(res_specific_admin.data["all_offices_access"])
+        self.assertEqual(res_specific_admin.data["office_ids"], [office2.id])
+        self.assertEqual(res_specific_admin.data["office_name"], "Zambales Field Office")
+
+        zambales_admin_user = User.objects.get(username="zambales_admin")
+        zambales_offices = get_staff_offices(zambales_admin_user)
+        self.assertIn(office2, zambales_offices)
+        self.assertNotIn(self.office, zambales_offices)
+
+        # 3. Update admin to add another office
+        res_update = self.client.put(f"/api/staff/users/{zambales_admin_user.id}/", data={
+            "office_ids": [self.office.id, office2.id],
+        }, format='json')
+        self.assertEqual(res_update.status_code, status.HTTP_200_OK)
+        zambales_admin_user.refresh_from_db()
+        updated_offices = get_staff_offices(zambales_admin_user)
+        self.assertIn(self.office, updated_offices)
+        self.assertIn(office2, updated_offices)
+
 
 
 
