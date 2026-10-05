@@ -31,10 +31,15 @@ class CsmOfficeSerializer(serializers.ModelSerializer):
 
 class CsmServiceSerializer(serializers.ModelSerializer):
     division_name = serializers.ReadOnlyField(source='division.name')
+    default_officer = serializers.SerializerMethodField()
 
     class Meta:
         model = CsmService
-        fields = ['id', 'name', 'is_active', 'sort_order', 'division', 'division_name']
+        fields = ['id', 'name', 'is_active', 'sort_order', 'division', 'division_name', 'default_officer']
+
+    def get_default_officer(self, obj):
+        from .services import get_default_officer_for_service
+        return get_default_officer_for_service(obj)
 
 
 class CtmsCounterSerializer(serializers.ModelSerializer):
@@ -276,6 +281,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
     counter_name = serializers.ReadOnlyField(source='counter.name')
     served_by_username = serializers.ReadOnlyField(source='served_by.username')
     is_surveyed = serializers.ReadOnlyField()
+    default_officer = serializers.SerializerMethodField()
 
     class Meta:
         model = CtmsTransaction
@@ -296,6 +302,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'counter',
             'counter_name',
             'assigned_personnel',
+            'default_officer',
             'source',
             'checked_in_at',
             'called_at',
@@ -308,6 +315,12 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'ticket_token',
             'survey_token',
         ]
+
+    def get_default_officer(self, obj):
+        if not obj or not obj.service:
+            return None
+        from .services import get_default_officer_for_service
+        return get_default_officer_for_service(obj.service, office=obj.office)
 
 
 class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):

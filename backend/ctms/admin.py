@@ -8,6 +8,7 @@ from .models import (
     CtmsStaffOffice,
     CtmsEmployee,
     CtmsDisplayConfig,
+    CtmsServiceDefaultOfficer,
     CtmsTransaction,
     CtmsAuditLog,
 )
@@ -38,6 +39,13 @@ class CsmServiceAdmin(admin.ModelAdmin):
     search_fields = ('name',)
     list_filter = ('is_active',)
     ordering = ('sort_order', 'name')
+
+
+@admin.register(CtmsServiceDefaultOfficer)
+class CtmsServiceDefaultOfficerAdmin(admin.ModelAdmin):
+    list_display = ('id', 'service', 'officer_name', 'office', 'updated_at')
+    search_fields = ('service__name', 'officer_name', 'office__name')
+    list_filter = ('office', 'service__division')
 
 @admin.register(CtmsCounter)
 class CtmsCounterAdmin(admin.ModelAdmin):

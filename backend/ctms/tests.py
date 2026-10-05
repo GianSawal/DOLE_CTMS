@@ -12,6 +12,7 @@ from .models import (
     CtmsCounter,
     CtmsStaffOffice,
     CtmsTransaction,
+    CtmsServiceDefaultOfficer,
 )
 from .services import (
     create_transaction,
@@ -19,7 +20,9 @@ from .services import (
     call_specific_transaction,
     mark_done,
     undo_done,
+    get_default_officer_for_service,
 )
+from .serializers import StaffTransactionSerializer
 
 User = get_user_model()
 
@@ -509,6 +512,70 @@ class CtmsCoreTestCase(TestCase):
         self.assertEqual(res2_after.status_code, status.HTTP_200_OK)
         tx2.refresh_from_db()
         self.assertEqual(tx2.assigned_personnel, "Camille Santos")
+
+    def test_default_officer_determined_by_service_and_availability(self):
+        # 1. Create TSSD 2 division and TUPAD Assistance service
+        tssd2 = CsmDivision.objects.create(name="TSSD 2")
+        tupad_service = CsmService.objects.create(
+            name="TUPAD Assistance",
+            division_id=tssd2.id,
+            is_active=True,
+            sort_order=2,
+        )
+
+        # 2. Test get_default_officer_for_service returns TSSD2 default officer (CAMILLE SANTOS)
+        default_officer = get_default_officer_for_service(tupad_service, office=self.office)
+        self.assertEqual(default_officer, "CAMILLE SANTOS")
+
+        # 3. Create transaction with TUPAD Assistance service
+        tx = create_transaction(self.office, tupad_service, client_name="Tupad Beneficiary")
+        self.client.force_authenticate(user=self.staff_user)
+
+        # 4. Verify StaffTransactionSerializer and queue API provide default_officer
+        serialized = StaffTransactionSerializer(tx).data
+        self.assertEqual(serialized['default_officer'], "CAMILLE SANTOS")
+        self.assertEqual(serialized['division_name'], "TSSD 2")
+
+        res_queue = self.client.get(f"/api/staff/queue/?office={self.office.id}")
+        self.assertEqual(res_queue.status_code, status.HTTP_200_OK)
+        waiting_tx = next((w for w in res_queue.data['waiting'] if w['id'] == tx.id), None)
+        self.assertIsNotNone(waiting_tx)
+        self.assertEqual(waiting_tx['default_officer'], "CAMILLE SANTOS")
+
+        # 5. Test database override via CtmsServiceDefaultOfficer
+        CtmsServiceDefaultOfficer.objects.create(
+            service=tupad_service,
+            officer_name="SPECIAL TUPAD OFFICER"
+        )
+        self.assertEqual(get_default_officer_for_service(tupad_service, office=self.office), "SPECIAL TUPAD OFFICER")
+        self.assertEqual(StaffTransactionSerializer(tx).data['default_officer'], "SPECIAL TUPAD OFFICER")
+
+        # 6. Availability rule: If CAMILLE SANTOS is assigned to an active transaction, she is not assignable to another client
+        CtmsServiceDefaultOfficer.objects.filter(service=tupad_service).delete()
+        res_assign = self.client.post(f"/api/staff/transactions/{tx.id}/assign/", {
+            "personnel": "CAMILLE SANTOS"
+        })
+        self.assertEqual(res_assign.status_code, status.HTTP_200_OK)
+        tx.refresh_from_db()
+        self.assertEqual(tx.assigned_personnel, "CAMILLE SANTOS")
+
+        # Another client with TUPAD Assistance
+        tx2 = create_transaction(self.office, tupad_service, client_name="Second Client")
+        res_assign2 = self.client.post(f"/api/staff/transactions/{tx2.id}/assign/", {
+            "personnel": "CAMILLE SANTOS"
+        })
+        self.assertEqual(res_assign2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("currently assigned to Queue", res_assign2.data['detail'])
+
+        # Once first transaction is done, officer is available again
+        call_specific_transaction(tx, counter=self.counter1)
+        mark_done(tx, self.staff_user)
+        res_assign2_retry = self.client.post(f"/api/staff/transactions/{tx2.id}/assign/", {
+            "personnel": "CAMILLE SANTOS"
+        })
+        self.assertEqual(res_assign2_retry.status_code, status.HTTP_200_OK)
+        tx2.refresh_from_db()
+        self.assertEqual(tx2.assigned_personnel, "CAMILLE SANTOS")
 
 
 

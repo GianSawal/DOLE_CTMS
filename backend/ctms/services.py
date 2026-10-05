@@ -7,10 +7,83 @@ from .models import (
     CsmService,
     CsmResponse,
     CtmsCounter,
+    CtmsServiceDefaultOfficer,
     CtmsTransaction,
+    DolePersonnel,
     generate_claim_code,
     generate_token,
 )
+
+SERVICE_DEFAULT_OFFICERS = {
+    'tupad': 'CAMILLE SANTOS',
+    'spes': 'ARVIE ANGAT',
+    'alien employment': 'ADRIANNE MAE DIMALANTA',
+    'aep': 'ADRIANNE MAE DIMALANTA',
+    'livelihood': 'CAMILLE SANTOS',
+    'cshp': 'CHARLIE BARROZO',
+    'rule 1020': 'WILSON DAYRIT',
+    'sena': 'RAYMOND GONZALES',
+    'single entry': 'RAYMOND GONZALES',
+    'labor inspection': 'JESSICA TRISHIA GONZALES',
+    'general labor': 'ROY OCAMPO',
+}
+
+DIVISION_DEFAULT_OFFICERS = {
+    'TSSD 2': 'CAMILLE SANTOS',
+    'TSSD2': 'CAMILLE SANTOS',
+    'TSSD 1': 'RAYMOND GONZALES',
+    'TSSD1': 'RAYMOND GONZALES',
+}
+
+def get_default_officer_for_service(service, office=None):
+    """
+    Automatically determines the default officer based on the service selected by the client.
+    1. Checks database overrides in CtmsServiceDefaultOfficer.
+    2. Checks service-specific mappings (e.g. TUPAD -> CAMILLE SANTOS from TSSD 2).
+    3. Checks division-level default officers (TSSD 2 -> CAMILLE SANTOS, TSSD 1 -> RAYMOND GONZALES).
+    4. Falls back to the first active registered DolePersonnel for that division.
+    """
+    if not service:
+        return None
+
+    # 1. Database override
+    try:
+        db_override = None
+        if office:
+            db_override = CtmsServiceDefaultOfficer.objects.filter(service=service, office=office).first()
+        if not db_override:
+            db_override = CtmsServiceDefaultOfficer.objects.filter(service=service, office__isnull=True).first()
+        if db_override and db_override.officer_name:
+            return db_override.officer_name.strip()
+    except Exception:
+        pass
+
+    # 2. Service-specific keyword mapping
+    s_name = (getattr(service, 'name', '') or '').lower()
+    for kw, officer in SERVICE_DEFAULT_OFFICERS.items():
+        if kw in s_name:
+            return officer
+
+    # 3. Division default officer mapping
+    div = getattr(service, 'division', None)
+    if div and div.name:
+        div_name = div.name.strip()
+        div_officer = DIVISION_DEFAULT_OFFICERS.get(div_name) or DIVISION_DEFAULT_OFFICERS.get(div_name.replace(' ', ''))
+        if div_officer:
+            return div_officer
+
+        # 4. Fallback to active DolePersonnel in that division
+        div_clean = div_name.replace(' ', '').upper()
+        personnel_qs = DolePersonnel.objects.filter(is_active=True)
+        if office:
+            personnel_qs = personnel_qs.filter(office=office)
+        for p in personnel_qs.prefetch_related('divisions'):
+            p_divs = [d.name.replace(' ', '').upper() for d in p.divisions.all()]
+            if div_clean in p_divs or 'ALL' in p_divs:
+                return p.full_name
+
+    return None
+
 
 def create_transaction(office, service, client_name=None, is_priority=False, source='qr', group_member_names=None):
     """

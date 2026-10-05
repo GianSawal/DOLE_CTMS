@@ -751,6 +751,11 @@ class StaffCallNextView(APIView):
                             "detail": f"Cannot assign {emp.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {div.name}."
                         }, status=status.HTTP_400_BAD_REQUEST)
 
+        if personnel and str(personnel).strip():
+            avail, avail_err, _ = validate_personnel_availability(office, str(personnel).strip())
+            if not avail:
+                return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             tx = services.call_next_transaction(office=office, counter=counter, personnel=personnel)
             if not tx:
@@ -818,6 +823,9 @@ class StaffTransactionActionView(APIView):
                     valid, err_msg = validate_personnel_division_assignment(tx, str(personnel).strip())
                     if not valid:
                         return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
+                    avail, avail_err, _ = validate_personnel_availability(tx.office, str(personnel).strip(), current_tx_id=tx.pk)
+                    if not avail:
+                        return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
                 counter = None
                 if counter_id:
                     counter = CtmsCounter.objects.filter(pk=counter_id, office=tx.office, is_active=True).first()
@@ -831,6 +839,9 @@ class StaffTransactionActionView(APIView):
                     valid, err_msg = validate_personnel_division_assignment(tx, str(personnel).strip())
                     if not valid:
                         return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
+                    avail, avail_err, _ = validate_personnel_availability(tx.office, str(personnel).strip(), current_tx_id=tx.pk)
+                    if not avail:
+                        return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
                 tx = services.call_specific_transaction(tx, tx.counter, personnel=personnel)
 
             elif action == 'done':

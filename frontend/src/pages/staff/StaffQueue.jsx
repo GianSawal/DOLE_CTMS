@@ -9,6 +9,57 @@ import SearchableServiceSelect from '../../components/SearchableServiceSelect';
 import SearchablePersonnelSelect from '../../components/SearchablePersonnelSelect';
 import { broadcastQueueCall } from '../../utils/airportChime';
 
+// Default officers mapped by service keyword and division
+const SERVICE_DEFAULT_OFFICERS = {
+  'tupad': 'CAMILLE SANTOS',
+  'spes': 'ARVIE ANGAT',
+  'alien employment': 'ADRIANNE MAE DIMALANTA',
+  'aep': 'ADRIANNE MAE DIMALANTA',
+  'livelihood': 'CAMILLE SANTOS',
+  'cshp': 'CHARLIE BARROZO',
+  'rule 1020': 'WILSON DAYRIT',
+  'sena': 'RAYMOND GONZALES',
+  'single entry': 'RAYMOND GONZALES',
+  'labor inspection': 'JESSICA TRISHIA GONZALES',
+  'general labor': 'ROY OCAMPO',
+};
+
+const DIVISION_DEFAULT_OFFICERS = {
+  'TSSD 2': 'CAMILLE SANTOS',
+  'TSSD2': 'CAMILLE SANTOS',
+  'TSSD 1': 'RAYMOND GONZALES',
+  'TSSD1': 'RAYMOND GONZALES',
+};
+
+const determineDefaultOfficerForTx = (tx, personnelList = []) => {
+  if (!tx) return '';
+  if (tx.default_officer && typeof tx.default_officer === 'string') {
+    return tx.default_officer.trim();
+  }
+
+  const sName = (tx.service_name || '').toLowerCase();
+  for (const [kw, officer] of Object.entries(SERVICE_DEFAULT_OFFICERS)) {
+    if (sName.includes(kw)) {
+      return officer;
+    }
+  }
+
+  const divName = (tx.division_name || '').trim();
+  if (divName) {
+    const divOfficer = DIVISION_DEFAULT_OFFICERS[divName] || DIVISION_DEFAULT_OFFICERS[divName.replace(/\s+/g, '')];
+    if (divOfficer) return divOfficer;
+
+    const normDiv = (divName || '').toUpperCase().replace(/\s+/g, '');
+    const candidate = (personnelList || []).find(p => {
+      const divs = (p.division_names || []).map(d => (d || '').toUpperCase().replace(/\s+/g, ''));
+      return divs.includes(normDiv) || divs.includes('ALL');
+    });
+    if (candidate?.full_name) return candidate.full_name;
+  }
+
+  return '';
+};
+
 export default function StaffQueue() {
   const { user } = useAuth();
 
@@ -300,6 +351,10 @@ export default function StaffQueue() {
   const currentCounter = queueData.counters?.find(c => String(c.id) === String(selectedCounter));
   const currentCounterName = currentCounter ? currentCounter.name : null;
 
+  const resolvedDefaultOfficer = useMemo(() => {
+    return assignTx ? (assignTx.default_officer || determineDefaultOfficerForTx(assignTx, officePersonnel)) : '';
+  }, [assignTx, officePersonnel]);
+
   const handleOpenAssignModal = (tx) => {
     setAssignTx(tx);
     if (selectedOffice) {
@@ -307,17 +362,24 @@ export default function StaffQueue() {
         .then(data => setOfficePersonnel(Array.isArray(data) ? data : []))
         .catch(() => {});
     }
-    const txDiv = normalizeDiv(tx?.division_name);
-    const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(d.name));
-    const canUserSelfAssign = user?.is_superuser || !txDiv || loggedInUserDivs.includes(txDiv);
 
-    let defaultName = tx?.assigned_personnel || '';
-    if (!defaultName && canUserSelfAssign) {
-      const candidate = (user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user?.username || ''));
-      // Only prefill self if not currently busy with another client
-      const selfBusy = getBusyInfo(candidate);
-      if (!selfBusy) {
-        defaultName = candidate;
+    // Automatically determine default officer based on the service selected by the client
+    const defaultOfficer = tx?.default_officer || determineDefaultOfficerForTx(tx, officePersonnel);
+
+    // If client already has an assigned officer, retain it; otherwise automatically display the default officer
+    let defaultName = tx?.assigned_personnel ? tx.assigned_personnel.trim() : defaultOfficer;
+
+    // Fallback: If no default officer found and staff can self-assign, fallback to self if available
+    if (!defaultName) {
+      const txDiv = normalizeDiv(tx?.division_name);
+      const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(d.name));
+      const canUserSelfAssign = user?.is_superuser || !txDiv || loggedInUserDivs.includes(txDiv);
+      if (canUserSelfAssign) {
+        const candidate = (user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user?.username || ''));
+        const selfBusy = getBusyInfo(candidate);
+        if (!selfBusy) {
+          defaultName = candidate;
+        }
       }
     }
     setAssignPersonnelName(defaultName);
@@ -967,7 +1029,7 @@ export default function StaffQueue() {
                           </span>
                         ) : (
                           <span style={{ color: '#b45309', fontWeight: 700 }}>
-                            ⚠️ No officer assigned yet
+                            ⚠️ No officer assigned yet {tx.default_officer && <span style={{ fontWeight: 600, fontSize: '0.8rem', color: '#64748b' }}>· Default: {tx.default_officer}</span>}
                           </span>
                         )}
                       </div>
@@ -1254,7 +1316,7 @@ export default function StaffQueue() {
                             </span>
                           ) : (
                             <span style={{ color: '#b45309', fontWeight: 700 }}>
-                              No officer assigned
+                              No officer assigned {tx.default_officer && <span style={{ fontWeight: 600, fontSize: '0.78rem', color: '#64748b' }}>· Default: {tx.default_officer}</span>}
                             </span>
                           )}
                         </div>
@@ -1447,7 +1509,7 @@ export default function StaffQueue() {
                             }}
                             title="Assign personnel to enable Call"
                           >
-                            👤 Assign Officer
+                            👤 Assign {tx.default_officer ? `(${tx.default_officer})` : 'Officer'}
                           </button>
                         )}
 
@@ -1906,6 +1968,82 @@ export default function StaffQueue() {
             <div style={{ fontSize: '0.82rem', color: '#1e3a8a', lineHeight: 1.4 }}>
               🔒 <strong>Division Access Policy:</strong> Only personnel assigned to the <strong>{assignTx?.division_name || 'same'}</strong> division are permitted to access and be assigned to this transaction.
             </div>
+
+            {resolvedDefaultOfficer && (
+              <div style={{
+                marginTop: '0.65rem',
+                padding: '0.5rem 0.75rem',
+                backgroundColor: '#ffffff',
+                border: '1.5px solid #93c5fd',
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.5rem',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, color: '#1e40af', fontSize: '0.84rem' }}>
+                    ⭐ Default Officer:
+                  </span>
+                  <strong style={{ color: '#0f172a', fontSize: '0.88rem' }}>{resolvedDefaultOfficer}</strong>
+                  {(() => {
+                    const busy = getBusyInfo(resolvedDefaultOfficer);
+                    if (busy) {
+                      return (
+                        <span style={{
+                          backgroundColor: '#fee2e2',
+                          color: '#b91c1c',
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '4px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.2rem',
+                        }}>
+                          🚫 Unavailable (Handling Queue #{busy.queue_no})
+                        </span>
+                      );
+                    }
+                    return (
+                      <span style={{
+                        backgroundColor: '#dcfce7',
+                        color: '#15803d',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        padding: '0.15rem 0.5rem',
+                        borderRadius: '4px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.2rem',
+                      }}>
+                        ✓ Available
+                      </span>
+                    );
+                  })()}
+                </div>
+                {assignPersonnelName !== resolvedDefaultOfficer && (
+                  <button
+                    type="button"
+                    onClick={() => setAssignPersonnelName(resolvedDefaultOfficer)}
+                    className="btn btn-ghost btn-xs"
+                    style={{
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      color: 'var(--dole-blue)',
+                      backgroundColor: '#eff6ff',
+                      border: '1px solid #bfdbfe',
+                      padding: '0.2rem 0.5rem',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Select Default
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Select Registered DOLE Personnel with Instant Real-Time Search */}
@@ -1931,6 +2069,7 @@ export default function StaffQueue() {
               searchPlaceholder={`Type to search ${assignTx?.division_name || ''} personnel...`}
               serviceDivision={assignTx?.division_name}
               isPersonnelBusy={getBusyInfo}
+              defaultOfficerName={resolvedDefaultOfficer}
             />
           </div>
 

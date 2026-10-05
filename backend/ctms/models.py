@@ -226,6 +226,28 @@ class CtmsDisplayConfig(models.Model):
         return f"Display Config for {self.office.name}"
 
 
+class CtmsServiceDefaultOfficer(models.Model):
+    """
+    Stores designated default officers per service and office.
+    Used to automatically determine the default officer when assigning a client.
+    """
+    id = models.BigAutoField(primary_key=True)
+    office = models.ForeignKey(CsmOffice, on_delete=models.CASCADE, null=True, blank=True, related_name='service_default_officers')
+    service = models.ForeignKey(CsmService, on_delete=models.CASCADE, related_name='default_officers')
+    officer_name = models.CharField(max_length=200, help_text="Full name of the default officer")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ctms_service_default_officer'
+        verbose_name = 'CTMS Service Default Officer'
+        verbose_name_plural = 'CTMS Service Default Officers'
+        unique_together = ('office', 'service')
+
+    def __str__(self):
+        return f"{self.service.name} -> {self.officer_name}"
+
+
 
 class CtmsTransaction(models.Model):
     STATUS_WAITING = 'waiting'
