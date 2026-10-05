@@ -9,55 +9,84 @@ import SearchableServiceSelect from '../../components/SearchableServiceSelect';
 import SearchablePersonnelSelect from '../../components/SearchablePersonnelSelect';
 import { broadcastQueueCall } from '../../utils/airportChime';
 
-// Default officers mapped by service keyword and division
-const SERVICE_DEFAULT_OFFICERS = {
-  'tupad': 'CAMILLE SANTOS',
-  'spes': 'ARVIE ANGAT',
-  'alien employment': 'ADRIANNE MAE DIMALANTA',
-  'aep': 'ADRIANNE MAE DIMALANTA',
-  'livelihood': 'CAMILLE SANTOS',
-  'cshp': 'CHARLIE BARROZO',
-  'rule 1020': 'WILSON DAYRIT',
-  'sena': 'RAYMOND GONZALES',
-  'single entry': 'RAYMOND GONZALES',
-  'labor inspection': 'JESSICA TRISHIA GONZALES',
-  'general labor': 'ROY OCAMPO',
+// Pools of registered officers per division for randomized default assignment
+const DIVISION_OFFICER_POOLS = {
+  'TSSD 2': [
+    'CAMILLE SANTOS',
+    'ARVIE ANGAT',
+    'ADRIANNE MAE DIMALANTA',
+    'MARIE ELAINE ADRIANO',
+    'ANNA DESIREE BALUYUT',
+    'IVAN MOREL BANTOTO',
+    'KARISSA BOGNOT',
+    'PATRICIA MARIE EDEJER',
+  ],
+  'TSSD2': [
+    'CAMILLE SANTOS',
+    'ARVIE ANGAT',
+    'ADRIANNE MAE DIMALANTA',
+    'MARIE ELAINE ADRIANO',
+    'ANNA DESIREE BALUYUT',
+    'IVAN MOREL BANTOTO',
+    'KARISSA BOGNOT',
+    'PATRICIA MARIE EDEJER',
+  ],
+  'TSSD 1': [
+    'RAYMOND GONZALES',
+    'CHARLIE BARROZO',
+    'WILSON DAYRIT',
+    'PETER JUSTINE AGUILAR',
+    'KURT WILLIAM CHAN',
+    'FLOYD ERICSON DE GUZMAN',
+    'BRENN JOHN GALANG',
+  ],
+  'TSSD1': [
+    'RAYMOND GONZALES',
+    'CHARLIE BARROZO',
+    'WILSON DAYRIT',
+    'PETER JUSTINE AGUILAR',
+    'KURT WILLIAM CHAN',
+    'FLOYD ERICSON DE GUZMAN',
+    'BRENN JOHN GALANG',
+  ],
 };
 
-const DIVISION_DEFAULT_OFFICERS = {
-  'TSSD 2': 'CAMILLE SANTOS',
-  'TSSD2': 'CAMILLE SANTOS',
-  'TSSD 1': 'RAYMOND GONZALES',
-  'TSSD1': 'RAYMOND GONZALES',
-};
-
-const determineDefaultOfficerForTx = (tx, personnelList = []) => {
+const pickRandomDefaultOfficer = (tx, personnelList = [], busyMap = new Map()) => {
   if (!tx) return '';
-  if (tx.default_officer && typeof tx.default_officer === 'string') {
-    return tx.default_officer.trim();
-  }
+  const divName = (tx.division_name || '').trim();
+  const normDiv = (divName || '').toUpperCase().replace(/\s+/g, '');
 
-  const sName = (tx.service_name || '').toLowerCase();
-  for (const [kw, officer] of Object.entries(SERVICE_DEFAULT_OFFICERS)) {
-    if (sName.includes(kw)) {
-      return officer;
+  // 1. From office personnel filtered by division
+  const eligible = (personnelList || []).filter(p => {
+    const divs = (p.division_names || []).map(d => (d || '').toUpperCase().replace(/\s+/g, ''));
+    return !normDiv || divs.includes(normDiv) || divs.includes('ALL');
+  });
+
+  if (eligible.length > 0) {
+    // Availability rule: prioritize available officers who are not handling an active client
+    const available = eligible.filter(p => {
+      const name = (p.full_name || '').trim().toLowerCase();
+      const empId = (p.employee_id || '').trim().toLowerCase();
+      return !busyMap.has(name) && !busyMap.has(empId);
+    });
+
+    const pool = available.length > 0 ? available : eligible;
+    const chosen = pool[Math.floor(Math.random() * pool.length)];
+    if (chosen && chosen.full_name) {
+      return chosen.full_name.trim();
     }
   }
 
-  const divName = (tx.division_name || '').trim();
-  if (divName) {
-    const divOfficer = DIVISION_DEFAULT_OFFICERS[divName] || DIVISION_DEFAULT_OFFICERS[divName.replace(/\s+/g, '')];
-    if (divOfficer) return divOfficer;
-
-    const normDiv = (divName || '').toUpperCase().replace(/\s+/g, '');
-    const candidate = (personnelList || []).find(p => {
-      const divs = (p.division_names || []).map(d => (d || '').toUpperCase().replace(/\s+/g, ''));
-      return divs.includes(normDiv) || divs.includes('ALL');
-    });
-    if (candidate?.full_name) return candidate.full_name;
+  // 2. Division fallback pool
+  const fallbackPool = DIVISION_OFFICER_POOLS[divName] ||
+                       DIVISION_OFFICER_POOLS[normDiv];
+  if (fallbackPool && fallbackPool.length > 0) {
+    const available = fallbackPool.filter(name => !busyMap.has(name.trim().toLowerCase()));
+    const pool = available.length > 0 ? available : fallbackPool;
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
-  return '';
+  return tx.default_officer || '';
 };
 
 export default function StaffQueue() {
@@ -89,6 +118,7 @@ export default function StaffQueue() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignTx, setAssignTx] = useState(null);
   const [assignPersonnelName, setAssignPersonnelName] = useState('');
+  const [modalDefaultOfficer, setModalDefaultOfficer] = useState('');
   const [officePersonnel, setOfficePersonnel] = useState([]);
   const [recentPersonnel, setRecentPersonnel] = useState(() => {
     try {
@@ -351,23 +381,32 @@ export default function StaffQueue() {
   const currentCounter = queueData.counters?.find(c => String(c.id) === String(selectedCounter));
   const currentCounterName = currentCounter ? currentCounter.name : null;
 
-  const resolvedDefaultOfficer = useMemo(() => {
-    return assignTx ? (assignTx.default_officer || determineDefaultOfficerForTx(assignTx, officePersonnel)) : '';
-  }, [assignTx, officePersonnel]);
-
   const handleOpenAssignModal = (tx) => {
     setAssignTx(tx);
+
+    // Pick a randomized default officer for this transaction based on service/division
+    const randomizedOfficer = pickRandomDefaultOfficer(tx, officePersonnel, busyPersonnelMap);
+    setModalDefaultOfficer(randomizedOfficer);
+
     if (selectedOffice) {
       staffApi.getPersonnel({ office: selectedOffice, active_only: 'true' })
-        .then(data => setOfficePersonnel(Array.isArray(data) ? data : []))
+        .then(data => {
+          const list = Array.isArray(data) ? data : [];
+          setOfficePersonnel(list);
+          setModalDefaultOfficer(prev => {
+            if (prev) return prev;
+            const chosen = pickRandomDefaultOfficer(tx, list, busyPersonnelMap);
+            if (!tx.assigned_personnel) {
+              setAssignPersonnelName(chosen);
+            }
+            return chosen;
+          });
+        })
         .catch(() => {});
     }
 
-    // Automatically determine default officer based on the service selected by the client
-    const defaultOfficer = tx?.default_officer || determineDefaultOfficerForTx(tx, officePersonnel);
-
-    // If client already has an assigned officer, retain it; otherwise automatically display the default officer
-    let defaultName = tx?.assigned_personnel ? tx.assigned_personnel.trim() : defaultOfficer;
+    // If client already has an assigned officer, retain it; otherwise automatically display the randomized default officer
+    let defaultName = tx?.assigned_personnel ? tx.assigned_personnel.trim() : randomizedOfficer;
 
     // Fallback: If no default officer found and staff can self-assign, fallback to self if available
     if (!defaultName) {
@@ -384,6 +423,13 @@ export default function StaffQueue() {
     }
     setAssignPersonnelName(defaultName);
     setShowAssignModal(true);
+  };
+
+  const handleShuffleDefaultOfficer = () => {
+    if (!assignTx) return;
+    const newOfficer = pickRandomDefaultOfficer(assignTx, officePersonnel, busyPersonnelMap);
+    setModalDefaultOfficer(newOfficer);
+    setAssignPersonnelName(newOfficer);
   };
 
   const handleAssignSubmit = async (e) => {
@@ -1969,7 +2015,7 @@ export default function StaffQueue() {
               🔒 <strong>Division Access Policy:</strong> Only personnel assigned to the <strong>{assignTx?.division_name || 'same'}</strong> division are permitted to access and be assigned to this transaction.
             </div>
 
-            {resolvedDefaultOfficer && (
+            {modalDefaultOfficer && (
               <div style={{
                 marginTop: '0.65rem',
                 padding: '0.5rem 0.75rem',
@@ -1984,11 +2030,11 @@ export default function StaffQueue() {
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                   <span style={{ fontWeight: 700, color: '#1e40af', fontSize: '0.84rem' }}>
-                    ⭐ Default Officer:
+                    ⭐ Default Officer (Randomized):
                   </span>
-                  <strong style={{ color: '#0f172a', fontSize: '0.88rem' }}>{resolvedDefaultOfficer}</strong>
+                  <strong style={{ color: '#0f172a', fontSize: '0.88rem' }}>{modalDefaultOfficer}</strong>
                   {(() => {
-                    const busy = getBusyInfo(resolvedDefaultOfficer);
+                    const busy = getBusyInfo(modalDefaultOfficer);
                     if (busy) {
                       return (
                         <span style={{
@@ -2023,25 +2069,48 @@ export default function StaffQueue() {
                     );
                   })()}
                 </div>
-                {assignPersonnelName !== resolvedDefaultOfficer && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    onClick={() => setAssignPersonnelName(resolvedDefaultOfficer)}
+                    onClick={handleShuffleDefaultOfficer}
                     className="btn btn-ghost btn-xs"
                     style={{
                       fontSize: '0.76rem',
                       fontWeight: 700,
                       color: 'var(--dole-blue)',
-                      backgroundColor: '#eff6ff',
-                      border: '1px solid #bfdbfe',
-                      padding: '0.2rem 0.5rem',
+                      backgroundColor: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      padding: '0.2rem 0.55rem',
                       borderRadius: '4px',
                       cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
                     }}
+                    title="Randomly pick another available officer for this division"
                   >
-                    Select Default
+                    🔀 Pick Another
                   </button>
-                )}
+                  {assignPersonnelName !== modalDefaultOfficer && (
+                    <button
+                      type="button"
+                      onClick={() => setAssignPersonnelName(modalDefaultOfficer)}
+                      className="btn btn-ghost btn-xs"
+                      style={{
+                        fontSize: '0.76rem',
+                        fontWeight: 700,
+                        color: 'var(--dole-blue)',
+                        backgroundColor: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Select Default
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -2069,7 +2138,7 @@ export default function StaffQueue() {
               searchPlaceholder={`Type to search ${assignTx?.division_name || ''} personnel...`}
               serviceDivision={assignTx?.division_name}
               isPersonnelBusy={getBusyInfo}
-              defaultOfficerName={resolvedDefaultOfficer}
+              defaultOfficerName={modalDefaultOfficer}
             />
           </div>
 

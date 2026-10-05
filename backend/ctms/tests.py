@@ -21,6 +21,7 @@ from .services import (
     mark_done,
     undo_done,
     get_default_officer_for_service,
+    DIVISION_OFFICER_POOLS,
 )
 from .serializers import StaffTransactionSerializer
 
@@ -523,9 +524,9 @@ class CtmsCoreTestCase(TestCase):
             sort_order=2,
         )
 
-        # 2. Test get_default_officer_for_service returns TSSD2 default officer (CAMILLE SANTOS)
+        # 2. Test get_default_officer_for_service returns a randomized TSSD2 default officer
         default_officer = get_default_officer_for_service(tupad_service, office=self.office)
-        self.assertEqual(default_officer, "CAMILLE SANTOS")
+        self.assertIn(default_officer, DIVISION_OFFICER_POOLS['TSSD 2'])
 
         # 3. Create transaction with TUPAD Assistance service
         tx = create_transaction(self.office, tupad_service, client_name="Tupad Beneficiary")
@@ -533,14 +534,14 @@ class CtmsCoreTestCase(TestCase):
 
         # 4. Verify StaffTransactionSerializer and queue API provide default_officer
         serialized = StaffTransactionSerializer(tx).data
-        self.assertEqual(serialized['default_officer'], "CAMILLE SANTOS")
+        self.assertIn(serialized['default_officer'], DIVISION_OFFICER_POOLS['TSSD 2'])
         self.assertEqual(serialized['division_name'], "TSSD 2")
 
         res_queue = self.client.get(f"/api/staff/queue/?office={self.office.id}")
         self.assertEqual(res_queue.status_code, status.HTTP_200_OK)
         waiting_tx = next((w for w in res_queue.data['waiting'] if w['id'] == tx.id), None)
         self.assertIsNotNone(waiting_tx)
-        self.assertEqual(waiting_tx['default_officer'], "CAMILLE SANTOS")
+        self.assertIn(waiting_tx['default_officer'], DIVISION_OFFICER_POOLS['TSSD 2'])
 
         # 5. Test database override via CtmsServiceDefaultOfficer
         CtmsServiceDefaultOfficer.objects.create(

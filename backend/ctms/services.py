@@ -28,20 +28,34 @@ SERVICE_DEFAULT_OFFICERS = {
     'general labor': 'ROY OCAMPO',
 }
 
-DIVISION_DEFAULT_OFFICERS = {
-    'TSSD 2': 'CAMILLE SANTOS',
-    'TSSD2': 'CAMILLE SANTOS',
-    'TSSD 1': 'RAYMOND GONZALES',
-    'TSSD1': 'RAYMOND GONZALES',
+DIVISION_OFFICER_POOLS = {
+    'TSSD 2': [
+        'CAMILLE SANTOS',
+        'ARVIE ANGAT',
+        'ADRIANNE MAE DIMALANTA',
+        'MARIE ELAINE ADRIANO',
+        'ANNA DESIREE BALUYUT',
+        'IVAN MOREL BANTOTO',
+        'KARISSA BOGNOT',
+        'PATRICIA MARIE EDEJER',
+    ],
+    'TSSD 1': [
+        'RAYMOND GONZALES',
+        'CHARLIE BARROZO',
+        'WILSON DAYRIT',
+        'PETER JUSTINE AGUILAR',
+        'KURT WILLIAM CHAN',
+        'FLOYD ERICSON DE GUZMAN',
+        'BRENN JOHN GALANG',
+    ],
 }
 
 def get_default_officer_for_service(service, office=None):
     """
     Automatically determines the default officer based on the service selected by the client.
     1. Checks database overrides in CtmsServiceDefaultOfficer.
-    2. Checks service-specific mappings (e.g. TUPAD -> CAMILLE SANTOS from TSSD 2).
-    3. Checks division-level default officers (TSSD 2 -> CAMILLE SANTOS, TSSD 1 -> RAYMOND GONZALES).
-    4. Falls back to the first active registered DolePersonnel for that division.
+    2. Randomly selects an active, available officer belonging to the service's division.
+    3. Falls back to randomized division officer pools or service keyword mappings.
     """
     if not service:
         return None
@@ -58,29 +72,51 @@ def get_default_officer_for_service(service, office=None):
     except Exception:
         pass
 
-    # 2. Service-specific keyword mapping
-    s_name = (getattr(service, 'name', '') or '').lower()
-    for kw, officer in SERVICE_DEFAULT_OFFICERS.items():
-        if kw in s_name:
-            return officer
-
-    # 3. Division default officer mapping
+    # 2. Random selection from active DolePersonnel in that division
     div = getattr(service, 'division', None)
     if div and div.name:
         div_name = div.name.strip()
-        div_officer = DIVISION_DEFAULT_OFFICERS.get(div_name) or DIVISION_DEFAULT_OFFICERS.get(div_name.replace(' ', ''))
-        if div_officer:
-            return div_officer
-
-        # 4. Fallback to active DolePersonnel in that division
         div_clean = div_name.replace(' ', '').upper()
         personnel_qs = DolePersonnel.objects.filter(is_active=True)
         if office:
             personnel_qs = personnel_qs.filter(office=office)
+
+        candidates = []
         for p in personnel_qs.prefetch_related('divisions'):
             p_divs = [d.name.replace(' ', '').upper() for d in p.divisions.all()]
             if div_clean in p_divs or 'ALL' in p_divs:
-                return p.full_name
+                candidates.append(p.full_name.strip())
+
+        if candidates:
+            # Prioritize available officers (not currently handling an active client)
+            active_clean = set()
+            if office:
+                active_officers = CtmsTransaction.objects.filter(
+                    office=office,
+                    status__in=[
+                        CtmsTransaction.STATUS_WAITING,
+                        CtmsTransaction.STATUS_SERVING,
+                        CtmsTransaction.STATUS_PENDING,
+                    ]
+                ).exclude(assigned_personnel__isnull=True).exclude(assigned_personnel='').values_list('assigned_personnel', flat=True)
+                active_clean = {o.strip().lower() for o in active_officers}
+
+            available = [c for c in candidates if c.strip().lower() not in active_clean]
+            pool = available if available else candidates
+            import random
+            return random.choice(pool)
+
+        # Division fallback pool
+        fallback_pool = DIVISION_OFFICER_POOLS.get(div_name) or DIVISION_OFFICER_POOLS.get(div_clean)
+        if fallback_pool:
+            import random
+            return random.choice(fallback_pool)
+
+    # 3. Service-specific keyword mapping fallback
+    s_name = (getattr(service, 'name', '') or '').lower()
+    for kw, officer in SERVICE_DEFAULT_OFFICERS.items():
+        if kw in s_name:
+            return officer
 
     return None
 
