@@ -42,6 +42,64 @@ class CsmServiceSerializer(serializers.ModelSerializer):
         return get_default_officer_for_service(obj)
 
 
+class StaffServicePersonnelBriefSerializer(serializers.ModelSerializer):
+    office_name = serializers.ReadOnlyField(source='office.name')
+    office_code = serializers.ReadOnlyField(source='office.code')
+    division_names = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DolePersonnel
+        fields = [
+            'id',
+            'employee_id',
+            'full_name',
+            'first_name',
+            'last_name',
+            'position',
+            'office_id',
+            'office_name',
+            'office_code',
+            'division_names',
+            'is_active',
+        ]
+
+    def get_division_names(self, obj):
+        return [d.name for d in obj.divisions.all()]
+
+
+class StaffServiceSerializer(serializers.ModelSerializer):
+    division_name = serializers.ReadOnlyField(source='division.name')
+    default_officer = serializers.SerializerMethodField()
+    assigned_personnel = StaffServicePersonnelBriefSerializer(many=True, read_only=True)
+    assigned_personnel_ids = serializers.SerializerMethodField()
+    assigned_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CsmService
+        fields = [
+            'id',
+            'name',
+            'is_active',
+            'sort_order',
+            'division',
+            'division_name',
+            'default_officer',
+            'assigned_personnel',
+            'assigned_personnel_ids',
+            'assigned_count',
+        ]
+
+    def get_default_officer(self, obj):
+        from .services import get_default_officer_for_service
+        return get_default_officer_for_service(obj)
+
+    def get_assigned_personnel_ids(self, obj):
+        return [p.id for p in obj.assigned_personnel.all()]
+
+    def get_assigned_count(self, obj):
+        return obj.assigned_personnel.count()
+
+
 class CtmsCounterSerializer(serializers.ModelSerializer):
     office_name = serializers.ReadOnlyField(source='office.name')
 
@@ -72,6 +130,14 @@ class DolePersonnelSerializer(serializers.ModelSerializer):
         required=False
     )
     full_name = serializers.ReadOnlyField()
+    services_detail = serializers.SerializerMethodField()
+    service_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=CsmService.objects.all(),
+        source='services',
+        required=False
+    )
+    service_names = serializers.SerializerMethodField()
 
     class Meta:
         model = DolePersonnel
@@ -89,6 +155,9 @@ class DolePersonnelSerializer(serializers.ModelSerializer):
             'division_ids',
             'division_names',
             'divisions_detail',
+            'service_ids',
+            'service_names',
+            'services_detail',
             'is_active',
             'created_at',
             'updated_at',
@@ -97,6 +166,20 @@ class DolePersonnelSerializer(serializers.ModelSerializer):
 
     def get_division_names(self, obj):
         return [d.name for d in obj.divisions.all()]
+
+    def get_services_detail(self, obj):
+        return [
+            {
+                'id': s.id,
+                'name': s.name,
+                'division_id': s.division_id,
+                'division_name': s.division.name if s.division else None
+            }
+            for s in obj.services.all()
+        ]
+
+    def get_service_names(self, obj):
+        return [s.name for s in obj.services.all()]
 
 
 class CtmsUserAccountSerializer(serializers.ModelSerializer):

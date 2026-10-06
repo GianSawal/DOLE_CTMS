@@ -72,7 +72,34 @@ def get_default_officer_for_service(service, office=None):
     except Exception:
         pass
 
-    # 2. Random selection from active DolePersonnel in that division
+    # 2. Check explicitly assigned personnel configured for this service
+    try:
+        assigned_qs = service.assigned_personnel.filter(is_active=True)
+        if office:
+            office_assigned = assigned_qs.filter(office=office)
+            if office_assigned.exists():
+                assigned_qs = office_assigned
+        assigned_candidates = [p.full_name.strip() for p in assigned_qs]
+        if assigned_candidates:
+            active_clean = set()
+            if office:
+                active_officers = CtmsTransaction.objects.filter(
+                    office=office,
+                    status__in=[
+                        CtmsTransaction.STATUS_WAITING,
+                        CtmsTransaction.STATUS_SERVING,
+                        CtmsTransaction.STATUS_PENDING,
+                    ]
+                ).exclude(assigned_personnel__isnull=True).exclude(assigned_personnel='').values_list('assigned_personnel', flat=True)
+                active_clean = {o.strip().lower() for o in active_officers}
+            available = [c for c in assigned_candidates if c.strip().lower() not in active_clean]
+            pool = available if available else assigned_candidates
+            import random
+            return random.choice(pool)
+    except Exception:
+        pass
+
+    # 3. Random selection from active DolePersonnel in that division
     div = getattr(service, 'division', None)
     if div and div.name:
         div_name = div.name.strip()

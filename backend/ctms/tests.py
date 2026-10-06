@@ -13,6 +13,7 @@ from .models import (
     CtmsStaffOffice,
     CtmsTransaction,
     CtmsServiceDefaultOfficer,
+    DolePersonnel,
 )
 from .services import (
     create_transaction,
@@ -633,6 +634,101 @@ class CtmsCoreTestCase(TestCase):
         updated_offices = get_staff_offices(zambales_admin_user)
         self.assertIn(self.office, updated_offices)
         self.assertIn(office2, updated_offices)
+
+    def test_staff_services_tab_and_division_restricted_personnel_assignment(self):
+        # Authenticate as standard non-admin staff user (Services tab available to all accounts)
+        self.client.force_authenticate(user=self.staff_user)
+
+        div_tssd1, _ = CsmDivision.objects.get_or_create(name="TSSD 1")
+        div_tssd2, _ = CsmDivision.objects.get_or_create(name="TSSD 2")
+
+        # 1. Create services
+        tupad = CsmService.objects.create(
+            name="TUPAD Program Assistance",
+            division=div_tssd2,
+            is_active=True,
+            sort_order=31
+        )
+        cshp = CsmService.objects.create(
+            name="Construction Safety and Health Program (CSHP)",
+            division=div_tssd1,
+            is_active=True,
+            sort_order=3
+        )
+        spes = CsmService.objects.create(
+            name="Special Program for Employment of Students (SPES)",
+            division=div_tssd2,
+            is_active=True,
+            sort_order=30
+        )
+
+        # 2. Create personnel in respective divisions
+        p_tssd2_a = DolePersonnel.objects.create(
+            employee_id="EMP-TSSD2-A",
+            first_name="Camille",
+            last_name="Santos",
+            office=self.office,
+            is_active=True
+        )
+        p_tssd2_a.divisions.set([div_tssd2])
+
+        p_tssd2_b = DolePersonnel.objects.create(
+            employee_id="EMP-TSSD2-B",
+            first_name="Arvie",
+            last_name="Angat",
+            office=self.office,
+            is_active=True
+        )
+        p_tssd2_b.divisions.set([div_tssd2])
+
+        p_tssd1_a = DolePersonnel.objects.create(
+            employee_id="EMP-TSSD1-A",
+            first_name="Raymond",
+            last_name="Gonzales",
+            office=self.office,
+            is_active=True
+        )
+        p_tssd1_a.divisions.set([div_tssd1])
+
+        # 3. Test list services endpoint
+        res_list = self.client.get("/api/staff/services/")
+        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
+        service_names = [s['name'] for s in res_list.data]
+        self.assertIn("TUPAD Program Assistance", service_names)
+        self.assertIn("Construction Safety and Health Program (CSHP)", service_names)
+
+        # 4. Test eligible personnel endpoint for TUPAD (belongs to TSSD 2)
+        res_eligible = self.client.get(f"/api/staff/services/{tupad.id}/eligible-personnel/")
+        self.assertEqual(res_eligible.status_code, status.HTTP_200_OK)
+        eligible_ids = [p['id'] for p in res_eligible.data['personnel']]
+        self.assertIn(p_tssd2_a.id, eligible_ids)
+        self.assertIn(p_tssd2_b.id, eligible_ids)
+        self.assertNotIn(p_tssd1_a.id, eligible_ids)  # TSSD 1 personnel must NOT be eligible
+
+        # 5. Multi-selection assignment: assign both TSSD 2 personnel to TUPAD
+        res_assign = self.client.post(f"/api/staff/services/{tupad.id}/assign-personnel/", {
+            "personnel_ids": [p_tssd2_a.id, p_tssd2_b.id]
+        }, format='json')
+        self.assertEqual(res_assign.status_code, status.HTTP_200_OK)
+        self.assertEqual(tupad.assigned_personnel.count(), 2)
+
+        # 6. Strict division restriction: attempting to assign TSSD 1 personnel to TSSD 2 service must fail
+        res_invalid = self.client.post(f"/api/staff/services/{tupad.id}/assign-personnel/", {
+            "personnel_ids": [p_tssd1_a.id]
+        }, format='json')
+        self.assertEqual(res_invalid.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Division Restriction Error", res_invalid.data['detail'])
+
+        # 7. Multiple services per personnel: assign p_tssd2_a to SPES as well
+        res_assign_spes = self.client.post(f"/api/staff/services/{spes.id}/assign-personnel/", {
+            "personnel_ids": [p_tssd2_a.id]
+        }, format='json')
+        self.assertEqual(res_assign_spes.status_code, status.HTTP_200_OK)
+        self.assertEqual(p_tssd2_a.services.count(), 2)
+        assigned_service_names = list(p_tssd2_a.services.values_list('name', flat=True))
+        self.assertIn("TUPAD Program Assistance", assigned_service_names)
+        self.assertIn("Special Program for Employment of Students (SPES)", assigned_service_names)
+
 
 
 

@@ -190,6 +190,7 @@ class DolePersonnel(models.Model):
     position = models.CharField(max_length=150, blank=True, default='')
     office = models.ForeignKey(CsmOffice, on_delete=models.PROTECT, related_name='dole_personnel')
     divisions = models.ManyToManyField(CsmDivision, blank=True, related_name='dole_personnel', db_table='ctms_dole_personnel_divisions')
+    services = models.ManyToManyField(CsmService, blank=True, related_name='assigned_personnel', db_table='ctms_dole_personnel_services')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

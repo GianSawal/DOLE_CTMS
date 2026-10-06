@@ -11,6 +11,7 @@ import DisplayBoard from './pages/public/DisplayBoard';
 import StaffLogin from './pages/staff/StaffLogin';
 import StaffQueue from './pages/staff/StaffQueue';
 import StaffTransactions from './pages/staff/StaffTransactions';
+import StaffServices from './pages/staff/StaffServices';
 import StaffReports from './pages/staff/StaffReports';
 import StaffQr from './pages/staff/StaffQr';
 import StaffUsers from './pages/staff/StaffUsers';
@@ -113,6 +114,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <StaffTransactions />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/staff/services"
+            element={
+              <ProtectedRoute>
+                <StaffServices />
               </ProtectedRoute>
             }
           />
