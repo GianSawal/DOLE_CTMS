@@ -556,8 +556,9 @@ export default function StaffTransactions() {
                               onClick={() => handleUndoDone(tx.id)}
                               className="btn btn-outline btn-sm"
                               style={{ minHeight: '30px', padding: '0.2rem 0.5rem', color: 'var(--dole-red)', fontSize: '0.78rem' }}
+                              title="Revert transaction back to serving"
                             >
-                              Undo Done
+                              Undone
                             </button>
                           )}
                         </div>
