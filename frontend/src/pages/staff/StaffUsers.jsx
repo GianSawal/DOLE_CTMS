@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Navbar from '../../components/Navbar';
 import { staffApi } from '../../api/staff';
 import Pagination, { paginateArray } from '../../components/Pagination';
+import SearchablePersonnelSelect from '../../components/SearchablePersonnelSelect';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -110,6 +111,12 @@ export default function StaffUsers() {
     return map;
   }, [divisions]);
 
+  // Find currently linked personnel object in directory
+  const selectedPersonnelObj = useMemo(() => {
+    if (!linkedPersonnelId) return null;
+    return personnelList.find((p) => String(p.id) === String(linkedPersonnelId)) || null;
+  }, [personnelList, linkedPersonnelId]);
+
   // Handle role change (staff <-> admin)
   const handleRoleChange = (newRole) => {
     setRole(newRole);
@@ -177,10 +184,11 @@ export default function StaffUsers() {
   };
 
   // Handle selecting a personnel record to link
-  const handleSelectLinkedPersonnel = (pId) => {
-    setLinkedPersonnelId(pId);
-    if (!pId) return;
-    const p = personnelList.find((item) => String(item.id) === String(pId));
+  const handleSelectLinkedPersonnel = (pId, pObj) => {
+    const cleanId = pId ? String(pId) : '';
+    setLinkedPersonnelId(cleanId);
+    if (!cleanId) return;
+    const p = pObj || personnelList.find((item) => String(item.id) === cleanId);
     if (p) {
       if (!firstName || modalMode === 'create') setFirstName(p.first_name || '');
       if (!lastName || modalMode === 'create') setLastName(p.last_name || '');
@@ -1636,58 +1644,201 @@ export default function StaffUsers() {
             {/* Modal Form */}
             <form onSubmit={handleSubmitForm} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {/* Linked Personnel Record Selector */}
-              <div style={{
-                backgroundColor: linkedPersonnelId ? 'rgba(3, 5, 186, 0.04)' : '#f8fafc',
-                border: linkedPersonnelId ? '1px solid rgba(3, 5, 186, 0.25)' : '1px solid #e2e8f0',
-                borderRadius: '8px',
-                padding: '0.85rem 1rem',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                  <label style={{ fontSize: '0.86rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
-                    🔗 Link to Specific Personnel Record (Optional)
-                  </label>
+              <div
+                style={{
+                  backgroundColor: linkedPersonnelId ? 'rgba(3, 5, 186, 0.03)' : '#f8fafc',
+                  border: linkedPersonnelId ? '1.5px solid rgba(3, 5, 186, 0.28)' : '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  padding: '1rem 1.15rem',
+                  transition: 'all 0.2s ease',
+                  boxShadow: linkedPersonnelId ? '0 2px 8px rgba(3, 5, 186, 0.04)' : 'none',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span>🔗</span> Link to Specific Personnel Record <span style={{ fontWeight: 500, fontSize: '0.78rem', color: '#64748b' }}>(Optional)</span>
+                    </label>
+                    {linkedPersonnelId ? (
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          padding: '0.15rem 0.55rem',
+                          borderRadius: '12px',
+                          backgroundColor: '#ecfdf5',
+                          color: '#047857',
+                          border: '1px solid #a7f3d0',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                        }}
+                      >
+                        ● Linked Record
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          padding: '0.15rem 0.55rem',
+                          borderRadius: '12px',
+                          backgroundColor: '#f1f5f9',
+                          color: '#64748b',
+                          border: '1px solid #e2e8f0',
+                        }}
+                      >
+                        Stand-alone Account
+                      </span>
+                    )}
+                  </div>
+
                   {linkedPersonnelId && (
                     <button
                       type="button"
-                      onClick={() => setLinkedPersonnelId('')}
+                      onClick={() => handleSelectLinkedPersonnel('', null)}
                       style={{
                         background: 'none',
                         border: 'none',
                         color: 'var(--dole-red)',
-                        fontSize: '0.74rem',
+                        fontSize: '0.76rem',
                         fontWeight: 700,
                         cursor: 'pointer',
-                        padding: 0,
+                        padding: '0.2rem 0.4rem',
+                        borderRadius: '4px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        transition: 'background-color 0.15s ease',
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      title="Unlink personnel from this account"
                     >
                       ✕ Unlink Personnel
                     </button>
                   )}
                 </div>
-                <select
-                  value={linkedPersonnelId}
-                  onChange={(e) => handleSelectLinkedPersonnel(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.6rem 0.8rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-color)',
-                    fontSize: '0.88rem',
-                    backgroundColor: '#fff',
-                    outline: 'none',
-                    fontWeight: 600,
-                  }}
-                >
-                  <option value="">-- No Personnel Linked (Stand-alone Account) --</option>
-                  {personnelList.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.full_name} ({p.employee_id} · {p.position || 'Staff'} · {p.office_name})
-                    </option>
-                  ))}
-                </select>
-                <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.35rem', lineHeight: 1.4 }}>
-                  ℹ️ Linking this user account to a personnel record allows this personnel to monitor their own assigned clients in their dashboard and receive instant real-time notifications when new tickets are assigned to them.
+
+                <div style={{ fontSize: '0.76rem', color: '#64748b', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                  Connect this user login account to a DOLE personnel record. Linked officers receive real-time notifications when clients are added to their queue and can monitor their own clients directly.
                 </div>
+
+                <SearchablePersonnelSelect
+                  personnel={personnelList}
+                  value={linkedPersonnelId}
+                  valueKey="id"
+                  onChange={(pId, pObj) => handleSelectLinkedPersonnel(pId, pObj)}
+                  placeholder="-- Search & Select DOLE Personnel to Link (or leave unlinked) --"
+                  searchPlaceholder="Type name, employee ID, position, office, or division..."
+                  allowStandAlone={true}
+                  standAloneLabel="-- No Personnel Linked (Stand-alone Account) --"
+                  showOffice={true}
+                  showAccountStatus={true}
+                  currentUserId={editingId}
+                  dropDirection="auto"
+                />
+
+                {/* Selected Personnel Details Summary Card */}
+                {selectedPersonnelObj && (
+                  <div
+                    style={{
+                      marginTop: '0.75rem',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(3, 5, 186, 0.2)',
+                      borderRadius: '8px',
+                      padding: '0.75rem 0.95rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.45rem',
+                      boxShadow: '0 2px 6px rgba(3, 5, 186, 0.04)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                        <div
+                          style={{
+                            width: '34px',
+                            height: '34px',
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #0305ba 0%, #1e40af 100%)',
+                            color: '#ffffff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 800,
+                            fontSize: '0.8rem',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {selectedPersonnelObj.first_name?.[0] || ''}{selectedPersonnelObj.last_name?.[0] || ''}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                            <span>{selectedPersonnelObj.full_name}</span>
+                            {selectedPersonnelObj.employee_id && (
+                              <span
+                                className="mono"
+                                style={{
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  color: 'var(--dole-blue)',
+                                  backgroundColor: 'rgba(3, 5, 186, 0.08)',
+                                  padding: '0.1rem 0.4rem',
+                                  borderRadius: '4px',
+                                }}
+                              >
+                                {selectedPersonnelObj.employee_id}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.1rem' }}>
+                            {selectedPersonnelObj.position || 'DOLE Officer'} · 🏢 {selectedPersonnelObj.office_name}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        {selectedPersonnelObj.division_names?.map((d) => (
+                          <span
+                            key={d}
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '0.15rem 0.5rem',
+                              borderRadius: '4px',
+                              backgroundColor: '#eff6ff',
+                              color: '#1d4ed8',
+                              border: '1px solid #bfdbfe',
+                            }}
+                          >
+                            {d}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: '0.75rem',
+                        color: '#047857',
+                        backgroundColor: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        padding: '0.35rem 0.6rem',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      <span style={{ fontWeight: 800 }}>✓</span>
+                      <span>
+                        <strong>Auto-Synchronized:</strong> Name, Office, and Divisions automatically populated. This user account will monitor this officer's queue & receive real-time notifications.
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Row 1: Username & Role */}
