@@ -929,6 +929,76 @@ class CtmsCoreTestCase(TestCase):
         self.assertEqual(res_mark_read.status_code, status.HTTP_200_OK)
         self.assertEqual(CtmsNotification.objects.filter(recipient=officer_user, is_read=False).count(), 0)
 
+    def test_multiple_waiting_clients_calling_does_not_block_assigned_officer(self):
+        """
+        Verify that having multiple clients in WAITING line for the same officer
+        does not block calling the first waiting client.
+        Only an active SERVING client should block calling another client.
+        """
+        div = CsmDivision.objects.create(name="Technical Support Division")
+        personnel = DolePersonnel.objects.create(
+            employee_id="EMP-TEST",
+            first_name="TEST",
+            last_name="ACCOUNT",
+            office=self.office,
+            is_active=True
+        )
+        personnel.divisions.set([div])
+
+        service = CsmService.objects.create(
+            name="CSHP Application",
+            division=div,
+            is_active=True,
+            sort_order=10
+        )
+        service.assigned_personnel.set([personnel])
+
+        # Create counter matching division name
+        counter = CtmsCounter.objects.create(office=self.office, name=div.name, is_active=True)
+
+        # Authenticate staff user
+        staff_client = APIClient()
+        staff_client.force_authenticate(user=self.staff_user)
+
+        # 1. Create two transactions assigned to TEST ACCOUNT
+        tx1 = create_transaction(self.office, service, client_name="Client 1")
+        tx2 = create_transaction(self.office, service, client_name="Client 2")
+
+        self.assertEqual(tx1.assigned_personnel, "TEST ACCOUNT")
+        self.assertEqual(tx2.assigned_personnel, "TEST ACCOUNT")
+        self.assertEqual(tx1.status, CtmsTransaction.STATUS_WAITING)
+        self.assertEqual(tx2.status, CtmsTransaction.STATUS_WAITING)
+
+        # 2. Staff calls tx1 - this MUST SUCCEED even though tx2 is also in WAITING
+        res_call = staff_client.post(f"/api/staff/transactions/{tx1.id}/call/", {
+            "counter": counter.id,
+            "personnel": "TEST ACCOUNT"
+        })
+        self.assertEqual(res_call.status_code, status.HTTP_200_OK)
+        tx1.refresh_from_db()
+        self.assertEqual(tx1.status, CtmsTransaction.STATUS_SERVING)
+
+        # 3. Now that tx1 is actively SERVING, attempting to call tx2 simultaneously should fail
+        res_call_second = staff_client.post(f"/api/staff/transactions/{tx2.id}/call/", {
+            "counter": counter.id,
+            "personnel": "TEST ACCOUNT"
+        })
+        self.assertEqual(res_call_second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("currently serving", res_call_second.data['detail'])
+
+        # 4. Finish tx1
+        mark_done(tx1, self.staff_user)
+
+        # 5. Now tx2 can be called successfully
+        res_call_tx2 = staff_client.post(f"/api/staff/transactions/{tx2.id}/call/", {
+            "counter": counter.id,
+            "personnel": "TEST ACCOUNT"
+        })
+        self.assertEqual(res_call_tx2.status_code, status.HTTP_200_OK)
+        tx2.refresh_from_db()
+        self.assertEqual(tx2.status, CtmsTransaction.STATUS_SERVING)
+
+
 
 
 

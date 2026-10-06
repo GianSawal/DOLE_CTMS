@@ -657,26 +657,34 @@ def validate_personnel_division_assignment(tx, personnel_name_or_id):
     return True, None
 
 
-def validate_personnel_availability(office, personnel_name_or_id, current_tx_id=None):
+def validate_personnel_availability(office, personnel_name_or_id, current_tx_id=None, check_serving_only=False):
     """
     Validates that an officer is not currently assigned to another active client.
-    An officer is unavailable if they are currently assigned to any transaction with
-    status 'waiting', 'serving', or 'pending' in the same office.
-    Once that transaction is completed (done), cancelled, or no-show, they become available again.
+    When check_serving_only=True (used during calling or recalling tickets):
+      Only checks if the officer is currently SERVING another transaction at a counter.
+      An officer can have multiple clients waiting in line for them.
+    When check_serving_only=False (used during manual waiting queue reassignment):
+      Checks if the officer has active waiting/serving transactions so other available
+      officers in the division can be prioritized.
     """
     if not personnel_name_or_id or not str(personnel_name_or_id).strip():
         return True, None, None
 
     clean_str = str(personnel_name_or_id).strip().lower()
 
-    # Active transactions in the office
-    active_qs = CtmsTransaction.objects.filter(
-        office=office,
-        status__in=[
+    if check_serving_only:
+        statuses_to_check = [CtmsTransaction.STATUS_SERVING]
+    else:
+        statuses_to_check = [
             CtmsTransaction.STATUS_WAITING,
             CtmsTransaction.STATUS_SERVING,
             CtmsTransaction.STATUS_PENDING,
-        ],
+        ]
+
+    # Active transactions in the office
+    active_qs = CtmsTransaction.objects.filter(
+        office=office,
+        status__in=statuses_to_check,
     ).exclude(assigned_personnel__isnull=True).exclude(assigned_personnel='')
 
     if current_tx_id:
@@ -696,7 +704,10 @@ def validate_personnel_availability(office, personnel_name_or_id, current_tx_id=
         assigned_clean = (active_tx.assigned_personnel or '').strip().lower()
         if assigned_clean in candidate_names:
             status_text = active_tx.get_status_display()
-            return False, f"Officer '{active_tx.assigned_personnel}' is currently assigned to Queue #{active_tx.queue_no} ({status_text}) and cannot be assigned to another client until their current transaction is completed.", active_tx
+            if check_serving_only:
+                return False, f"Officer '{active_tx.assigned_personnel}' is currently serving Queue #{active_tx.queue_no} and cannot call another client until their current transaction is completed.", active_tx
+            else:
+                return False, f"Officer '{active_tx.assigned_personnel}' is currently assigned to Queue #{active_tx.queue_no} ({status_text}) and cannot be assigned to another client until their current transaction is completed.", active_tx
 
     return True, None, None
 
@@ -806,7 +817,7 @@ class StaffCallNextView(APIView):
                         }, status=status.HTTP_400_BAD_REQUEST)
 
         if personnel and str(personnel).strip():
-            avail, avail_err, _ = validate_personnel_availability(office, str(personnel).strip())
+            avail, avail_err, _ = validate_personnel_availability(office, str(personnel).strip(), check_serving_only=True)
             if not avail:
                 return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -895,7 +906,7 @@ class StaffTransactionActionView(APIView):
                     valid, err_msg = validate_personnel_division_assignment(tx, str(personnel).strip())
                     if not valid:
                         return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
-                    avail, avail_err, _ = validate_personnel_availability(tx.office, str(personnel).strip(), current_tx_id=tx.pk)
+                    avail, avail_err, _ = validate_personnel_availability(tx.office, str(personnel).strip(), current_tx_id=tx.pk, check_serving_only=True)
                     if not avail:
                         return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
                 counter = None
@@ -911,7 +922,7 @@ class StaffTransactionActionView(APIView):
                     valid, err_msg = validate_personnel_division_assignment(tx, str(personnel).strip())
                     if not valid:
                         return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
-                    avail, avail_err, _ = validate_personnel_availability(tx.office, str(personnel).strip(), current_tx_id=tx.pk)
+                    avail, avail_err, _ = validate_personnel_availability(tx.office, str(personnel).strip(), current_tx_id=tx.pk, check_serving_only=True)
                     if not avail:
                         return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
                 tx = services.call_specific_transaction(tx, tx.counter, personnel=personnel)
