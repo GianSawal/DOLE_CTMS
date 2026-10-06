@@ -192,7 +192,7 @@ export default function StaffTransactions() {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <Navbar />
 
-      <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1440px', margin: '0 auto', width: '100%' }}>
+      <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <div>
             <h1 style={{ fontSize: '1.5rem', color: 'var(--text-primary)', margin: 0 }}>
@@ -379,22 +379,22 @@ export default function StaffTransactions() {
 
         {/* Table of Transactions */}
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+          <div style={{ overflowX: 'auto', width: '100%' }}>
+            <table style={{ width: '100%', minWidth: '1360px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
               <thead style={{ backgroundColor: '#f8fafc', borderBottom: 'var(--border-hairline)' }}>
                 <tr>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Queue #</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Transaction No.</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Division</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Service</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Assigned Personnel</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Client Name</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Status</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>CSM Surveyed?</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Checked In</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Started At</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Done At</th>
-                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Actions</th>
+                  <th style={{ padding: '0.75rem 0.5rem 0.75rem 1rem', fontWeight: 700, minWidth: '70px' }}>Queue #</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '130px' }}>Transaction No.</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '85px' }}>Division</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '150px' }}>Service</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '135px' }}>Assigned Personnel</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '115px' }}>Client Name</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '85px' }}>Status</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '95px' }}>CSM Surveyed?</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '100px' }}>Checked In</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '100px' }}>Started At</th>
+                  <th style={{ padding: '0.75rem 0.5rem', fontWeight: 700, minWidth: '105px' }}>Done At</th>
+                  <th style={{ padding: '0.75rem 1.25rem 0.75rem 0.5rem', fontWeight: 700, minWidth: '190px', textAlign: 'center', whiteSpace: 'nowrap' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -413,7 +413,7 @@ export default function StaffTransactions() {
                 ) : (
                   paginatedTransactions.map(tx => (
                     <tr key={tx.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '0.875rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 0.5rem 0.75rem 1rem' }}>
                         <span className="mono" style={{ fontWeight: 800, fontSize: '1.05rem', color: tx.is_priority ? 'var(--dole-gold-dark)' : 'var(--text-primary)' }}>
                           {tx.queue_no}
                         </span>
@@ -421,19 +421,19 @@ export default function StaffTransactions() {
                           <span style={{ fontSize: '0.7rem', display: 'block', color: 'var(--dole-gold-dark)', fontWeight: 700 }}>Priority</span>
                         )}
                       </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 0.5rem' }}>
                         <span className="mono" style={{ fontWeight: 600 }}>{tx.transaction_no}</span>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Code: {tx.claim_code}</div>
                       </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 0.5rem' }}>
                         {getDivisionBadge(tx.division_name) || (
                           <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
                         )}
                       </td>
-                      <td style={{ padding: '0.875rem 1rem', maxWidth: '240px' }}>
+                      <td style={{ padding: '0.75rem 0.5rem', maxWidth: '220px' }}>
                         {tx.service_name}
                       </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 0.5rem' }}>
                         {tx.assigned_personnel ? (
                           <span style={{
                             display: 'inline-flex',
@@ -456,7 +456,7 @@ export default function StaffTransactions() {
                           </span>
                         )}
                       </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 0.5rem' }}>
                         <div>{tx.client_name || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Anonymous</span>}</div>
                         {Array.isArray(tx.group_member_names) && tx.group_member_names.length > 0 && (
                           <div style={{ marginTop: '0.25rem', fontSize: '0.73rem', color: '#475569', lineHeight: 1.35 }}>
@@ -464,10 +464,10 @@ export default function StaffTransactions() {
                           </div>
                         )}
                       </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 0.5rem' }}>
                         {getStatusBadge(tx.status)}
                       </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 0.5rem' }}>
                         {tx.is_surveyed ? (
                           <span className="badge badge-done">✓ Surveyed</span>
                         ) : tx.status === 'done' ? (
@@ -477,7 +477,7 @@ export default function StaffTransactions() {
                         )}
                       </td>
                       {/* Checked In */}
-                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '0.75rem 0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                         {(() => {
                           const dt = formatDateTime(tx.checked_in_at);
                           if (!dt) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
@@ -490,7 +490,7 @@ export default function StaffTransactions() {
                         })()}
                       </td>
                       {/* Started At */}
-                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '0.75rem 0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                         {(() => {
                           const dt = formatDateTime(tx.started_at || tx.called_at);
                           if (!dt) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
@@ -503,7 +503,7 @@ export default function StaffTransactions() {
                         })()}
                       </td>
                       {/* Done At */}
-                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '0.75rem 0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                         {(() => {
                           const dt = formatDateTime(tx.done_at);
                           if (!dt) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
@@ -533,12 +533,12 @@ export default function StaffTransactions() {
                           );
                         })()}
                       </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
-                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                      <td style={{ padding: '0.75rem 1.25rem 0.75rem 0.5rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center', justifyContent: 'center', flexWrap: 'nowrap' }}>
                           <button
                             onClick={() => setViewDetailsTx(tx)}
                             className="btn btn-outline btn-sm"
-                            style={{ minHeight: '30px', padding: '0.2rem 0.5rem', fontSize: '0.78rem' }}
+                            style={{ minHeight: '30px', padding: '0.2rem 0.55rem', fontSize: '0.78rem', whiteSpace: 'nowrap', flexShrink: 0 }}
                             title="View transaction lifecycle dates & details"
                           >
                             Details
@@ -546,7 +546,7 @@ export default function StaffTransactions() {
                           <button
                             onClick={() => setSelectedTx(tx)}
                             className="btn btn-outline btn-sm"
-                            style={{ minHeight: '30px', padding: '0.2rem 0.5rem', fontSize: '0.78rem' }}
+                            style={{ minHeight: '30px', padding: '0.2rem 0.55rem', fontSize: '0.78rem', whiteSpace: 'nowrap', flexShrink: 0 }}
                             title="Print or preview transaction slip"
                           >
                             Slip
@@ -555,7 +555,7 @@ export default function StaffTransactions() {
                             <button
                               onClick={() => handleUndoDone(tx.id)}
                               className="btn btn-outline btn-sm"
-                              style={{ minHeight: '30px', padding: '0.2rem 0.5rem', color: 'var(--dole-red)', fontSize: '0.78rem' }}
+                              style={{ minHeight: '30px', padding: '0.2rem 0.55rem', color: 'var(--dole-red)', fontSize: '0.78rem', whiteSpace: 'nowrap', flexShrink: 0 }}
                               title="Revert transaction back to serving"
                             >
                               Undone
