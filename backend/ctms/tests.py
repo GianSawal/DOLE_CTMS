@@ -246,7 +246,7 @@ class CtmsCoreTestCase(TestCase):
         self.assertEqual(emp.divisions.count(), 2)
 
         # Test reset password endpoint
-        res_reset = self.client.post(f"/api/staff/users/{emp.id}/reset-password/", data={"password": "NewTempPassword123"}, format='json')
+        res_reset = self.client.post(f"/api/staff/users/{created_user.id}/reset-password/", data={"password": "NewTempPassword123"}, format='json')
         self.assertEqual(res_reset.status_code, status.HTTP_200_OK)
         created_user.refresh_from_db()
         self.assertTrue(created_user.check_password("NewTempPassword123"))
@@ -1076,6 +1076,72 @@ class CtmsCoreTestCase(TestCase):
         audit = CtmsAuditLog.objects.filter(action='NOTIFY_PERSONNEL', target_id=str(tx.id)).first()
         self.assertIsNotNone(audit)
         self.assertIn("Sent notification reminder", audit.description)
+
+    def test_update_user_personnel_assignment_does_not_mismatch_other_account(self):
+        """
+        Verify that PATCH /api/staff/users/{user_a.id}/ updates User A,
+        even if a CtmsEmployee record exists whose primary key equals user_a.id but is linked to User B.
+        """
+        user_a = User.objects.create_user(
+            username="target_user_a",
+            password="password123",
+            first_name="Target",
+            last_name="Alpha",
+            is_staff=True
+        )
+        user_b = User.objects.create_user(
+            username="other_user_b",
+            password="password123",
+            first_name="Other",
+            last_name="Beta",
+            is_staff=True
+        )
+
+        from .models import CtmsEmployee
+        # Create a CtmsEmployee whose primary key equals user_a.id, but linked to user_b
+        # This simulated the previous bug where get_object checked CtmsEmployee.pk first
+        CtmsEmployee.objects.filter(pk=user_a.id).delete()
+        emp_b = CtmsEmployee.objects.create(
+            id=user_a.id,
+            user=user_b,
+            employee_id="EMP-BETA-ID",
+            first_name="Other",
+            last_name="Beta",
+            office=self.office,
+            is_active=True
+        )
+
+        personnel = DolePersonnel.objects.create(
+            employee_id="EMP-ASSIGN-TARGET",
+            first_name="Target",
+            last_name="Officer",
+            position="Senior Officer",
+            office=self.office,
+            is_active=True
+        )
+
+        admin_user = User.objects.create_superuser(
+            username="admin_test_user",
+            password="adminpassword",
+            email="admintest@dole.gov.ph"
+        )
+        admin_client = APIClient()
+        admin_client.force_authenticate(user=admin_user)
+
+        # Update User A with personnel
+        res = admin_client.patch(f"/api/staff/users/{user_a.id}/", {
+            "first_name": "Target",
+            "last_name": "Alpha",
+            "personnel_id": personnel.id
+        })
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data.get('personnel_id'), personnel.id)
+
+        # Verify that personnel is linked to User A, NOT User B!
+        personnel.refresh_from_db()
+        self.assertEqual(personnel.user, user_a)
+        self.assertNotEqual(personnel.user, user_b)
+
 
 
 

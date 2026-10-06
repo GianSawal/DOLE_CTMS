@@ -240,34 +240,49 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'date_joined', 'last_login']
 
     def get_personnel_id(self, obj):
-        p = getattr(obj, 'dole_personnel', None)
-        return p.id if p else None
+        try:
+            p = getattr(obj, 'dole_personnel', None)
+            return p.id if p else None
+        except Exception:
+            return None
 
     def get_personnel_name(self, obj):
-        p = getattr(obj, 'dole_personnel', None)
-        return p.full_name if p else None
+        try:
+            p = getattr(obj, 'dole_personnel', None)
+            return p.full_name if p else None
+        except Exception:
+            return None
 
     def get_personnel_employee_id(self, obj):
-        p = getattr(obj, 'dole_personnel', None)
-        return p.employee_id if p else None
+        try:
+            p = getattr(obj, 'dole_personnel', None)
+            return p.employee_id if p else None
+        except Exception:
+            return None
 
     def get_personnel_position(self, obj):
-        p = getattr(obj, 'dole_personnel', None)
-        return p.position if p else None
+        try:
+            p = getattr(obj, 'dole_personnel', None)
+            return p.position if p else None
+        except Exception:
+            return None
 
     def get_personnel_detail(self, obj):
-        p = getattr(obj, 'dole_personnel', None)
-        if not p:
+        try:
+            p = getattr(obj, 'dole_personnel', None)
+            if not p:
+                return None
+            return {
+                'id': p.id,
+                'full_name': p.full_name,
+                'employee_id': p.employee_id,
+                'position': p.position,
+                'office_id': p.office_id,
+                'office_name': p.office.name if p.office else '',
+                'division_names': [d.name for d in p.divisions.all()],
+            }
+        except Exception:
             return None
-        return {
-            'id': p.id,
-            'full_name': p.full_name,
-            'employee_id': p.employee_id,
-            'position': p.position,
-            'office_id': p.office_id,
-            'office_name': p.office.name if p.office else '',
-            'division_names': [d.name for d in p.divisions.all()],
-        }
 
     def get_role(self, obj):
         return "Administrator" if obj.is_superuser else "Staff"

@@ -1406,14 +1406,25 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         val = self.kwargs.get(lookup_url_kwarg)
         user = None
-        if str(val).isdigit():
-            emp = CtmsEmployee.objects.filter(pk=val).first()
-            if emp and emp.user:
-                user = emp.user
+
+        # If request payload specifies username, match by username directly
+        if hasattr(self, 'request') and self.request and hasattr(self.request, 'data'):
+            target_username = self.request.data.get('username')
+            if target_username:
+                user = User.objects.filter(username__iexact=str(target_username).strip()).first()
+
+        if not user and str(val).isdigit():
+            # Prioritize User primary key first - /staff/users/{id}/ uses User.id
+            user = User.objects.filter(pk=val).first()
+            # Fallback for legacy employee id lookup only if no User with this PK exists
             if not user:
-                user = User.objects.filter(pk=val).first()
+                emp = CtmsEmployee.objects.filter(pk=val).first()
+                if emp and emp.user:
+                    user = emp.user
+
         if not user:
             user = User.objects.filter(username__iexact=str(val)).first()
+
         if not user:
             raise Http404(f"No user found matching '{val}'.")
         self.check_object_permissions(self.request, user)
@@ -1543,10 +1554,10 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             if personnel_id and str(personnel_id).isdigit() and int(personnel_id) > 0:
                 target_p = DolePersonnel.objects.filter(pk=int(personnel_id)).first()
                 if target_p:
-                    DolePersonnel.objects.filter(pk=target_p.pk).update(user=None)
                     target_p.user = user
                     target_p.save(update_fields=['user'])
 
+            user = User.objects.prefetch_related('staff_offices__office', 'staff_divisions__division').get(pk=user.pk)
             serializer = self.get_serializer(user)
             log_audit_event(
                 action='USER_CREATE',
@@ -1657,6 +1668,7 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                     target_p.user = user
                     target_p.save(update_fields=['user'])
 
+        user = User.objects.prefetch_related('staff_offices__office', 'staff_divisions__division').get(pk=user.pk)
         serializer = self.get_serializer(user)
         log_audit_event(
             action='USER_UPDATE',

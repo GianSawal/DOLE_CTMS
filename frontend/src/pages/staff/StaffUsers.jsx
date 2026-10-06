@@ -337,6 +337,7 @@ export default function StaffUsers() {
         : selectedDivisionIds;
 
       const payload = {
+        username: username.trim(),
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         role: role,
@@ -349,7 +350,6 @@ export default function StaffUsers() {
       };
 
       if (modalMode === 'create') {
-        payload.username = username.trim();
         payload.password = password.trim();
         await staffApi.createEmployee(payload);
 
