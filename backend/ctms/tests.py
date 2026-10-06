@@ -998,6 +998,31 @@ class CtmsCoreTestCase(TestCase):
         tx2.refresh_from_db()
         self.assertEqual(tx2.status, CtmsTransaction.STATUS_SERVING)
 
+    def test_delete_waiting_ticket_action(self):
+        """
+        Verify that staff can delete a ticket from the waiting line.
+        """
+        staff_client = APIClient()
+        staff_client.force_authenticate(user=self.staff_user)
+
+        tx = create_transaction(self.office, self.service, client_name="Wrong Client")
+        tx_id = tx.id
+        self.assertEqual(tx.status, CtmsTransaction.STATUS_WAITING)
+
+        # Delete transaction from waiting line
+        res_del = staff_client.post(f"/api/staff/transactions/{tx_id}/delete/")
+        self.assertEqual(res_del.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_del.data.get('deleted'))
+
+        # Verify transaction is permanently deleted from database
+        self.assertFalse(CtmsTransaction.objects.filter(id=tx_id).exists())
+
+        # Verify audit log recorded the deletion
+        audit = CtmsAuditLog.objects.filter(action='DELETE_TICKET', target_id=str(tx_id)).first()
+        self.assertIsNotNone(audit)
+        self.assertIn("Deleted Queue", audit.description)
+
+
 
 
 

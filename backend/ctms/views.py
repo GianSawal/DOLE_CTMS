@@ -939,6 +939,39 @@ class StaffTransactionActionView(APIView):
             elif action == 'cancel':
                 tx = services.cancel_transaction(tx)
 
+            elif action == 'delete':
+                q_no = tx.queue_no
+                t_no = tx.transaction_no
+                s_name = tx.service.name if tx.service else ''
+                t_office = tx.office
+                t_div = tx.service.division.name if tx.service and tx.service.division else ''
+                tx_id = tx.id
+
+                log_audit_event(
+                    action='DELETE_TICKET',
+                    category=CtmsAuditLog.CATEGORY_QUEUE,
+                    actor=request.user,
+                    request=request,
+                    target_type='Transaction',
+                    target_id=tx_id,
+                    target_repr=f"Queue #{q_no} ({t_no})",
+                    office=t_office,
+                    division_name=t_div,
+                    description=f"Deleted Queue #{q_no} ({t_no}) from waiting line",
+                    details={
+                        'queue_no': q_no,
+                        'transaction_no': t_no,
+                        'service': s_name,
+                    }
+                )
+                tx.delete()
+                return Response({
+                    "detail": f"Queue #{q_no} deleted successfully.",
+                    "deleted": True,
+                    "id": tx_id,
+                    "queue_no": q_no,
+                })
+
             elif action == 'pending':
                 tx = services.mark_pending(tx)
 

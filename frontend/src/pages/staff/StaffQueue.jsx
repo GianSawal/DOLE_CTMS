@@ -164,6 +164,32 @@ export default function StaffQueue() {
   // Personnel filter state: Default to viewing only my assigned clients if linked to a personnel record
   const [viewMyClientsOnly, setViewMyClientsOnly] = useState(() => Boolean(user?.linked_personnel && !user?.is_superuser));
 
+  // Delete waiting ticket modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteTx, setDeleteTx] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleOpenDeleteModal = (tx) => {
+    setDeleteTx(tx);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTx) return;
+    try {
+      setDeleteLoading(true);
+      setError('');
+      await staffApi.transactionAction(deleteTx.id, 'delete');
+      setShowDeleteModal(false);
+      setDeleteTx(null);
+      await fetchQueue();
+    } catch (err) {
+      setError(err.message || 'Failed to delete ticket.');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (user?.linked_personnel && !user?.is_superuser) {
       setViewMyClientsOnly(true);
@@ -1726,6 +1752,44 @@ export default function StaffQueue() {
                         >
                           📢 Call
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDeleteModal(tx)}
+                          disabled={actionLoading}
+                          className="btn btn-outline btn-sm"
+                          style={{
+                            minHeight: '34px',
+                            borderRadius: '6px',
+                            fontWeight: 700,
+                            padding: '0.35rem 0.65rem',
+                            color: '#dc2626',
+                            borderColor: '#fca5a5',
+                            backgroundColor: '#fff5f5',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#fee2e2';
+                            e.currentTarget.style.borderColor = '#ef4444';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#fff5f5';
+                            e.currentTarget.style.borderColor = '#fca5a5';
+                          }}
+                          title={`Delete Queue #${tx.queue_no} from waiting line`}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            <line x1="10" y1="11" x2="10" y2="17"></line>
+                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                          </svg>
+                          <span>Delete</span>
+                        </button>
                       </div>
                     </div>
 
@@ -2412,6 +2476,125 @@ export default function StaffQueue() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete Waiting Ticket Confirmation Modal */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={() => {
+          if (!deleteLoading) {
+            setShowDeleteModal(false);
+            setDeleteTx(null);
+          }
+        }}
+        title="Delete Waiting Ticket"
+      >
+        <div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.85rem',
+            padding: '0.85rem 1rem',
+            backgroundColor: '#fef2f2',
+            borderRadius: '8px',
+            border: '1px solid #fee2e2',
+            marginBottom: '1.25rem',
+          }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              backgroundColor: '#fee2e2',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#dc2626',
+              flexShrink: 0,
+            }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </div>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700, color: '#991b1b' }}>
+                Are you sure you want to delete this ticket?
+              </h4>
+              <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: '#7f1d1d' }}>
+                This ticket will be permanently removed from the waiting line.
+              </p>
+            </div>
+          </div>
+
+          {deleteTx && (
+            <div style={{
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '1rem',
+              marginBottom: '1.5rem',
+              fontSize: '0.875rem',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                <span style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: 600 }}>Queue Number:</span>
+                <span className="mono" style={{ fontSize: '1.35rem', fontWeight: 900, color: '#0f172a' }}>
+                  {deleteTx.queue_no}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.45rem' }}>
+                <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Transaction No:</span>
+                <span className="mono" style={{ fontWeight: 600, color: '#334155' }}>{deleteTx.transaction_no}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.45rem' }}>
+                <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Service:</span>
+                <span style={{ fontWeight: 600, color: '#0f172a', textAlign: 'right', maxWidth: '65%' }}>{deleteTx.service_name}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.45rem' }}>
+                <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Client:</span>
+                <span style={{ fontWeight: 600, color: '#334155' }}>{deleteTx.client_name || 'Anonymous'}</span>
+              </div>
+              {deleteTx.assigned_personnel && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Assigned Officer:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--dole-blue)' }}>{deleteTx.assigned_personnel}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <button
+              type="button"
+              disabled={deleteLoading}
+              onClick={() => {
+                setShowDeleteModal(false);
+                setDeleteTx(null);
+              }}
+              className="btn btn-outline"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleteLoading}
+              onClick={handleConfirmDelete}
+              className="btn btn-danger"
+              style={{
+                backgroundColor: '#dc2626',
+                borderColor: '#dc2626',
+                color: '#ffffff',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+              }}
+            >
+              {deleteLoading ? 'Deleting...' : '🗑️ Yes, Delete Ticket'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
