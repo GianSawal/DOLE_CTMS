@@ -8,6 +8,7 @@ from .models import (
     CtmsStaffOffice,
     CtmsEmployee,
     CtmsDisplayConfig,
+    CtmsOfficeQrConfig,
     CtmsServiceDefaultOfficer,
     CtmsTransaction,
     CtmsAuditLog,
@@ -25,6 +26,14 @@ class CtmsDisplayConfigAdmin(admin.ModelAdmin):
     list_display = ('id', 'office', 'is_active', 'updated_at')
     search_fields = ('office__name', 'office__code', 'arta_video_url')
     list_filter = ('is_active',)
+
+
+@admin.register(CtmsOfficeQrConfig)
+class CtmsOfficeQrConfigAdmin(admin.ModelAdmin):
+    list_display = ('id', 'office', 'is_qr_enabled', 'disabled_at', 'disabled_by', 'updated_at')
+    search_fields = ('office__name', 'office__code', 'disabled_message')
+    list_filter = ('is_qr_enabled',)
+    readonly_fields = ('updated_at',)
 
 
 @admin.register(CsmOffice)

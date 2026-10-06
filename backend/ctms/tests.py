@@ -16,6 +16,7 @@ from .models import (
     DolePersonnel,
     CtmsAuditLog,
     CtmsNotification,
+    CtmsOfficeQrConfig,
 )
 from .services import (
     create_transaction,
@@ -1202,6 +1203,100 @@ class CtmsCoreTestCase(TestCase):
         tx.refresh_from_db()
         self.assertEqual(tx.status, 'waiting')
         self.assertIsNone(tx.started_at)
+
+    def test_qr_code_enable_disable_and_office_hours_blocking(self):
+        # 1. By default, office QR code is enabled
+        res_public = self.client.get(f'/api/public/offices/{self.office.id}/')
+        self.assertEqual(res_public.status_code, 200)
+        self.assertTrue(res_public.data['is_qr_enabled'])
+
+        # Staff gets QR config
+        self.client.force_authenticate(user=self.staff_user)
+        res_cfg = self.client.get(f'/api/staff/qr-config/?office={self.office.id}')
+        self.assertEqual(res_cfg.status_code, 200)
+        self.assertTrue(res_cfg.data['is_qr_enabled'])
+
+        # Checkin works normally when enabled
+        self.client.force_authenticate(user=None)
+        res_checkin = self.client.post('/api/public/checkin/', {
+            'office': self.office.id,
+            'service': self.service.id,
+            'client_name': 'Test Citizen'
+        }, format='json')
+        self.assertEqual(res_checkin.status_code, 201)
+        self.assertIn('ticket_token', res_checkin.data)
+
+        # 2. Staff toggles QR code OFF (beyond office hours)
+        self.client.force_authenticate(user=self.staff_user)
+        custom_msg = "Office is closed. Registration is only open 8am-5pm."
+        res_toggle_off = self.client.post('/api/staff/qr-config/toggle/', {
+            'office_id': self.office.id,
+            'is_qr_enabled': False,
+            'disabled_message': custom_msg,
+        }, format='json')
+        self.assertEqual(res_toggle_off.status_code, 200)
+        self.assertFalse(res_toggle_off.data['is_qr_enabled'])
+        self.assertEqual(res_toggle_off.data['disabled_message'], custom_msg)
+
+        # Verify audit log was recorded
+        audit = CtmsAuditLog.objects.filter(action='DISABLE_QR').latest('timestamp')
+        self.assertEqual(audit.actor, self.staff_user)
+        self.assertEqual(audit.details.get('office_id'), self.office.id)
+
+        # 3. Public Office Detail reflects disabled state
+        self.client.force_authenticate(user=None)
+        res_public_closed = self.client.get(f'/api/public/offices/{self.office.id}/')
+        self.assertEqual(res_public_closed.status_code, 200)
+        self.assertFalse(res_public_closed.data['is_qr_enabled'])
+        self.assertEqual(res_public_closed.data['disabled_message'], custom_msg)
+
+        # 4. Public Checkin is BLOCKED with 403 Forbidden and code 'QR_DISABLED'
+        res_checkin_blocked = self.client.post('/api/public/checkin/', {
+            'office': self.office.id,
+            'service': self.service.id,
+            'client_name': 'Late Citizen'
+        }, format='json')
+        self.assertEqual(res_checkin_blocked.status_code, 403)
+        self.assertEqual(res_checkin_blocked.data['code'], 'QR_DISABLED')
+        self.assertEqual(res_checkin_blocked.data['message'], custom_msg)
+
+        # 5. Staff walk-in registration at counter is NOT blocked
+        self.client.force_authenticate(user=self.staff_user)
+        res_walkin = self.client.post('/api/staff/transactions/walkin/', {
+            'office': self.office.id,
+            'service': self.service.id,
+            'client_name': 'Emergency Walk-in'
+        }, format='json')
+        self.assertEqual(res_walkin.status_code, 201)
+
+        # 6. Re-enabling QR code restores public check-in
+        res_toggle_on = self.client.post('/api/staff/qr-config/toggle/', {
+            'office_id': self.office.id,
+            'is_qr_enabled': True,
+        }, format='json')
+        self.assertEqual(res_toggle_on.status_code, 200)
+        self.assertTrue(res_toggle_on.data['is_qr_enabled'])
+
+        # Audit log for re-enable
+        audit_enable = CtmsAuditLog.objects.filter(action='ENABLE_QR').latest('timestamp')
+        self.assertEqual(audit_enable.actor, self.staff_user)
+
+        self.client.force_authenticate(user=None)
+        res_checkin_open = self.client.post('/api/public/checkin/', {
+            'office': self.office.id,
+            'service': self.service.id,
+            'client_name': 'Next Day Citizen'
+        }, format='json')
+        self.assertEqual(res_checkin_open.status_code, 201)
+
+        # 7. Unauthorized staff cannot toggle
+        unauthorized_user = User.objects.create_user(username="otherstaff", password="password123", is_staff=True)
+        self.client.force_authenticate(user=unauthorized_user)
+        res_unauthorized = self.client.post('/api/staff/qr-config/toggle/', {
+            'office_id': self.office.id,
+            'is_qr_enabled': False,
+        }, format='json')
+        self.assertEqual(res_unauthorized.status_code, 403)
 
 
 

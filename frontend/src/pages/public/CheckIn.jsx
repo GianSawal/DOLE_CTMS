@@ -84,6 +84,13 @@ export default function CheckIn() {
       // Redirect to client live ticket
       navigate(`/t/${res.ticket_token}`);
     } catch (err) {
+      if (err.data?.code === 'QR_DISABLED' || err.status === 403) {
+        setOfficeData(prev => prev ? ({
+          ...prev,
+          is_qr_enabled: false,
+          disabled_message: err.data?.message || err.message,
+        }) : null);
+      }
       setError(err.message || 'Check-in failed. Please try again or ask DOLE staff for assistance.');
     } finally {
       setSubmitting(false);
@@ -109,6 +116,137 @@ export default function CheckIn() {
             Try Again
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // Display "Registration Closed Beyond Office Hours" screen if QR check-in is disabled
+  if (officeData && officeData.is_qr_enabled === false) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f8fafc' }}>
+        <Header
+          lang={lang}
+          setLang={setLang}
+          title={officeData.office?.name}
+          subtitle="Department of Labor and Employment"
+        />
+
+        <main style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem 1rem',
+        }}>
+          <div className="card" style={{
+            width: '100%',
+            maxWidth: '560px',
+            textAlign: 'center',
+            padding: '2.5rem 2rem',
+            borderTop: '6px solid var(--dole-red)',
+            boxShadow: 'var(--shadow-lg)',
+          }}>
+            <div style={{
+              width: '76px',
+              height: '76px',
+              borderRadius: '50%',
+              backgroundColor: '#fee2e2',
+              color: 'var(--dole-red)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '2.5rem',
+              margin: '0 auto 1.25rem',
+            }}>
+              ⏰
+            </div>
+
+            <span className="badge" style={{
+              backgroundColor: '#fee2e2',
+              color: '#991b1b',
+              fontWeight: 800,
+              padding: '0.4rem 0.9rem',
+              fontSize: '0.85rem',
+              borderRadius: '9999px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              marginBottom: '1rem',
+              letterSpacing: '0.02em',
+            }}>
+              🔴 {t.registration_closed_subtitle || 'Registration Closed Beyond Office Hours'}
+            </span>
+
+            <h2 style={{
+              fontSize: '1.45rem',
+              fontWeight: 800,
+              color: 'var(--text-primary)',
+              marginBottom: '0.5rem',
+              lineHeight: 1.3,
+            }}>
+              {t.registration_closed_title || 'Online Check-in is Currently Closed'}
+            </h2>
+
+            <p style={{
+              fontSize: '1rem',
+              fontWeight: 700,
+              color: 'var(--dole-blue)',
+              marginBottom: '1.5rem',
+            }}>
+              🏛️ {officeData.office?.name || 'DOLE Office'}
+            </p>
+
+            {/* Custom or Default Office Closure Message */}
+            <div style={{
+              backgroundColor: '#fff1f2',
+              border: '1px solid #fecdd3',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.15rem 1.25rem',
+              textAlign: 'left',
+              marginBottom: '1.5rem',
+              color: '#881337',
+              fontSize: '0.92rem',
+              lineHeight: 1.55,
+            }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                📢 Advisory from DOLE Administration:
+              </div>
+              <div>
+                {officeData.disabled_message || t.registration_closed_desc}
+              </div>
+            </div>
+
+            {/* Information Box */}
+            <div style={{
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: 'var(--radius-md)',
+              padding: '1rem 1.25rem',
+              textAlign: 'left',
+              marginBottom: '1.75rem',
+              fontSize: '0.86rem',
+              color: 'var(--text-secondary)',
+              lineHeight: 1.5,
+            }}>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                🕒 {t.registration_hours_info}
+              </div>
+              <div>
+                ℹ️ {t.registration_walkin_note}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                onClick={() => window.location.reload()}
+                className="btn btn-primary"
+                style={{ minHeight: '44px', padding: '0.6rem 1.5rem', fontWeight: 700 }}
+              >
+                🔄 {t.check_again_btn || 'Check Again / Refresh'}
+              </button>
+            </div>
+          </div>
+        </main>
       </div>
     );
   }

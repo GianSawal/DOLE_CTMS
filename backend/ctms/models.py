@@ -235,6 +235,40 @@ class CtmsDisplayConfig(models.Model):
         return f"Display Config for {self.office.name}"
 
 
+class CtmsOfficeQrConfig(models.Model):
+    """
+    Controls whether client QR code registration is enabled or disabled for an office.
+    Used by admins to prevent registrations outside office hours.
+    """
+    id = models.BigAutoField(primary_key=True)
+    office = models.OneToOneField(CsmOffice, on_delete=models.CASCADE, related_name='qr_config')
+    is_qr_enabled = models.BooleanField(default=True, help_text="Enable or disable client QR check-in / registration")
+    disabled_message = models.CharField(
+        max_length=255,
+        blank=True,
+        default="Online registration is currently closed beyond office hours. Please visit us during regular office hours (Monday to Friday, 8:00 AM - 5:00 PM).",
+        help_text="Custom notice shown to clients when QR registration is closed"
+    )
+    disabled_at = models.DateTimeField(null=True, blank=True)
+    disabled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='disabled_qr_offices'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ctms_office_qr_config'
+        verbose_name = 'CTMS Office QR Config'
+        verbose_name_plural = 'CTMS Office QR Configs'
+
+    def __str__(self):
+        status = "Enabled" if self.is_qr_enabled else "Disabled"
+        return f"{self.office.name} - QR {status}"
+
+
 class CtmsServiceDefaultOfficer(models.Model):
     """
     Stores designated default officers per service and office.

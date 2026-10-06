@@ -59,6 +59,17 @@ export const staffApi = {
 
   getQrCodeUrl: (officeId) => `/api/staff/qr/${officeId}/`,
 
+  getQrConfig: (officeId) => apiRequest(`/staff/qr-config/?office=${officeId}`),
+
+  toggleQrConfig: (officeId, isQrEnabled, disabledMessage) => apiRequest('/staff/qr-config/toggle/', {
+    method: 'POST',
+    body: JSON.stringify({
+      office_id: officeId,
+      is_qr_enabled: isQrEnabled,
+      disabled_message: disabledMessage,
+    }),
+  }),
+
   getDisplayVideo: (officeId) => apiRequest(`/staff/display-video/?office=${officeId}`),
 
   updateDisplayVideo: (officeId, artaVideoUrl, isActive = true) => apiRequest('/staff/display-video/', {

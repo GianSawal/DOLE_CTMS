@@ -18,6 +18,7 @@ from .views import (
     StaffTransactionsListView,
     StaffReportsSummaryView,
     StaffQrCodeView,
+    StaffQrConfigView,
     StaffDisplayVideoView,
     PublicFolderVideosView,
     PublicStreamLocalVideoView,
@@ -68,6 +69,8 @@ urlpatterns = [
     # Reports, QR, and TV Display Video
     path('staff/reports/summary/', StaffReportsSummaryView.as_view(), name='staff-reports-summary'),
     path('staff/qr/<int:office_id>/', StaffQrCodeView.as_view(), name='staff-qr-code'),
+    path('staff/qr-config/', StaffQrConfigView.as_view(), name='staff-qr-config'),
+    path('staff/qr-config/toggle/', StaffQrConfigView.as_view(), name='staff-qr-config-toggle'),
     path('staff/display-video/', StaffDisplayVideoView.as_view(), name='staff-display-video'),
     path('staff/divisions/', CsmDivisionListView.as_view(), name='staff-divisions'),
     path('staff/offices/', CsmOfficeListView.as_view(), name='staff-offices-list'),

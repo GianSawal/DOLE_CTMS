@@ -33,6 +33,7 @@ from .models import (
     CtmsEmployee,
     DolePersonnel,
     CtmsDisplayConfig,
+    CtmsOfficeQrConfig,
     CtmsTransaction,
     CtmsAuditLog,
     CtmsNotification,
@@ -206,9 +207,22 @@ class PublicOfficeDetailView(APIView):
     def get(self, request, office_id):
         office = get_object_or_404(CsmOffice, pk=office_id, is_active=True)
         services_qs = CsmService.objects.filter(is_active=True).order_by('sort_order', 'name')
+        
+        qr_config = getattr(office, 'qr_config', None)
+        if not qr_config:
+            qr_config = CtmsOfficeQrConfig.objects.filter(office=office).first()
+
+        is_qr_enabled = qr_config.is_qr_enabled if qr_config else True
+        disabled_message = (
+            qr_config.disabled_message if qr_config and qr_config.disabled_message
+            else "Online registration is currently closed beyond office hours. Please visit us during regular office hours (Monday to Friday, 8:00 AM - 5:00 PM)."
+        )
+
         return Response({
             "office": CsmOfficeSerializer(office).data,
             "services": CsmServiceSerializer(services_qs, many=True).data,
+            "is_qr_enabled": is_qr_enabled,
+            "disabled_message": disabled_message,
         })
 
 
@@ -221,9 +235,18 @@ class PublicCheckinView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        office = data['office']
+        # Guard: verify client QR check-in is enabled for this office (e.g. within office hours)
+        qr_config = getattr(office, 'qr_config', None)
+        if not qr_config:
+            qr_config = CtmsOfficeQrConfig.objects.filter(office=office).first()
+        if qr_config and not qr_config.is_qr_enabled:
+            msg = qr_config.disabled_message or "Online registration is currently closed beyond office hours."
+            return Response({"detail": msg, "message": msg, "code": "QR_DISABLED"}, status=status.HTTP_403_FORBIDDEN)
+
         try:
             tx = services.create_transaction(
-                office=data['office'],
+                office=office,
                 service=data['service'],
                 client_name=data.get('client_name'),
                 is_priority=data.get('is_priority', False),
@@ -1222,6 +1245,97 @@ class StaffQrCodeView(APIView):
         img.save(buffer, format="PNG")
         buffer.seek(0)
         return HttpResponse(buffer.getvalue(), content_type="image/png")
+
+
+class StaffQrConfigView(APIView):
+    permission_classes = [IsStaffUser]
+
+    def get(self, request):
+        office_id = request.GET.get('office')
+        if not office_id:
+            return Response({"detail": "Office ID required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed_offices = get_staff_offices(request.user)
+        if not allowed_offices.filter(pk=office_id).exists() and not request.user.is_superuser:
+            return Response({"detail": "Forbidden: You are not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
+
+        office = get_object_or_404(CsmOffice, pk=office_id)
+        config, _ = CtmsOfficeQrConfig.objects.get_or_create(office=office)
+
+        return Response({
+            "office_id": office.id,
+            "office_name": office.name,
+            "is_qr_enabled": config.is_qr_enabled,
+            "disabled_message": config.disabled_message,
+            "disabled_at": config.disabled_at.isoformat() if config.disabled_at else None,
+            "disabled_by_username": config.disabled_by.username if config.disabled_by else None,
+            "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+        })
+
+    def post(self, request):
+        office_id = request.data.get('office_id') or request.data.get('office')
+        if not office_id:
+            return Response({"detail": "Office ID required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed_offices = get_staff_offices(request.user)
+        if not allowed_offices.filter(pk=office_id).exists() and not request.user.is_superuser:
+            return Response({"detail": "Forbidden: You are not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
+
+        office = get_object_or_404(CsmOffice, pk=office_id)
+        config, _ = CtmsOfficeQrConfig.objects.get_or_create(office=office)
+
+        is_qr_enabled = request.data.get('is_qr_enabled')
+        if is_qr_enabled is None:
+            is_qr_enabled = not config.is_qr_enabled
+        else:
+            is_qr_enabled = bool(is_qr_enabled)
+
+        config.is_qr_enabled = is_qr_enabled
+        if 'disabled_message' in request.data and str(request.data['disabled_message']).strip():
+            config.disabled_message = str(request.data['disabled_message']).strip()
+
+        if not is_qr_enabled:
+            config.disabled_at = timezone.now()
+            config.disabled_by = request.user
+        else:
+            config.disabled_at = None
+            config.disabled_by = None
+
+        config.save()
+
+        action_name = "ENABLE_QR" if is_qr_enabled else "DISABLE_QR"
+        desc = (
+            f"Enabled client QR registration for {office.name}"
+            if is_qr_enabled
+            else f"Disabled client QR registration for {office.name} (beyond office hours)"
+        )
+        log_audit_event(
+            action=action_name,
+            category=CtmsAuditLog.CATEGORY_CONFIG,
+            actor=request.user,
+            request=request,
+            target_type="CtmsOfficeQrConfig",
+            target_id=str(config.id),
+            target_repr=f"QR Config for {office.name}",
+            office=office,
+            description=desc,
+            details={
+                "office_id": office.id,
+                "office_name": office.name,
+                "is_qr_enabled": is_qr_enabled,
+            }
+        )
+
+        return Response({
+            "office_id": office.id,
+            "office_name": office.name,
+            "is_qr_enabled": config.is_qr_enabled,
+            "disabled_message": config.disabled_message,
+            "disabled_at": config.disabled_at.isoformat() if config.disabled_at else None,
+            "disabled_by_username": config.disabled_by.username if config.disabled_by else None,
+            "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+            "detail": f"QR registration has been {'enabled' if is_qr_enabled else 'disabled'} for {office.name}.",
+        })
 
 
 class StaffDisplayVideoView(APIView):
