@@ -321,43 +321,6 @@ export default function StaffQueue() {
     });
   }, [officeServices, user]);
 
-  // For the current transaction: separate eligible personnel (same division) vs ineligible
-  const txDivNorm = normalizeDiv(assignTx?.division_name);
-
-  const eligiblePersonnel = useMemo(() => {
-    if (!officePersonnel || officePersonnel.length === 0) return [];
-    const txSvcId = assignTx?.service_id || assignTx?.service;
-
-    const filtered = officePersonnel.filter(p => {
-      if (!txDivNorm) return true;
-      const divs = (p.division_names || []).map(normalizeDiv);
-      return divs.includes(txDivNorm) || divs.includes('ALL');
-    });
-
-    // Sort: officers explicitly associated with this service first, then available officers first, then alphabetical
-    return [...filtered].sort((a, b) => {
-      const aInSvc = txSvcId && Array.isArray(a.service_ids) && a.service_ids.includes(Number(txSvcId));
-      const bInSvc = txSvcId && Array.isArray(b.service_ids) && b.service_ids.includes(Number(txSvcId));
-      if (aInSvc && !bInSvc) return -1;
-      if (!aInSvc && bInSvc) return 1;
-
-      const aBusy = Boolean(getBusyInfo(a));
-      const bBusy = Boolean(getBusyInfo(b));
-      if (!aBusy && bBusy) return -1;
-      if (aBusy && !bBusy) return 1;
-
-      return (a.full_name || '').localeCompare(b.full_name || '');
-    });
-  }, [officePersonnel, txDivNorm, assignTx, getBusyInfo]);
-
-  const ineligiblePersonnel = useMemo(() => {
-    if (!txDivNorm) return [];
-    return officePersonnel.filter(p => {
-      const divs = (p.division_names || []).map(normalizeDiv);
-      return !divs.includes(txDivNorm) && !divs.includes('ALL');
-    });
-  }, [officePersonnel, txDivNorm]);
-
   // Build a map of officers who are currently assigned to active clients (waiting, serving, pending)
   // excluding the transaction currently being edited/reassigned (assignTx)
   const busyPersonnelMap = useMemo(() => {
@@ -406,6 +369,43 @@ export default function StaffQueue() {
     if (empId && busyPersonnelMap.has(empId)) return busyPersonnelMap.get(empId);
     return null;
   }, [busyPersonnelMap]);
+
+  // For the current transaction: separate eligible personnel (same division) vs ineligible
+  const txDivNorm = normalizeDiv(assignTx?.division_name);
+
+  const eligiblePersonnel = useMemo(() => {
+    if (!officePersonnel || officePersonnel.length === 0) return [];
+    const txSvcId = assignTx?.service_id || assignTx?.service;
+
+    const filtered = officePersonnel.filter(p => {
+      if (!txDivNorm) return true;
+      const divs = (p.division_names || []).map(normalizeDiv);
+      return divs.includes(txDivNorm) || divs.includes('ALL');
+    });
+
+    // Sort: officers explicitly associated with this service first, then available officers first, then alphabetical
+    return [...filtered].sort((a, b) => {
+      const aInSvc = txSvcId && Array.isArray(a.service_ids) && a.service_ids.includes(Number(txSvcId));
+      const bInSvc = txSvcId && Array.isArray(b.service_ids) && b.service_ids.includes(Number(txSvcId));
+      if (aInSvc && !bInSvc) return -1;
+      if (!aInSvc && bInSvc) return 1;
+
+      const aBusy = Boolean(getBusyInfo(a));
+      const bBusy = Boolean(getBusyInfo(b));
+      if (!aBusy && bBusy) return -1;
+      if (aBusy && !bBusy) return 1;
+
+      return (a.full_name || '').localeCompare(b.full_name || '');
+    });
+  }, [officePersonnel, txDivNorm, assignTx, getBusyInfo]);
+
+  const ineligiblePersonnel = useMemo(() => {
+    if (!txDivNorm) return [];
+    return officePersonnel.filter(p => {
+      const divs = (p.division_names || []).map(normalizeDiv);
+      return !divs.includes(txDivNorm) && !divs.includes('ALL');
+    });
+  }, [officePersonnel, txDivNorm]);
 
   // Check if currently selected / typed name matches an unavailable / busy officer
   const matchedBusyOfficer = useMemo(() => {
