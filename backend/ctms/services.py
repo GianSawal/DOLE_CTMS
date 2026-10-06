@@ -220,13 +220,71 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
             survey_token=survey_token,
             claim_code=claim_code,
         )
+
+        if tx.assigned_personnel:
+            notify_assigned_personnel(tx, is_reassignment=False)
+
         return tx
+
+
+def notify_assigned_personnel(tx, is_reassignment=False, previous_officer=None):
+    """
+    Creates real-time notifications for the personnel member linked to the assigned officer.
+    Alerts them with queue number, requested service, and assignment time.
+    """
+    if not tx or not tx.assigned_personnel:
+        return
+
+    clean = str(tx.assigned_personnel).strip().lower()
+
+    personnel = None
+    qs = DolePersonnel.objects.filter(is_active=True).select_related('user')
+    if tx.office:
+        qs_off = qs.filter(office=tx.office)
+        if qs_off.exists():
+            qs = qs_off
+
+    for p in qs:
+        if p.employee_id.strip().lower() == clean or p.full_name.strip().lower() == clean:
+            personnel = p
+            break
+
+    if not personnel or not personnel.user:
+        return
+
+    service_name = tx.service.name if tx.service else 'Service'
+    action_type = 'REASSIGNMENT' if is_reassignment else 'ASSIGNMENT'
+    title = f"{'Client Reassigned' if is_reassignment else 'New Client Assigned'}: Queue #{tx.queue_no}"
+    message = (
+        f"Queue #{tx.queue_no} ({service_name}) was reassigned to you."
+        if is_reassignment
+        else f"Queue #{tx.queue_no} ({service_name}) was added to your queue."
+    )
+
+    try:
+        from .models import CtmsNotification
+        CtmsNotification.objects.create(
+            recipient=personnel.user,
+            transaction=tx,
+            notification_type=action_type,
+            title=title,
+            message=message,
+            queue_no=tx.queue_no,
+            service_name=service_name,
+            assigned_at=timezone.now(),
+        )
+    except Exception as e:
+        print(f"Warning: Failed to create assignment notification: {e}")
 
 
 def assign_personnel_to_transaction(tx, personnel):
     """Staff assigns a designated officer / personnel to a transaction."""
+    old_officer = tx.assigned_personnel
     tx.assigned_personnel = (personnel or "").strip()
     tx.save(update_fields=['assigned_personnel'])
+    if tx.assigned_personnel:
+        is_reassign = bool(old_officer and old_officer.strip().lower() != tx.assigned_personnel.lower())
+        notify_assigned_personnel(tx, is_reassignment=is_reassign, previous_officer=old_officer)
     return tx
 
 

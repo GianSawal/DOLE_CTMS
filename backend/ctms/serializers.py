@@ -12,6 +12,7 @@ from .models import (
     DolePersonnel,
     CtmsTransaction,
     CtmsAuditLog,
+    CtmsNotification,
 )
 
 User = get_user_model()
@@ -139,10 +140,15 @@ class DolePersonnelSerializer(serializers.ModelSerializer):
     )
     service_names = serializers.SerializerMethodField()
 
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    user_username = serializers.ReadOnlyField(source='user.username')
+
     class Meta:
         model = DolePersonnel
         fields = [
             'id',
+            'user',
+            'user_username',
             'employee_id',
             'first_name',
             'middle_name',
@@ -196,6 +202,12 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     employee_id = serializers.CharField(source='username', read_only=True)
 
+    personnel_id = serializers.SerializerMethodField()
+    personnel_name = serializers.SerializerMethodField()
+    personnel_employee_id = serializers.SerializerMethodField()
+    personnel_position = serializers.SerializerMethodField()
+    personnel_detail = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = [
@@ -209,6 +221,11 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
             'is_staff',
             'is_superuser',
             'is_active',
+            'personnel_id',
+            'personnel_name',
+            'personnel_employee_id',
+            'personnel_position',
+            'personnel_detail',
             'office',
             'office_name',
             'office_ids',
@@ -221,6 +238,36 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
             'last_login',
         ]
         read_only_fields = ['id', 'date_joined', 'last_login']
+
+    def get_personnel_id(self, obj):
+        p = getattr(obj, 'dole_personnel', None)
+        return p.id if p else None
+
+    def get_personnel_name(self, obj):
+        p = getattr(obj, 'dole_personnel', None)
+        return p.full_name if p else None
+
+    def get_personnel_employee_id(self, obj):
+        p = getattr(obj, 'dole_personnel', None)
+        return p.employee_id if p else None
+
+    def get_personnel_position(self, obj):
+        p = getattr(obj, 'dole_personnel', None)
+        return p.position if p else None
+
+    def get_personnel_detail(self, obj):
+        p = getattr(obj, 'dole_personnel', None)
+        if not p:
+            return None
+        return {
+            'id': p.id,
+            'full_name': p.full_name,
+            'employee_id': p.employee_id,
+            'position': p.position,
+            'office_id': p.office_id,
+            'office_name': p.office.name if p.office else '',
+            'division_names': [d.name for d in p.divisions.all()],
+        }
 
     def get_role(self, obj):
         return "Administrator" if obj.is_superuser else "Staff"
@@ -280,6 +327,41 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
         if not names and obj.is_superuser:
             return list(CsmDivision.objects.exclude(name__iexact='ALL').values_list('name', flat=True).order_by('id'))
         return names
+
+
+class CtmsNotificationSerializer(serializers.ModelSerializer):
+    """Serializer for real-time staff notifications."""
+    assigned_at_formatted = serializers.SerializerMethodField()
+    created_at_formatted = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CtmsNotification
+        fields = [
+            'id',
+            'recipient',
+            'transaction',
+            'notification_type',
+            'title',
+            'message',
+            'queue_no',
+            'service_name',
+            'assigned_at',
+            'assigned_at_formatted',
+            'is_read',
+            'created_at',
+            'created_at_formatted',
+        ]
+        read_only_fields = ['id', 'created_at']
+
+    def get_assigned_at_formatted(self, obj):
+        if not obj.assigned_at:
+            return ""
+        return obj.assigned_at.strftime('%I:%M %p')
+
+    def get_created_at_formatted(self, obj):
+        if not obj.created_at:
+            return ""
+        return obj.created_at.strftime('%I:%M %p')
 
 
 class CtmsEmployeeSerializer(serializers.ModelSerializer):

@@ -35,6 +35,7 @@ from .models import (
     CtmsDisplayConfig,
     CtmsTransaction,
     CtmsAuditLog,
+    CtmsNotification,
     log_audit_event,
 )
 from .serializers import (
@@ -47,6 +48,7 @@ from .serializers import (
     CtmsEmployeeSerializer,
     DolePersonnelSerializer,
     CtmsUserAccountSerializer,
+    CtmsNotificationSerializer,
     CheckinRequestSerializer,
     TicketPublicSerializer,
     StaffTransactionSerializer,
@@ -102,6 +104,24 @@ class StaffMeView(APIView):
         except Exception:
             pass
 
+        linked_personnel_data = None
+        try:
+            if hasattr(user, 'dole_personnel') and user.dole_personnel:
+                p = user.dole_personnel
+                linked_personnel_data = {
+                    "id": p.id,
+                    "employee_id": p.employee_id,
+                    "full_name": p.full_name,
+                    "first_name": p.first_name,
+                    "last_name": p.last_name,
+                    "position": p.position,
+                    "office_id": p.office_id,
+                    "office_name": p.office.name if p.office else "",
+                    "division_names": [d.name for d in p.divisions.all()],
+                }
+        except Exception:
+            pass
+
         return Response({
             "id": user.id,
             "username": user.username,
@@ -112,6 +132,7 @@ class StaffMeView(APIView):
             "assigned_offices": CsmOfficeSerializer(assigned_offices, many=True).data,
             "assigned_divisions": CsmDivisionSerializer(assigned_divisions, many=True).data,
             "employee_profile": employee_data,
+            "linked_personnel": linked_personnel_data,
         })
 
 
@@ -142,6 +163,9 @@ def get_staff_divisions(user):
     if user.is_superuser:
         return CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
     try:
+        dole_p = getattr(user, 'dole_personnel', None)
+        if dole_p and dole_p.divisions.exists():
+            return dole_p.divisions.exclude(name__iexact='ALL').order_by('id')
         profile = getattr(user, 'employee_profile', None)
         if profile and profile.divisions.exists():
             return profile.divisions.exclude(name__iexact='ALL').order_by('id')
@@ -526,6 +550,32 @@ class StaffQueueView(APIView):
         waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
         pending_qs = pending_qs.order_by('-is_priority', '-called_at', 'checked_in_at')
 
+        total_division_waiting = waiting_qs.count()
+
+        # Check if user is linked to a DolePersonnel record
+        linked_personnel = getattr(request.user, 'dole_personnel', None)
+        p_name = linked_personnel.full_name.strip() if linked_personnel else None
+        p_id = linked_personnel.employee_id.strip() if linked_personnel else None
+
+        # Filter mode: personnel users default to only their assigned clients
+        # Supports query param assigned_to_me: '1'/'true' (force only my clients), '0'/'false' (view all in division)
+        assigned_to_me_param = request.query_params.get('assigned_to_me')
+        filter_my_assigned_only = False
+        if linked_personnel and not request.user.is_superuser:
+            filter_my_assigned_only = (assigned_to_me_param != '0' and str(assigned_to_me_param).lower() != 'false')
+        elif assigned_to_me_param in ('1', 'true'):
+            filter_my_assigned_only = True
+
+        if filter_my_assigned_only and (p_name or p_id):
+            personnel_q = models.Q()
+            if p_name:
+                personnel_q |= models.Q(assigned_personnel__iexact=p_name)
+            if p_id:
+                personnel_q |= models.Q(assigned_personnel__iexact=p_id)
+            waiting_qs = waiting_qs.filter(personnel_q)
+            serving_qs = serving_qs.filter(personnel_q | models.Q(served_by=request.user))
+            pending_qs = pending_qs.filter(personnel_q | models.Q(served_by=request.user))
+
         # Retrieve all currently active assignments in this office across all counters
         active_assignments = list(
             CtmsTransaction.objects.filter(
@@ -549,6 +599,9 @@ class StaffQueueView(APIView):
             "active_assignments": active_assignments,
             "counters": CtmsCounterSerializer(counters_qs, many=True).data,
             "divisions": CsmDivisionSerializer(divisions_data, many=True).data,
+            "is_personnel_filtered": filter_my_assigned_only,
+            "linked_personnel": linked_personnel.full_name if linked_personnel else None,
+            "total_division_waiting": total_division_waiting,
         })
 
 
@@ -1398,6 +1451,15 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
             for div in target_divisions:
                 CtmsStaffDivision.objects.get_or_create(user=user, division=div)
 
+            # Link to DolePersonnel record if provided
+            personnel_id = data.get('personnel_id') or data.get('personnel')
+            if personnel_id and str(personnel_id).isdigit() and int(personnel_id) > 0:
+                target_p = DolePersonnel.objects.filter(pk=int(personnel_id)).first()
+                if target_p:
+                    DolePersonnel.objects.filter(pk=target_p.pk).update(user=None)
+                    target_p.user = user
+                    target_p.save(update_fields=['user'])
+
             serializer = self.get_serializer(user)
             log_audit_event(
                 action='USER_CREATE',
@@ -1496,6 +1558,17 @@ class StaffUserAccountViewSet(viewsets.ModelViewSet):
                 emp.save()
         except Exception:
             pass
+
+        # Update DolePersonnel link if provided
+        if 'personnel_id' in data or 'personnel' in data:
+            raw_pid = data.get('personnel_id') if 'personnel_id' in data else data.get('personnel')
+            DolePersonnel.objects.filter(user=user).update(user=None)
+            if raw_pid and str(raw_pid).isdigit() and int(raw_pid) > 0:
+                target_p = DolePersonnel.objects.filter(pk=int(raw_pid)).first()
+                if target_p:
+                    DolePersonnel.objects.filter(pk=target_p.pk).update(user=None)
+                    target_p.user = user
+                    target_p.save(update_fields=['user'])
 
         serializer = self.get_serializer(user)
         log_audit_event(
@@ -2324,6 +2397,43 @@ class StaffServiceViewSet(viewsets.ModelViewSet):
             "message": f"Successfully updated assigned personnel for '{service.name}'.",
             "service": serializer.data,
         })
+
+
+class StaffNotificationListView(APIView):
+    """
+    List and manage real-time notifications for the authenticated user.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        qs = CtmsNotification.objects.filter(recipient=request.user)
+        unread_only = request.query_params.get('unread_only')
+        if unread_only in ('true', '1'):
+            qs = qs.filter(is_read=False)
+        since_id = request.query_params.get('since_id')
+        if since_id and str(since_id).isdigit():
+            qs = qs.filter(id__gt=int(since_id))
+
+        total_unread = CtmsNotification.objects.filter(recipient=request.user, is_read=False).count()
+        notifications = qs.order_by('-created_at')[:40]
+        serializer = CtmsNotificationSerializer(notifications, many=True)
+        return Response({
+            "unread_count": total_unread,
+            "results": serializer.data,
+        })
+
+    def post(self, request):
+        action = request.data.get('action', 'mark_all_read')
+        if action == 'mark_all_read':
+            CtmsNotification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
+            return Response({"detail": "All notifications marked as read.", "unread_count": 0})
+        elif action == 'mark_read':
+            notif_id = request.data.get('id')
+            if notif_id:
+                CtmsNotification.objects.filter(recipient=request.user, id=notif_id).update(is_read=True)
+            total_unread = CtmsNotification.objects.filter(recipient=request.user, is_read=False).count()
+            return Response({"detail": "Notification marked as read.", "unread_count": total_unread})
+        return Response({"detail": "Unknown action."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 

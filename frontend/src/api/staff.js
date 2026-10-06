@@ -7,10 +7,11 @@ export const staffApi = {
   }),
   getMe: () => apiRequest('/staff/auth/me/'),
 
-  getQueue: (officeId, counterId) => {
+  getQueue: (officeId, counterId, assignedToMe = null) => {
     const params = new URLSearchParams();
     if (officeId) params.append('office', officeId);
     if (counterId) params.append('counter', counterId);
+    if (assignedToMe !== null && assignedToMe !== undefined) params.append('assigned_to_me', assignedToMe);
     return apiRequest(`/staff/queue/?${params.toString()}`);
   },
 
@@ -180,5 +181,24 @@ export const staffApi = {
     });
     return apiRequest(`/staff/audit-logs/?${params.toString()}`);
   },
+
+  // Real-time Staff Notifications
+  getNotifications: (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== '' && v !== null && v !== undefined) params.append(k, v);
+    });
+    return apiRequest(`/staff/notifications/?${params.toString()}`);
+  },
+
+  markAllNotificationsRead: () => apiRequest('/staff/notifications/', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'mark_all_read' }),
+  }),
+
+  markNotificationRead: (id) => apiRequest('/staff/notifications/', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'mark_read', id }),
+  }),
 };
 

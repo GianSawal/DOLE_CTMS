@@ -161,6 +161,15 @@ export default function StaffQueue() {
     }
   });
 
+  // Personnel filter state: Default to viewing only my assigned clients if linked to a personnel record
+  const [viewMyClientsOnly, setViewMyClientsOnly] = useState(() => Boolean(user?.linked_personnel && !user?.is_superuser));
+
+  useEffect(() => {
+    if (user?.linked_personnel && !user?.is_superuser) {
+      setViewMyClientsOnly(true);
+    }
+  }, [user]);
+
   // Strict RBAC: Ensure selectedOffice is ALWAYS an office assigned to this user
   useEffect(() => {
     if (user?.assigned_offices?.length > 0) {
@@ -240,7 +249,8 @@ export default function StaffQueue() {
   const fetchQueue = useCallback(async () => {
     if (!selectedOffice) return;
     try {
-      const data = await staffApi.getQueue(selectedOffice, selectedCounter);
+      const assignedParam = user?.linked_personnel ? (viewMyClientsOnly ? '1' : '0') : null;
+      const data = await staffApi.getQueue(selectedOffice, selectedCounter, assignedParam);
       setQueueData(data);
       setError('');
     } catch (err) {
@@ -250,7 +260,8 @@ export default function StaffQueue() {
         setSelectedCounter('');
         localStorage.setItem('ctms_staff_counter', '');
         try {
-          const fallbackData = await staffApi.getQueue(selectedOffice, '');
+          const assignedParam = user?.linked_personnel ? (viewMyClientsOnly ? '1' : '0') : null;
+          const fallbackData = await staffApi.getQueue(selectedOffice, '', assignedParam);
           setQueueData(fallbackData);
           setError('');
           return;
@@ -263,13 +274,22 @@ export default function StaffQueue() {
     } finally {
       setLoading(false);
     }
-  }, [selectedOffice, selectedCounter]);
+  }, [selectedOffice, selectedCounter, viewMyClientsOnly, user]);
 
   // Polling every 3 seconds (mandated by §1 hard requirements)
   useEffect(() => {
     fetchQueue();
     const interval = setInterval(fetchQueue, 3000);
     return () => clearInterval(interval);
+  }, [fetchQueue]);
+
+  // Listen for real-time client assignment / reassignment events from NotificationBell
+  useEffect(() => {
+    const handleRealtimeAssignment = () => {
+      fetchQueue();
+    };
+    window.addEventListener('ctms:new-assignment', handleRealtimeAssignment);
+    return () => window.removeEventListener('ctms:new-assignment', handleRealtimeAssignment);
   }, [fetchQueue]);
 
   // Fetch office services for walkin registration
@@ -972,6 +992,74 @@ export default function StaffQueue() {
               <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* Personnel Assigned Queue Banner / Switcher */}
+        {user?.linked_personnel && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: viewMyClientsOnly ? 'rgba(3, 5, 186, 0.05)' : '#f8fafc',
+            border: viewMyClientsOnly ? '1px solid rgba(3, 5, 186, 0.25)' : '1px solid #cbd5e1',
+            borderRadius: '10px',
+            padding: '0.75rem 1.15rem',
+            marginBottom: '1.25rem',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <div style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                backgroundColor: viewMyClientsOnly ? 'var(--dole-blue)' : '#64748b',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.1rem',
+                flexShrink: 0,
+              }}>
+                👤
+              </div>
+              <div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>
+                  {viewMyClientsOnly ? (
+                    <>Monitoring Queue for: <span style={{ color: 'var(--dole-blue)' }}>{user.linked_personnel.full_name}</span> ({user.linked_personnel.employee_id})</>
+                  ) : (
+                    <>Viewing <span>All Division Clients</span> in Queue</>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '0.1rem' }}>
+                  {viewMyClientsOnly
+                    ? `Displaying only clients assigned to your account · ${queueData.waiting?.length || 0} waiting in line`
+                    : `Displaying all tickets in this division · Total waiting: ${queueData.total_division_waiting ?? queueData.waiting?.length ?? 0}`
+                  }
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setViewMyClientsOnly(true)}
+                className={`btn btn-xs ${viewMyClientsOnly ? 'btn-primary' : 'btn-outline'}`}
+                style={{ fontWeight: 700, padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+              >
+                👤 My Clients Only ({viewMyClientsOnly ? (queueData.waiting?.length || 0) : 'Active'})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMyClientsOnly(false)}
+                className={`btn btn-xs ${!viewMyClientsOnly ? 'btn-primary' : 'btn-outline'}`}
+                style={{ fontWeight: 700, padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+              >
+                🏢 All Division Queue ({queueData.total_division_waiting ?? queueData.waiting?.length ?? 0})
+              </button>
+            </div>
           </div>
         )}
 

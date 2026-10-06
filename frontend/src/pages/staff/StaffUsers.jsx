@@ -47,6 +47,10 @@ export default function StaffUsers() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  // Linked Personnel Directory
+  const [personnelList, setPersonnelList] = useState([]);
+  const [linkedPersonnelId, setLinkedPersonnelId] = useState('');
+
   // Reset Password Modal
   const [resetModalUser, setResetModalUser] = useState(null);
   const [newPasswordInput, setNewPasswordInput] = useState('');
@@ -64,10 +68,11 @@ export default function StaffUsers() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [uRes, offRes, divRes] = await Promise.allSettled([
+      const [uRes, offRes, divRes, pRes] = await Promise.allSettled([
         staffApi.getEmployees(),
         staffApi.getOffices(),
         staffApi.getDivisions(),
+        staffApi.getPersonnel({ active_only: 'true' }),
       ]);
 
       if (uRes.status === 'fulfilled') {
@@ -78,6 +83,9 @@ export default function StaffUsers() {
       }
       if (divRes.status === 'fulfilled') {
         setDivisions(Array.isArray(divRes.value) ? divRes.value : []);
+      }
+      if (pRes.status === 'fulfilled') {
+        setPersonnelList(Array.isArray(pRes.value) ? pRes.value : []);
       }
     } catch (err) {
       showToast(err.message || 'Failed to load user accounts data', 'error');
@@ -168,10 +176,32 @@ export default function StaffUsers() {
     }
   };
 
+  // Handle selecting a personnel record to link
+  const handleSelectLinkedPersonnel = (pId) => {
+    setLinkedPersonnelId(pId);
+    if (!pId) return;
+    const p = personnelList.find((item) => String(item.id) === String(pId));
+    if (p) {
+      if (!firstName || modalMode === 'create') setFirstName(p.first_name || '');
+      if (!lastName || modalMode === 'create') setLastName(p.last_name || '');
+      if (!username || modalMode === 'create') {
+        setUsername((p.employee_id || '').toLowerCase().replace(/\s+/g, ''));
+      }
+      if (p.office) {
+        setOfficeId(p.office);
+        setSelectedOfficeIds([p.office]);
+      }
+      if (Array.isArray(p.division_ids) && p.division_ids.length > 0) {
+        setSelectedDivisionIds(p.division_ids);
+      }
+    }
+  };
+
   // Open Create Modal
   const openCreateModal = () => {
     setModalMode('create');
     setEditingId(null);
+    setLinkedPersonnelId('');
     setUsername('');
     setFirstName('');
     setLastName('');
@@ -190,6 +220,7 @@ export default function StaffUsers() {
   const openEditModal = (u) => {
     setModalMode('edit');
     setEditingId(u.id);
+    setLinkedPersonnelId(u.personnel_id ? String(u.personnel_id) : '');
     setUsername(u.username || '');
     setFirstName(u.first_name || '');
     setLastName(u.last_name || '');
@@ -306,6 +337,7 @@ export default function StaffUsers() {
         all_offices: isAdmin && allOfficesSelected,
         division_ids: effectiveDivisionIds,
         all_divisions: isAdmin && allDivisionsSelected,
+        personnel_id: linkedPersonnelId ? Number(linkedPersonnelId) : null,
       };
 
       if (modalMode === 'create') {
@@ -1099,6 +1131,12 @@ export default function StaffUsers() {
                   <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border-color)' }}>
                     <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Login Username</th>
                     <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Account Name</th>
+                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Linked Personnel
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', fontWeight: 500, textTransform: 'none', letterSpacing: 'normal' }}>
+                        Queue &amp; Alerts Link
+                      </span>
+                    </th>
                     <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Role</th>
                     <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Office</th>
                     <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -1149,6 +1187,44 @@ export default function StaffUsers() {
                           <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
                             {u.full_name || (u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.username)}
                           </div>
+                        </td>
+
+                        {/* Linked Personnel Record */}
+                        <td style={{ padding: '0.9rem 1.15rem' }}>
+                          {u.personnel_name ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 700,
+                                  color: 'var(--dole-blue)',
+                                  backgroundColor: 'rgba(3, 5, 186, 0.08)',
+                                  border: '1px solid rgba(3, 5, 186, 0.2)',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '6px',
+                                  maxWidth: '220px',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                title={`Linked to personnel directory: ${u.personnel_name} (${u.personnel_employee_id || ''})`}
+                              >
+                                👤 {u.personnel_name}
+                              </span>
+                              {u.personnel_position && (
+                                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                  {u.personnel_position}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '0.76rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                              — Unlinked —
+                            </span>
+                          )}
                         </td>
 
                         {/* Role */}
@@ -1559,6 +1635,61 @@ export default function StaffUsers() {
 
             {/* Modal Form */}
             <form onSubmit={handleSubmitForm} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Linked Personnel Record Selector */}
+              <div style={{
+                backgroundColor: linkedPersonnelId ? 'rgba(3, 5, 186, 0.04)' : '#f8fafc',
+                border: linkedPersonnelId ? '1px solid rgba(3, 5, 186, 0.25)' : '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <label style={{ fontSize: '0.86rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                    🔗 Link to Specific Personnel Record (Optional)
+                  </label>
+                  {linkedPersonnelId && (
+                    <button
+                      type="button"
+                      onClick={() => setLinkedPersonnelId('')}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--dole-red)',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      ✕ Unlink Personnel
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={linkedPersonnelId}
+                  onChange={(e) => handleSelectLinkedPersonnel(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.6rem 0.8rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-color)',
+                    fontSize: '0.88rem',
+                    backgroundColor: '#fff',
+                    outline: 'none',
+                    fontWeight: 600,
+                  }}
+                >
+                  <option value="">-- No Personnel Linked (Stand-alone Account) --</option>
+                  {personnelList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.full_name} ({p.employee_id} · {p.position || 'Staff'} · {p.office_name})
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.35rem', lineHeight: 1.4 }}>
+                  ℹ️ Linking this user account to a personnel record allows this personnel to monitor their own assigned clients in their dashboard and receive instant real-time notifications when new tickets are assigned to them.
+                </div>
+              </div>
+
               {/* Row 1: Username & Role */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem' }}>
                 <div>

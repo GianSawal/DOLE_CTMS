@@ -183,6 +183,14 @@ class DolePersonnel(models.Model):
     Used strictly for assigning personnel on queue transactions.
     """
     id = models.BigAutoField(primary_key=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dole_personnel',
+        help_text="User login account linked to this personnel record"
+    )
     employee_id = models.CharField(max_length=50, unique=True, db_index=True)
     first_name = models.CharField(max_length=100)
     middle_name = models.CharField(max_length=100, blank=True, default='')
@@ -384,6 +392,46 @@ class CtmsAuditLog(models.Model):
 
     def __str__(self):
         return f"[{self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}] {self.actor_username} - {self.action} ({self.target_repr})"
+
+
+class CtmsNotification(models.Model):
+    """
+    Real-time notification model for staff user accounts.
+    Alerts personnel whenever a new client ticket is assigned or reassigned to them.
+    """
+    id = models.BigAutoField(primary_key=True)
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='ctms_notifications'
+    )
+    transaction = models.ForeignKey(
+        'CtmsTransaction',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='notifications'
+    )
+    notification_type = models.CharField(max_length=50, default='ASSIGNMENT')
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    queue_no = models.CharField(max_length=50, blank=True, default='')
+    service_name = models.CharField(max_length=200, blank=True, default='')
+    assigned_at = models.DateTimeField(default=timezone.now)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ctms_notification'
+        verbose_name = 'CTMS Notification'
+        verbose_name_plural = 'CTMS Notifications'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['recipient', 'is_read', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"Notification for {self.recipient.username}: {self.title}"
 
 
 def log_audit_event(

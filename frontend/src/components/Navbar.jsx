@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './NotificationBell';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -132,7 +133,9 @@ export default function Navbar() {
         </div>
 
         {/* Right: User Profile & Sign Out on Top Right */}
-        <div className="staff-navbar-right">
+        <div className="staff-navbar-right" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+          <NotificationBell />
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <div style={{
               width: '32px',
@@ -151,7 +154,14 @@ export default function Navbar() {
               {user?.username ? user.username.slice(0, 2).toUpperCase() : 'ST'}
             </div>
             <div className="staff-user-info">
-              <div className="staff-user-name">{user?.username}</div>
+              <div className="staff-user-name">
+                {user?.username}
+                {user?.linked_personnel && (
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--dole-blue)', display: 'block' }}>
+                    👤 {user.linked_personnel.full_name}
+                  </span>
+                )}
+              </div>
               <div className="staff-user-office">
                 {user?.is_superuser
                   ? 'DOLE Admin'

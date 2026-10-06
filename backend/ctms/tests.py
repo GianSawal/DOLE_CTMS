@@ -15,6 +15,7 @@ from .models import (
     CtmsServiceDefaultOfficer,
     DolePersonnel,
     CtmsAuditLog,
+    CtmsNotification,
 )
 from .services import (
     create_transaction,
@@ -812,6 +813,122 @@ class CtmsCoreTestCase(TestCase):
         self.assertIsNotNone(audit_log)
         self.assertIn("Reassigned", audit_log.description)
         self.assertIn("Elias Piloto", audit_log.description)
+
+    def test_linked_personnel_user_and_assignment_notifications(self):
+        # 1. Create a division and DolePersonnel record
+        div_mal = CsmDivision.objects.create(name="Mediation and Arbitration Unit")
+        personnel = DolePersonnel.objects.create(
+            employee_id="EMP-NOTIF-01",
+            first_name="Ligaya",
+            last_name="Paraiso",
+            position="Labor Officer II",
+            office=self.office,
+            is_active=True
+        )
+        personnel.divisions.set([div_mal])
+
+        # 2. Create staff user account and link to personnel
+        officer_user = User.objects.create_user(
+            username="ligaya",
+            password="password123",
+            first_name="Ligaya",
+            last_name="Paraiso",
+            email="ligaya@dole.gov.ph",
+            is_staff=True
+        )
+        CtmsStaffOffice.objects.create(user=officer_user, office=self.office)
+
+        # Link personnel to user
+        personnel.user = officer_user
+        personnel.save()
+
+        # Verify /api/staff/auth/me/ returns linked personnel
+        client_officer = APIClient()
+        client_officer.force_authenticate(user=officer_user)
+        res_me = client_officer.get("/api/staff/auth/me/")
+        self.assertEqual(res_me.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(res_me.data.get('linked_personnel'))
+        self.assertEqual(res_me.data['linked_personnel']['id'], personnel.id)
+        self.assertEqual(res_me.data['linked_personnel']['full_name'], "Ligaya Paraiso")
+
+        # 3. Associate personnel with a service
+        service_mal = CsmService.objects.create(name="Labor Dispute Settlement", division=div_mal, is_active=True, sort_order=2)
+        service_mal.assigned_personnel.set([personnel])
+
+        # 4. Create another officer who is NOT linked to this user
+        other_personnel = DolePersonnel.objects.create(
+            employee_id="EMP-NOTIF-02",
+            first_name="Danilo",
+            last_name="Cruz",
+            office=self.office,
+            is_active=True
+        )
+        other_personnel.divisions.set([div_mal])
+        service_other = CsmService.objects.create(name="Alien Employment Permit", division=div_mal, is_active=True, sort_order=3)
+        service_other.assigned_personnel.set([other_personnel])
+
+        # 5. Create transactions: one for Ligaya, one for Danilo
+        tx_ligaya = create_transaction(self.office, service_mal, client_name="Worker Client")
+        tx_danilo = create_transaction(self.office, service_other, client_name="Employer Client")
+
+        # Verify transaction assignments
+        self.assertEqual(tx_ligaya.assigned_personnel, "Ligaya Paraiso")
+        self.assertEqual(tx_danilo.assigned_personnel, "Danilo Cruz")
+
+        # 6. Verify real-time notification generated for Ligaya's user account
+        notifications = CtmsNotification.objects.filter(recipient=officer_user)
+        self.assertEqual(notifications.count(), 1)
+        notif = notifications.first()
+        self.assertEqual(notif.queue_no, tx_ligaya.queue_no)
+        self.assertEqual(notif.service_name, "Labor Dispute Settlement")
+        self.assertFalse(notif.is_read)
+
+        # Check notifications API
+        res_notif = client_officer.get("/api/staff/notifications/")
+        self.assertEqual(res_notif.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_notif.data['results']), 1)
+        self.assertEqual(res_notif.data['results'][0]['queue_no'], tx_ligaya.queue_no)
+        self.assertIn("New Client Assigned", res_notif.data['results'][0]['title'])
+
+        # 7. Check staff queue for Ligaya: default (assigned_to_me=1) should ONLY show tx_ligaya
+        res_queue_assigned = client_officer.get(f"/api/staff/queue/?office={self.office.id}")
+        self.assertEqual(res_queue_assigned.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_queue_assigned.data.get('is_personnel_filtered'))
+        waiting_ids = [item['id'] for item in res_queue_assigned.data['waiting']]
+        self.assertIn(tx_ligaya.id, waiting_ids)
+        self.assertNotIn(tx_danilo.id, waiting_ids)
+
+        # When explicitly requesting assigned_to_me=0, show all
+        res_queue_all = client_officer.get(f"/api/staff/queue/?office={self.office.id}&assigned_to_me=0")
+        self.assertEqual(res_queue_all.status_code, status.HTTP_200_OK)
+        self.assertFalse(res_queue_all.data.get('is_personnel_filtered'))
+        all_waiting_ids = [item['id'] for item in res_queue_all.data['waiting']]
+        self.assertIn(tx_ligaya.id, all_waiting_ids)
+        self.assertIn(tx_danilo.id, all_waiting_ids)
+
+        # 8. Reassignment triggers a notification as well
+        # Serve and finish tx_ligaya so Ligaya is free to take another client
+        call_specific_transaction(tx_ligaya, self.counter1, personnel="Ligaya Paraiso")
+        mark_done(tx_ligaya, officer_user)
+
+        # Reassign tx_danilo to Ligaya
+        res_reassign = client_officer.post(f"/api/staff/transactions/{tx_danilo.id}/assign/", {
+            "personnel": "Ligaya Paraiso"
+        })
+        self.assertEqual(res_reassign.status_code, status.HTTP_200_OK)
+
+        # Check that a reassignment notification was received
+        notifs_after = CtmsNotification.objects.filter(recipient=officer_user).order_by('-created_at')
+        self.assertEqual(notifs_after.count(), 2)
+        latest_notif = notifs_after.first()
+        self.assertEqual(latest_notif.queue_no, tx_danilo.queue_no)
+        self.assertIn("Client Reassigned", latest_notif.title)
+
+        # 9. Mark all notifications as read
+        res_mark_read = client_officer.post("/api/staff/notifications/", {"action": "mark_all_read"})
+        self.assertEqual(res_mark_read.status_code, status.HTTP_200_OK)
+        self.assertEqual(CtmsNotification.objects.filter(recipient=officer_user, is_read=False).count(), 0)
+
 
 
 
