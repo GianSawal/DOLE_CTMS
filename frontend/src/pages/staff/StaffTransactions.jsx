@@ -26,6 +26,17 @@ export default function StaffTransactions() {
   const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState('');
   const [selectedTx, setSelectedTx] = useState(null);
+  const [viewDetailsTx, setViewDetailsTx] = useState(null);
+
+  const formatDateTime = (dateStr) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    return {
+      date: d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+      time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+  };
 
   // Filters
   const [officeFilter, setOfficeFilter] = useState('');
@@ -381,19 +392,21 @@ export default function StaffTransactions() {
                   <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Status</th>
                   <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>CSM Surveyed?</th>
                   <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Checked In</th>
+                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Started At</th>
+                  <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Done At</th>
                   <th style={{ padding: '0.875rem 1rem', fontWeight: 700 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {initialLoading ? (
                   <tr>
-                    <td colSpan="10" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <td colSpan="12" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                       Loading transactions...
                     </td>
                   </tr>
                 ) : filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan="10" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <td colSpan="12" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                       {searchQuery ? `No transactions matching "${searchQuery}".` : 'No transactions found matching your criteria.'}
                     </td>
                   </tr>
@@ -463,15 +476,78 @@ export default function StaffTransactions() {
                           <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>N/A</span>
                         )}
                       </td>
+                      {/* Checked In */}
                       <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                        {new Date(tx.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {(() => {
+                          const dt = formatDateTime(tx.checked_in_at);
+                          if (!dt) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+                          return (
+                            <div>
+                              <div style={{ fontWeight: 600, color: '#1e293b' }}>{dt.date}</div>
+                              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{dt.time}</div>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      {/* Started At */}
+                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                        {(() => {
+                          const dt = formatDateTime(tx.started_at || tx.called_at);
+                          if (!dt) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+                          return (
+                            <div>
+                              <div style={{ fontWeight: 600, color: '#047857' }}>{dt.date}</div>
+                              <div style={{ fontSize: '0.74rem', color: '#059669' }}>{dt.time}</div>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      {/* Done At */}
+                      <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                        {(() => {
+                          const dt = formatDateTime(tx.done_at);
+                          if (!dt) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+                          return (
+                            <div>
+                              <div style={{ fontWeight: 600, color: '#1e293b' }}>{dt.date}</div>
+                              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{dt.time}</div>
+                              {tx.service_duration_display && (
+                                <div style={{ marginTop: '0.2rem' }}>
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.2rem',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    padding: '0.1rem 0.4rem',
+                                    borderRadius: '4px',
+                                    backgroundColor: '#ecfdf5',
+                                    color: '#065f46',
+                                    border: '1px solid #a7f3d0'
+                                  }}>
+                                    ⏱️ {tx.service_duration_display}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td style={{ padding: '0.875rem 1rem' }}>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => setViewDetailsTx(tx)}
+                            className="btn btn-outline btn-sm"
+                            style={{ minHeight: '30px', padding: '0.2rem 0.5rem', fontSize: '0.78rem' }}
+                            title="View transaction lifecycle dates & details"
+                          >
+                            Details
+                          </button>
                           <button
                             onClick={() => setSelectedTx(tx)}
                             className="btn btn-outline btn-sm"
-                            style={{ minHeight: '30px', padding: '0.2rem 0.5rem' }}
+                            style={{ minHeight: '30px', padding: '0.2rem 0.5rem', fontSize: '0.78rem' }}
+                            title="Print or preview transaction slip"
                           >
                             Slip
                           </button>
@@ -479,7 +555,7 @@ export default function StaffTransactions() {
                             <button
                               onClick={() => handleUndoDone(tx.id)}
                               className="btn btn-outline btn-sm"
-                              style={{ minHeight: '30px', padding: '0.2rem 0.5rem', color: 'var(--dole-red)' }}
+                              style={{ minHeight: '30px', padding: '0.2rem 0.5rem', color: 'var(--dole-red)', fontSize: '0.78rem' }}
                             >
                               Undo Done
                             </button>
@@ -501,6 +577,171 @@ export default function StaffTransactions() {
           />
         </div>
       </main>
+
+      {/* Transaction Details Modal */}
+      <Modal
+        isOpen={!!viewDetailsTx}
+        onClose={() => setViewDetailsTx(null)}
+        title="Transaction Details"
+      >
+        {viewDetailsTx && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', fontFamily: 'var(--font-ui)' }}>
+            {/* Header info */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '1rem',
+              borderRadius: '8px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+            }}>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Queue Number</div>
+                <div className="mono" style={{ fontSize: '2rem', fontWeight: 900, color: viewDetailsTx.is_priority ? 'var(--dole-gold-dark)' : 'var(--text-primary)' }}>
+                  {viewDetailsTx.queue_no}
+                  {viewDetailsTx.is_priority && <span style={{ fontSize: '0.75rem', marginLeft: '0.5rem', color: 'var(--dole-gold-dark)', fontWeight: 700 }}>★ Priority</span>}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Tx: <strong className="mono">{viewDetailsTx.transaction_no}</strong> | Survey Code: <strong className="mono">{viewDetailsTx.claim_code}</strong>
+                </div>
+              </div>
+              <div>
+                {getStatusBadge(viewDetailsTx.status)}
+              </div>
+            </div>
+
+            {/* Date & Time Lifecycle Card */}
+            <div style={{
+              padding: '1.25rem',
+              borderRadius: '8px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #cbd5e1',
+            }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 700, margin: '0 0 1rem 0', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span>📅</span> Transaction Lifecycle Dates & Timestamps
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                {/* Checked In */}
+                <div style={{ padding: '0.75rem', borderRadius: '6px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                    📥 Checked In Date & Time
+                  </div>
+                  {viewDetailsTx.checked_in_at ? (
+                    <div style={{ marginTop: '0.35rem' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>
+                        {new Date(viewDetailsTx.checked_in_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                        {new Date(viewDetailsTx.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </div>
+                    </div>
+                  ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                </div>
+
+                {/* Started At */}
+                <div style={{ padding: '0.75rem', borderRadius: '6px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: 700, textTransform: 'uppercase' }}>
+                    🚀 Started At (Start of Transaction)
+                  </div>
+                  {(viewDetailsTx.started_at || viewDetailsTx.called_at) ? (
+                    <div style={{ marginTop: '0.35rem' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#065f46' }}>
+                        {new Date(viewDetailsTx.started_at || viewDetailsTx.called_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: '#047857' }}>
+                        {new Date(viewDetailsTx.started_at || viewDetailsTx.called_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '0.35rem', color: '#94a3b8', fontSize: '0.82rem', fontStyle: 'italic' }}>
+                      Waiting in queue (not started yet)
+                    </div>
+                  )}
+                </div>
+
+                {/* Done At */}
+                <div style={{ padding: '0.75rem', borderRadius: '6px', backgroundColor: viewDetailsTx.done_at ? '#eff6ff' : '#f8fafc', border: viewDetailsTx.done_at ? '1px solid #bfdbfe' : '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.72rem', color: viewDetailsTx.done_at ? '#1e40af' : '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                    🏁 Done At (Transaction Completed)
+                  </div>
+                  {viewDetailsTx.done_at ? (
+                    <div style={{ marginTop: '0.35rem' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1e3a8a' }}>
+                        {new Date(viewDetailsTx.done_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: '#1d4ed8' }}>
+                        {new Date(viewDetailsTx.done_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '0.35rem', color: '#94a3b8', fontSize: '0.82rem', fontStyle: 'italic' }}>
+                      Not completed yet
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Duration highlight if completed */}
+              {viewDetailsTx.service_duration_display && (
+                <div style={{
+                  marginTop: '0.85rem',
+                  padding: '0.6rem 0.85rem',
+                  borderRadius: '6px',
+                  backgroundColor: '#f1f5f9',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: '0.83rem',
+                }}>
+                  <span style={{ color: '#475569', fontWeight: 600 }}>Total Service Turnaround Time:</span>
+                  <span style={{ fontWeight: 800, color: 'var(--dole-blue)' }}>⏱️ {viewDetailsTx.service_duration_display}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Service & Personnel Details Card */}
+            <div style={{
+              padding: '1rem',
+              borderRadius: '8px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              fontSize: '0.85rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.45rem',
+            }}>
+              <div><strong>Office:</strong> {viewDetailsTx.office_name}</div>
+              <div><strong>Division:</strong> {viewDetailsTx.division_name || '—'}</div>
+              <div><strong>Service:</strong> {viewDetailsTx.service_name}</div>
+              <div><strong>Assigned Personnel:</strong> {viewDetailsTx.assigned_personnel || '— Unassigned —'}</div>
+              <div><strong>Client Name:</strong> {viewDetailsTx.client_name || 'Anonymous'}</div>
+              {Array.isArray(viewDetailsTx.group_member_names) && viewDetailsTx.group_member_names.length > 0 && (
+                <div>
+                  <strong>Group Members ({viewDetailsTx.group_member_names.length}):</strong>
+                  <div style={{ marginTop: '0.2rem', padding: '0.4rem 0.6rem', backgroundColor: '#ffffff', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                    {viewDetailsTx.group_member_names.map((name, i) => (
+                      <div key={i}>• {name}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div>
+                <strong>CSM Surveyed:</strong> {viewDetailsTx.is_surveyed ? <span className="badge badge-done" style={{ marginLeft: '0.35rem' }}>✓ Yes</span> : <span style={{ color: 'var(--text-muted)', marginLeft: '0.35rem' }}>No / Pending</span>}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button onClick={() => setViewDetailsTx(null)} className="btn btn-outline btn-sm">
+                Close
+              </button>
+              <button onClick={() => { setSelectedTx(viewDetailsTx); setViewDetailsTx(null); }} className="btn btn-primary btn-sm">
+                🖨️ View / Print Slip
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Slip Print Modal */}
       <Modal

@@ -449,6 +449,7 @@ class TicketPublicSerializer(serializers.ModelSerializer):
     ahead = serializers.SerializerMethodField()
     survey_url = serializers.ReadOnlyField()
     surveyed = serializers.ReadOnlyField(source='is_surveyed')
+    started_at = serializers.SerializerMethodField()
 
     class Meta:
         model = CtmsTransaction
@@ -467,11 +468,16 @@ class TicketPublicSerializer(serializers.ModelSerializer):
             'is_priority',
             'checked_in_at',
             'called_at',
+            'started_at',
             'done_at',
         ]
 
     def get_counter(self, obj):
         return obj.counter.name if obj.counter else None
+
+    def get_started_at(self, obj):
+        val = obj.effective_started_at
+        return val.isoformat() if val else None
 
     def get_ahead(self, obj):
         if obj.status != CtmsTransaction.STATUS_WAITING:
@@ -502,6 +508,9 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
     served_by_username = serializers.ReadOnlyField(source='served_by.username')
     is_surveyed = serializers.ReadOnlyField()
     default_officer = serializers.SerializerMethodField()
+    started_at = serializers.SerializerMethodField()
+    service_duration_seconds = serializers.ReadOnlyField()
+    service_duration_display = serializers.SerializerMethodField()
 
     class Meta:
         model = CtmsTransaction
@@ -526,7 +535,10 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'source',
             'checked_in_at',
             'called_at',
+            'started_at',
             'done_at',
+            'service_duration_seconds',
+            'service_duration_display',
             'closed_at',
             'served_by',
             'served_by_username',
@@ -535,6 +547,23 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'ticket_token',
             'survey_token',
         ]
+
+    def get_started_at(self, obj):
+        val = obj.effective_started_at
+        return val.isoformat() if val else None
+
+    def get_service_duration_display(self, obj):
+        secs = obj.service_duration_seconds
+        if secs is None:
+            return None
+        mins, s = divmod(secs, 60)
+        hrs, m = divmod(mins, 60)
+        if hrs > 0:
+            return f"{hrs}h {m}m"
+        elif m > 0:
+            return f"{m}m {s}s"
+        else:
+            return f"{s}s"
 
     def get_default_officer(self, obj):
         if not obj or not obj.service:

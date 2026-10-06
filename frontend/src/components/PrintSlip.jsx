@@ -94,8 +94,23 @@ export default function PrintSlip({ transaction, onClose }) {
             <strong>Survey Code:</strong> <span className="mono" style={{ fontWeight: 800, letterSpacing: '0.1em', color: 'var(--dole-blue)' }}>{transaction.claim_code}</span>
           </div>
           <div>
-            <strong>Date/Time:</strong> {new Date(transaction.checked_in_at).toLocaleString()}
+            <strong>Checked In:</strong> {transaction.checked_in_at ? new Date(transaction.checked_in_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
           </div>
+          {(transaction.started_at || transaction.called_at) && (
+            <div>
+              <strong>Started:</strong> {new Date(transaction.started_at || transaction.called_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
+          {transaction.done_at && (
+            <div>
+              <strong>Done:</strong> {new Date(transaction.done_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
+          {transaction.service_duration_display && (
+            <div>
+              <strong>Duration:</strong> <span style={{ fontWeight: 700, color: 'var(--dole-blue)' }}>{transaction.service_duration_display}</span>
+            </div>
+          )}
         </div>
 
         <div style={{

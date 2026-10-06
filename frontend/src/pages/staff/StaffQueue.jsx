@@ -1626,9 +1626,9 @@ export default function StaffQueue() {
                           <span>
                             Checked in: {tx.checked_in_at ? new Date(tx.checked_in_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '--'}
                           </span>
-                          {tx.called_at && (
+                          {(tx.started_at || tx.called_at) && (
                             <span>
-                              • Last served: {new Date(tx.called_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              • Started: {new Date(tx.started_at || tx.called_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                         </div>

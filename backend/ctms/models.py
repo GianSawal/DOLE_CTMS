@@ -305,7 +305,8 @@ class CtmsTransaction(models.Model):
     
     checked_in_at = models.DateTimeField(db_index=True)
     called_at = models.DateTimeField(null=True, blank=True)
-    done_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True, db_index=True, help_text="Timestamp when transaction began serving")
+    done_at = models.DateTimeField(null=True, blank=True, db_index=True, help_text="Timestamp when transaction was completed")
     closed_at = models.DateTimeField(null=True, blank=True)
     served_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='served_transactions')
     
@@ -326,6 +327,20 @@ class CtmsTransaction(models.Model):
 
     def __str__(self):
         return f"{self.queue_no} ({self.transaction_no}) - {self.status}"
+
+    @property
+    def effective_started_at(self):
+        """Returns started_at if recorded, otherwise falls back to called_at."""
+        return self.started_at or self.called_at
+
+    @property
+    def service_duration_seconds(self):
+        """Duration of transaction in seconds (from start to done)."""
+        start = self.effective_started_at
+        end = self.done_at
+        if start and end and end >= start:
+            return int((end - start).total_seconds())
+        return None
 
     @property
     def is_surveyed(self):

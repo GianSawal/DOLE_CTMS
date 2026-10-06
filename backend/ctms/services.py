@@ -370,7 +370,9 @@ def call_next_transaction(office, counter, personnel=None):
         tx.status = CtmsTransaction.STATUS_SERVING
         tx.counter = assigned_counter
         tx.called_at = now
-        tx.save(update_fields=['status', 'counter', 'called_at', 'assigned_personnel'])
+        if not tx.started_at:
+            tx.started_at = now
+        tx.save(update_fields=['status', 'counter', 'called_at', 'started_at', 'assigned_personnel'])
         return tx
 
 
@@ -408,7 +410,9 @@ def call_specific_transaction(tx, counter=None, personnel=None):
     tx.status = CtmsTransaction.STATUS_SERVING
     tx.counter = assigned_counter
     tx.called_at = now
-    tx.save(update_fields=['status', 'counter', 'called_at', 'assigned_personnel'])
+    if not tx.started_at:
+        tx.started_at = now
+    tx.save(update_fields=['status', 'counter', 'called_at', 'started_at', 'assigned_personnel'])
     return tx
 
 
@@ -430,8 +434,10 @@ def mark_done(tx, staff_user):
     now = timezone.now()
     tx.status = CtmsTransaction.STATUS_DONE
     tx.done_at = now
+    if not tx.started_at:
+        tx.started_at = tx.called_at or now
     tx.served_by = staff_user
-    tx.save(update_fields=['status', 'done_at', 'served_by'])
+    tx.save(update_fields=['status', 'done_at', 'started_at', 'served_by'])
     return tx
 
 
@@ -478,5 +484,7 @@ def requeue_transaction(tx):
 
     tx.status = CtmsTransaction.STATUS_WAITING
     tx.counter = None
-    tx.save(update_fields=['status', 'counter'])
+    tx.started_at = None
+    tx.called_at = None
+    tx.save(update_fields=['status', 'counter', 'started_at', 'called_at'])
     return tx

@@ -23,6 +23,7 @@ from .services import (
     call_specific_transaction,
     mark_done,
     undo_done,
+    requeue_transaction,
     get_default_officer_for_service,
     DIVISION_OFFICER_POOLS,
 )
@@ -1141,6 +1142,66 @@ class CtmsCoreTestCase(TestCase):
         personnel.refresh_from_db()
         self.assertEqual(personnel.user, user_a)
         self.assertNotEqual(personnel.user, user_b)
+
+    def test_transaction_start_and_done_date_saving(self):
+        """
+        Verify that:
+        1. When a transaction starts serving, started_at is stamped with current date/time.
+        2. When a transaction is completed, done_at is stamped with current date/time.
+        3. Serializers correctly expose started_at, done_at, and duration calculations.
+        4. Undo done clears done_at while preserving started_at.
+        5. Requeueing resets started_at back to None.
+        """
+        tx = create_transaction(self.office, self.service, is_priority=False, client_name="Juan Dela Cruz")
+        self.assertIsNone(tx.started_at)
+        self.assertIsNone(tx.done_at)
+
+        # 1. Calling transaction sets started_at
+        called = call_specific_transaction(tx, counter=self.counter1, personnel="Officer Juan")
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, 'serving')
+        self.assertIsNotNone(tx.started_at)
+        self.assertIsNotNone(tx.called_at)
+        self.assertEqual(tx.started_at, tx.called_at)
+        orig_started_at = tx.started_at
+
+        # 2. Recalling transaction does not overwrite original started_at
+        call_specific_transaction(tx, counter=self.counter1, personnel="Officer Juan")
+        tx.refresh_from_db()
+        self.assertEqual(tx.started_at, orig_started_at)
+
+        # 3. Staff serializer output verification
+        data = StaffTransactionSerializer(tx).data
+        self.assertIn('started_at', data)
+        self.assertIn('done_at', data)
+        self.assertIsNotNone(data['started_at'])
+        self.assertIsNone(data['done_at'])
+        self.assertIsNone(data['service_duration_seconds'])
+
+        # 4. Mark Done records done_at
+        mark_done(tx, self.staff_user)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, 'done')
+        self.assertIsNotNone(tx.done_at)
+        self.assertGreaterEqual(tx.done_at, tx.started_at)
+
+        data_done = StaffTransactionSerializer(tx).data
+        self.assertIsNotNone(data_done['done_at'])
+        self.assertIsNotNone(data_done['service_duration_seconds'])
+        self.assertIsNotNone(data_done['service_duration_display'])
+
+        # 5. Undo Done clears done_at but preserves started_at
+        undo_done(tx)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, 'serving')
+        self.assertIsNone(tx.done_at)
+        self.assertEqual(tx.started_at, orig_started_at)
+
+        # 6. Requeue clears started_at
+        requeue_transaction(tx)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, 'waiting')
+        self.assertIsNone(tx.started_at)
 
 
 

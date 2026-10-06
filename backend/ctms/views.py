@@ -1167,9 +1167,13 @@ class StaffReportsSummaryView(APIView):
         wait_times = [(t.called_at - t.checked_in_at).total_seconds() / 60.0 for t in called_txs if t.called_at and t.checked_in_at]
         avg_wait_min = round(sum(wait_times) / len(wait_times), 1) if wait_times else 0
 
-        # Avg service time (done_at - called_at in minutes)
-        done_txs = qs.filter(status=CtmsTransaction.STATUS_DONE, done_at__isnull=False, called_at__isnull=False)
-        service_times = [(t.done_at - t.called_at).total_seconds() / 60.0 for t in done_txs if t.done_at and t.called_at]
+        # Avg service time (done_at - (started_at or called_at) in minutes)
+        done_txs = qs.filter(status=CtmsTransaction.STATUS_DONE, done_at__isnull=False)
+        service_times = [
+            (t.done_at - (t.started_at or t.called_at)).total_seconds() / 60.0
+            for t in done_txs
+            if t.done_at and (t.started_at or t.called_at)
+        ]
         avg_service_min = round(sum(service_times) / len(service_times), 1) if service_times else 0
 
         # Survey rate calculation
