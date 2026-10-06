@@ -17,6 +17,7 @@ export default function SearchablePersonnelSelect({
   searchPlaceholder = 'Type to search personnel in real time...',
   noResultsText = 'No personnel found matching',
   serviceDivision = '',
+  serviceId = null,
   required = false,
   id = 'searchable-personnel-select',
   disabled = false,
@@ -550,6 +551,23 @@ export default function SearchablePersonnelSelect({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                      {serviceId && Array.isArray(p.service_ids) && p.service_ids.includes(Number(serviceId)) && (
+                        <span
+                          style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            color: '#059669',
+                            backgroundColor: '#ecfdf5',
+                            border: '1px solid #a7f3d0',
+                            padding: '0.12rem 0.4rem',
+                            borderRadius: '4px',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title="Personnel explicitly assigned to this service"
+                        >
+                          ★ Service Specialist
+                        </span>
+                      )}
                       {isBusy ? (
                         <span
                           style={{

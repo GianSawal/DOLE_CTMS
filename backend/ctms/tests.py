@@ -14,6 +14,7 @@ from .models import (
     CtmsTransaction,
     CtmsServiceDefaultOfficer,
     DolePersonnel,
+    CtmsAuditLog,
 )
 from .services import (
     create_transaction,
@@ -728,6 +729,90 @@ class CtmsCoreTestCase(TestCase):
         assigned_service_names = list(p_tssd2_a.services.values_list('name', flat=True))
         self.assertIn("TUPAD Program Assistance", assigned_service_names)
         self.assertIn("Special Program for Employment of Students (SPES)", assigned_service_names)
+
+    def test_service_default_personnel_auto_assignment_and_waiting_queue_reassignment(self):
+        self.client.force_authenticate(user=self.staff_user)
+
+        div_tssd2, _ = CsmDivision.objects.get_or_create(name="TSSD 2")
+        tupad_service = CsmService.objects.create(
+            name="TUPAD Livelihood Assistance",
+            division=div_tssd2,
+            is_active=True,
+            sort_order=40
+        )
+
+        p1 = DolePersonnel.objects.create(
+            employee_id="EMP-TUPAD-01",
+            first_name="Maria",
+            last_name="Clara",
+            office=self.office,
+            is_active=True
+        )
+        p1.divisions.set([div_tssd2])
+
+        p2 = DolePersonnel.objects.create(
+            employee_id="EMP-TUPAD-02",
+            first_name="Crisostomo",
+            last_name="Ibarra",
+            office=self.office,
+            is_active=True
+        )
+        p2.divisions.set([div_tssd2])
+
+        # Associate both personnel with TUPAD service
+        tupad_service.assigned_personnel.set([p1, p2])
+
+        # 1. When a client selects a service (via check-in or walk-in), default personnel is automatically assigned
+        # based on the personnel associated with that specific service
+        tx1 = create_transaction(self.office, tupad_service, client_name="Beneficiary One")
+        self.assertIsNotNone(tx1.assigned_personnel)
+        self.assertIn(tx1.assigned_personnel, ["Maria Clara", "Crisostomo Ibarra"])
+
+        # 2. When a second client selects the same service, the other available officer is automatically assigned
+        other_officer = "Crisostomo Ibarra" if tx1.assigned_personnel == "Maria Clara" else "Maria Clara"
+        tx2 = create_transaction(self.office, tupad_service, client_name="Beneficiary Two")
+        self.assertEqual(tx2.assigned_personnel, other_officer)
+
+        # 3. Verify in the staff waiting queue, assigned_personnel is present
+        res_queue = self.client.get(f"/api/staff/queue/?office={self.office.id}")
+        self.assertEqual(res_queue.status_code, status.HTTP_200_OK)
+        q_tx1 = next(item for item in res_queue.data['waiting'] if item['id'] == tx1.id)
+        self.assertEqual(q_tx1['assigned_personnel'], tx1.assigned_personnel)
+
+        # 4. Attempting to reassign tx1 to p2 while p2 is busy with tx2 fails
+        res_busy = self.client.post(f"/api/staff/transactions/{tx1.id}/assign/", {
+            "personnel": other_officer
+        })
+        self.assertEqual(res_busy.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("currently assigned to Queue", res_busy.data['detail'])
+
+        # 5. Create a third available personnel member in TSSD 2
+        p3 = DolePersonnel.objects.create(
+            employee_id="EMP-TUPAD-03",
+            first_name="Elias",
+            last_name="Piloto",
+            office=self.office,
+            is_active=True
+        )
+        p3.divisions.set([div_tssd2])
+
+        # Reassign tx1 to the available personnel member Elias Piloto
+        res_reassign = self.client.post(f"/api/staff/transactions/{tx1.id}/assign/", {
+            "personnel": "Elias Piloto"
+        })
+        self.assertEqual(res_reassign.status_code, status.HTTP_200_OK)
+        tx1.refresh_from_db()
+        self.assertEqual(tx1.assigned_personnel, "Elias Piloto")
+
+        # 6. Check that REASSIGN_PERSONNEL audit event was logged
+        audit_log = CtmsAuditLog.objects.filter(
+            action='REASSIGN_PERSONNEL',
+            target_id=tx1.id
+        ).first()
+        self.assertIsNotNone(audit_log)
+        self.assertIn("Reassigned", audit_log.description)
+        self.assertIn("Elias Piloto", audit_log.description)
+
 
 
 

@@ -815,7 +815,25 @@ class StaffTransactionActionView(APIView):
                 if not avail:
                     return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
 
+                old_personnel = tx.assigned_personnel
                 tx = services.assign_personnel_to_transaction(tx, clean_personnel)
+
+                log_audit_event(
+                    action='REASSIGN_PERSONNEL' if old_personnel else 'ASSIGN_PERSONNEL',
+                    category=CtmsAuditLog.CATEGORY_QUEUE,
+                    actor=request.user,
+                    request=request,
+                    target_type='Transaction',
+                    target_id=tx.id,
+                    target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
+                    office=tx.office,
+                    division_name=tx.service.division.name if tx.service and tx.service.division else '',
+                    description=(
+                        f"Reassigned Queue #{tx.queue_no} to '{clean_personnel}' (previously: '{old_personnel}')"
+                        if old_personnel
+                        else f"Assigned Queue #{tx.queue_no} to '{clean_personnel}'"
+                    )
+                )
 
             elif action == 'call':
                 counter_id = request.data.get('counter')

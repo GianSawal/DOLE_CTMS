@@ -60,19 +60,7 @@ def get_default_officer_for_service(service, office=None):
     if not service:
         return None
 
-    # 1. Database override
-    try:
-        db_override = None
-        if office:
-            db_override = CtmsServiceDefaultOfficer.objects.filter(service=service, office=office).first()
-        if not db_override:
-            db_override = CtmsServiceDefaultOfficer.objects.filter(service=service, office__isnull=True).first()
-        if db_override and db_override.officer_name:
-            return db_override.officer_name.strip()
-    except Exception:
-        pass
-
-    # 2. Check explicitly assigned personnel configured for this service
+    # 1. Primary: Check explicitly assigned personnel configured for this specific service
     try:
         assigned_qs = service.assigned_personnel.filter(is_active=True)
         if office:
@@ -96,6 +84,18 @@ def get_default_officer_for_service(service, office=None):
             pool = available if available else assigned_candidates
             import random
             return random.choice(pool)
+    except Exception:
+        pass
+
+    # 2. Database override in CtmsServiceDefaultOfficer (for services without assigned personnel)
+    try:
+        db_override = None
+        if office:
+            db_override = CtmsServiceDefaultOfficer.objects.filter(service=service, office=office).first()
+        if not db_override:
+            db_override = CtmsServiceDefaultOfficer.objects.filter(service=service, office__isnull=True).first()
+        if db_override and db_override.officer_name:
+            return db_override.officer_name.strip()
     except Exception:
         pass
 
@@ -148,9 +148,10 @@ def get_default_officer_for_service(service, office=None):
     return None
 
 
-def create_transaction(office, service, client_name=None, is_priority=False, source='qr', group_member_names=None):
+def create_transaction(office, service, client_name=None, is_priority=False, source='qr', group_member_names=None, assigned_personnel=None):
     """
     Creates a new queue transaction atomically.
+    Automatically assigns a default personnel member based on personnel associated with the specific service.
     Generates queue_seq restartable daily per office, transaction_no, queue_no,
     ticket_token, survey_token, and claim_code.
     """
@@ -197,6 +198,10 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
         survey_token = generate_token(16)
         claim_code = generate_claim_code(4)
 
+        # Automatically assign default personnel member based on the service selected
+        if not assigned_personnel:
+            assigned_personnel = get_default_officer_for_service(service, office=office)
+
         tx = CtmsTransaction.objects.create(
             transaction_no=tx_no,
             office=office,
@@ -209,6 +214,7 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
             group_member_names=cleaned_member_names,
             status=CtmsTransaction.STATUS_WAITING,
             source=source,
+            assigned_personnel=assigned_personnel,
             checked_in_at=now,
             ticket_token=ticket_token,
             survey_token=survey_token,

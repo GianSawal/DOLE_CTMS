@@ -51,12 +51,37 @@ const DIVISION_OFFICER_POOLS = {
   ],
 };
 
-const pickRandomDefaultOfficer = (tx, personnelList = [], busyMap = new Map()) => {
+const pickRandomDefaultOfficer = (tx, personnelList = [], busyMap = new Map(), excludeName = '') => {
   if (!tx) return '';
   const divName = (tx.division_name || '').trim();
   const normDiv = (divName || '').toUpperCase().replace(/\s+/g, '');
+  const txSvcId = tx.service_id || tx.service;
+  const excludeClean = (excludeName || '').trim().toLowerCase();
 
-  // 1. From office personnel filtered by division
+  // 1. Primary: From personnel explicitly associated with this specific service
+  if (personnelList && personnelList.length > 0 && txSvcId) {
+    const serviceAssigned = personnelList.filter(p =>
+      Array.isArray(p.service_ids) && p.service_ids.includes(Number(txSvcId))
+    );
+    if (serviceAssigned.length > 0) {
+      const availableSvc = serviceAssigned.filter(p => {
+        const name = (p.full_name || '').trim().toLowerCase();
+        const empId = (p.employee_id || '').trim().toLowerCase();
+        return !busyMap.has(name) && !busyMap.has(empId);
+      });
+      let pool = availableSvc.length > 0 ? availableSvc : serviceAssigned;
+      if (excludeClean && pool.length > 1) {
+        const filtered = pool.filter(p => (p.full_name || '').trim().toLowerCase() !== excludeClean);
+        if (filtered.length > 0) pool = filtered;
+      }
+      const chosen = pool[Math.floor(Math.random() * pool.length)];
+      if (chosen && chosen.full_name) {
+        return chosen.full_name.trim();
+      }
+    }
+  }
+
+  // 2. From office personnel filtered by division
   const eligible = (personnelList || []).filter(p => {
     const divs = (p.division_names || []).map(d => (d || '').toUpperCase().replace(/\s+/g, ''));
     return !normDiv || divs.includes(normDiv) || divs.includes('ALL');
@@ -70,19 +95,27 @@ const pickRandomDefaultOfficer = (tx, personnelList = [], busyMap = new Map()) =
       return !busyMap.has(name) && !busyMap.has(empId);
     });
 
-    const pool = available.length > 0 ? available : eligible;
+    let pool = available.length > 0 ? available : eligible;
+    if (excludeClean && pool.length > 1) {
+      const filtered = pool.filter(p => (p.full_name || '').trim().toLowerCase() !== excludeClean);
+      if (filtered.length > 0) pool = filtered;
+    }
     const chosen = pool[Math.floor(Math.random() * pool.length)];
     if (chosen && chosen.full_name) {
       return chosen.full_name.trim();
     }
   }
 
-  // 2. Division fallback pool
+  // 3. Division fallback pool
   const fallbackPool = DIVISION_OFFICER_POOLS[divName] ||
                        DIVISION_OFFICER_POOLS[normDiv];
   if (fallbackPool && fallbackPool.length > 0) {
     const available = fallbackPool.filter(name => !busyMap.has(name.trim().toLowerCase()));
-    const pool = available.length > 0 ? available : fallbackPool;
+    let pool = available.length > 0 ? available : fallbackPool;
+    if (excludeClean && pool.length > 1) {
+      const filtered = pool.filter(n => n.trim().toLowerCase() !== excludeClean);
+      if (filtered.length > 0) pool = filtered;
+    }
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
@@ -292,12 +325,30 @@ export default function StaffQueue() {
   const txDivNorm = normalizeDiv(assignTx?.division_name);
 
   const eligiblePersonnel = useMemo(() => {
-    if (!txDivNorm) return officePersonnel;
-    return officePersonnel.filter(p => {
+    if (!officePersonnel || officePersonnel.length === 0) return [];
+    const txSvcId = assignTx?.service_id || assignTx?.service;
+
+    const filtered = officePersonnel.filter(p => {
+      if (!txDivNorm) return true;
       const divs = (p.division_names || []).map(normalizeDiv);
       return divs.includes(txDivNorm) || divs.includes('ALL');
     });
-  }, [officePersonnel, txDivNorm]);
+
+    // Sort: officers explicitly associated with this service first, then available officers first, then alphabetical
+    return [...filtered].sort((a, b) => {
+      const aInSvc = txSvcId && Array.isArray(a.service_ids) && a.service_ids.includes(Number(txSvcId));
+      const bInSvc = txSvcId && Array.isArray(b.service_ids) && b.service_ids.includes(Number(txSvcId));
+      if (aInSvc && !bInSvc) return -1;
+      if (!aInSvc && bInSvc) return 1;
+
+      const aBusy = Boolean(getBusyInfo(a));
+      const bBusy = Boolean(getBusyInfo(b));
+      if (!aBusy && bBusy) return -1;
+      if (aBusy && !bBusy) return 1;
+
+      return (a.full_name || '').localeCompare(b.full_name || '');
+    });
+  }, [officePersonnel, txDivNorm, assignTx, getBusyInfo]);
 
   const ineligiblePersonnel = useMemo(() => {
     if (!txDivNorm) return [];
@@ -424,8 +475,11 @@ export default function StaffQueue() {
 
   const handleShuffleDefaultOfficer = () => {
     if (!assignTx) return;
-    const newOfficer = pickRandomDefaultOfficer(assignTx, officePersonnel, busyPersonnelMap);
-    setAssignPersonnelName(newOfficer);
+    const currentName = assignPersonnelName || assignTx.assigned_personnel || '';
+    const newOfficer = pickRandomDefaultOfficer(assignTx, officePersonnel, busyPersonnelMap, currentName);
+    if (newOfficer) {
+      setAssignPersonnelName(newOfficer);
+    }
   };
 
   const handleAssignSubmit = async (e) => {
@@ -1509,30 +1563,42 @@ export default function StaffQueue() {
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                         {tx.assigned_personnel ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                             <span style={{
                               fontSize: '0.78rem',
                               backgroundColor: 'rgba(3, 5, 186, 0.08)',
                               border: '1px solid rgba(3, 5, 186, 0.25)',
                               color: 'var(--dole-blue)',
-                              padding: '0.25rem 0.55rem',
+                              padding: '0.22rem 0.55rem',
                               borderRadius: '6px',
                               fontWeight: 700,
                               maxWidth: '145px',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
-                            }} title={`Assigned: ${tx.assigned_personnel}`}>
+                            }} title={`Currently Assigned Officer: ${tx.assigned_personnel}`}>
                               👤 {tx.assigned_personnel}
                             </span>
                             <button
                               type="button"
                               onClick={() => handleOpenAssignModal(tx)}
-                              className="btn btn-ghost btn-xs"
-                              title="Edit assigned personnel"
-                              style={{ padding: '0.15rem 0.35rem', fontSize: '0.75rem' }}
+                              className="btn btn-outline btn-xs"
+                              title="Reassign to another available personnel member from the waiting queue"
+                              style={{
+                                padding: '0.2rem 0.5rem',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                borderRadius: '6px',
+                                border: '1px solid #cbd5e1',
+                                backgroundColor: '#ffffff',
+                                color: '#334155',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                              }}
                             >
-                              ✏️
+                              <span>🔄 Reassign</span>
                             </button>
                           </div>
                         ) : (
@@ -1973,14 +2039,16 @@ export default function StaffQueue() {
         <PrintSlip transaction={printedTx} onClose={() => setPrintedTx(null)} />
       </Modal>
 
-      {/* Assign Personnel Modal */}
+      {/* Assign / Reassign Personnel Modal */}
       <Modal
         isOpen={showAssignModal}
         onClose={() => {
           setShowAssignModal(false);
           setAssignTx(null);
         }}
-        title={`Assign Personnel · Queue #${assignTx?.queue_no || ''}`}
+        title={assignTx?.assigned_personnel
+          ? `Reassign Personnel · Queue #${assignTx?.queue_no || ''}`
+          : `Assign Personnel · Queue #${assignTx?.queue_no || ''}`}
       >
         <form onSubmit={handleAssignSubmit}>
           <div style={{
@@ -2007,7 +2075,22 @@ export default function StaffQueue() {
                 </span>
               )}
             </div>
-            <div style={{ fontSize: '0.82rem', color: '#1e3a8a', lineHeight: 1.4 }}>
+            {assignTx?.assigned_personnel && (
+              <div style={{
+                marginTop: '0.45rem',
+                paddingTop: '0.45rem',
+                borderTop: '1px dashed #bfdbfe',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.84rem',
+              }}>
+                <span style={{ color: '#1e40af' }}>Currently Assigned:</span>
+                <strong style={{ color: '#1d4ed8' }}>{assignTx.assigned_personnel}</strong>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>(Select another available personnel below to reassign)</span>
+              </div>
+            )}
+            <div style={{ fontSize: '0.82rem', color: '#1e3a8a', lineHeight: 1.4, marginTop: '0.35rem' }}>
               🔒 <strong>Division Access Policy:</strong> Only personnel assigned to the <strong>{assignTx?.division_name || 'same'}</strong> division are permitted to access and be assigned to this transaction.
             </div>
           </div>
@@ -2057,6 +2140,7 @@ export default function StaffQueue() {
               placeholder={`-- Select ${assignTx?.division_name || ''} Personnel --`}
               searchPlaceholder={`Type to search ${assignTx?.division_name || ''} personnel...`}
               serviceDivision={assignTx?.division_name}
+              serviceId={assignTx?.service_id || assignTx?.service}
               isPersonnelBusy={getBusyInfo}
             />
           </div>
@@ -2236,7 +2320,7 @@ export default function StaffQueue() {
               className="btn btn-primary"
               style={{ fontWeight: 700 }}
             >
-              {actionLoading ? 'Saving...' : 'Save Personnel Assignment'}
+              {actionLoading ? 'Saving...' : (assignTx?.assigned_personnel ? '✓ Confirm Reassignment' : 'Save Personnel Assignment')}
             </button>
           </div>
         </form>
