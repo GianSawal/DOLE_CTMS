@@ -227,13 +227,14 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
         return tx
 
 
-def notify_assigned_personnel(tx, is_reassignment=False, previous_officer=None):
+def notify_assigned_personnel(tx, is_reassignment=False, previous_officer=None, is_manual_reminder=False, caller_user=None):
     """
     Creates real-time notifications for the personnel member linked to the assigned officer.
     Alerts them with queue number, requested service, and assignment time.
+    Returns (True, message) on success or (False, error_message) on failure.
     """
     if not tx or not tx.assigned_personnel:
-        return
+        return False, "No personnel assigned to this transaction."
 
     clean = str(tx.assigned_personnel).strip().lower()
 
@@ -249,22 +250,57 @@ def notify_assigned_personnel(tx, is_reassignment=False, previous_officer=None):
             personnel = p
             break
 
-    if not personnel or not personnel.user:
-        return
+    recipient_user = None
+    if personnel and personnel.user:
+        recipient_user = personnel.user
+    else:
+        # Check by username or full name match on User model
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user_match = User.objects.filter(
+            models.Q(username__iexact=clean) |
+            (models.Q(dole_personnel=personnel) if personnel else models.Q())
+        ).first()
+        if not user_match:
+            parts = clean.split()
+            if len(parts) >= 2:
+                user_match = User.objects.filter(first_name__iexact=parts[0], last_name__iexact=parts[-1]).first()
+        if user_match:
+            recipient_user = user_match
+
+    if not recipient_user:
+        return False, f"Officer '{tx.assigned_personnel}' does not have a linked user account to receive online notifications."
 
     service_name = tx.service.name if tx.service else 'Service'
-    action_type = 'REASSIGNMENT' if is_reassignment else 'ASSIGNMENT'
-    title = f"{'Client Reassigned' if is_reassignment else 'New Client Assigned'}: Queue #{tx.queue_no}"
-    message = (
-        f"Queue #{tx.queue_no} ({service_name}) was reassigned to you."
-        if is_reassignment
-        else f"Queue #{tx.queue_no} ({service_name}) was added to your queue."
-    )
+
+    if is_manual_reminder:
+        action_type = 'REMINDER'
+        caller_name = (
+            f"{caller_user.get_full_name() or caller_user.username}"
+            if caller_user and caller_user.is_authenticated
+            else "Queue Dispatcher"
+        )
+        title = f"Queue Reminder: Queue #{tx.queue_no}"
+        message = (
+            f"Reminder from {caller_name}: Client Queue #{tx.queue_no} ({service_name}) is waiting in your queue."
+        )
+    elif is_reassignment:
+        action_type = 'REASSIGNMENT'
+        title = f"Client Reassigned: Queue #{tx.queue_no}"
+        message = (
+            f"Queue #{tx.queue_no} ({service_name}) was reassigned to you (previously {previous_officer})."
+            if previous_officer
+            else f"Queue #{tx.queue_no} ({service_name}) was reassigned to you."
+        )
+    else:
+        action_type = 'ASSIGNMENT'
+        title = f"New Client Assigned: Queue #{tx.queue_no}"
+        message = f"Queue #{tx.queue_no} ({service_name}) was added to your queue."
 
     try:
         from .models import CtmsNotification
         CtmsNotification.objects.create(
-            recipient=personnel.user,
+            recipient=recipient_user,
             transaction=tx,
             notification_type=action_type,
             title=title,
@@ -273,8 +309,10 @@ def notify_assigned_personnel(tx, is_reassignment=False, previous_officer=None):
             service_name=service_name,
             assigned_at=timezone.now(),
         )
+        return True, f"Notification sent to {tx.assigned_personnel} successfully."
     except Exception as e:
         print(f"Warning: Failed to create assignment notification: {e}")
+        return False, f"Failed to send notification: {str(e)}"
 
 
 def assign_personnel_to_transaction(tx, personnel):

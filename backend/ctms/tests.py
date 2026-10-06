@@ -1022,6 +1022,62 @@ class CtmsCoreTestCase(TestCase):
         self.assertIsNotNone(audit)
         self.assertIn("Deleted Queue", audit.description)
 
+    def test_notify_assigned_personnel_again_action(self):
+        """
+        Verify that admin/staff caller can press notify and it notifies the personnel again.
+        """
+        # Create user account for personnel
+        officer_user = User.objects.create_user(
+            username="remind_officer",
+            password="password123",
+            first_name="Ramon",
+            last_name="Bautista",
+            is_staff=True
+        )
+        CtmsStaffOffice.objects.create(user=officer_user, office=self.office)
+
+        personnel = DolePersonnel.objects.create(
+            employee_id="EMP-NOTIF-99",
+            first_name="Ramon",
+            last_name="Bautista",
+            office=self.office,
+            user=officer_user,
+            is_active=True
+        )
+
+        service = CsmService.objects.create(name="Special Assistance", is_active=True, sort_order=25)
+        service.assigned_personnel.set([personnel])
+
+        tx = create_transaction(self.office, service, client_name="Waiting Client")
+        self.assertEqual(tx.assigned_personnel, "Ramon Bautista")
+
+        # Initial assignment created 1 notification
+        self.assertEqual(CtmsNotification.objects.filter(recipient=officer_user).count(), 1)
+
+        # Admin/caller calls the notify endpoint
+        staff_client = APIClient()
+        staff_client.force_authenticate(user=self.staff_user)
+
+        res_notify = staff_client.post(f"/api/staff/transactions/{tx.id}/notify/")
+        self.assertEqual(res_notify.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_notify.data.get('notified'))
+
+        # Check that a second (reminder) notification was created
+        notifs = CtmsNotification.objects.filter(recipient=officer_user).order_by('-created_at')
+        self.assertEqual(notifs.count(), 2)
+
+        latest_notif = notifs.first()
+        self.assertEqual(latest_notif.notification_type, 'REMINDER')
+        self.assertIn("Queue Reminder", latest_notif.title)
+        self.assertIn("Reminder from", latest_notif.message)
+        self.assertEqual(latest_notif.queue_no, tx.queue_no)
+
+        # Check that audit log recorded the event
+        audit = CtmsAuditLog.objects.filter(action='NOTIFY_PERSONNEL', target_id=str(tx.id)).first()
+        self.assertIsNotNone(audit)
+        self.assertIn("Sent notification reminder", audit.description)
+
+
 
 
 

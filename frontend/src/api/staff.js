@@ -27,6 +27,10 @@ export const staffApi = {
     body: JSON.stringify({ personnel }),
   }),
 
+  notifyPersonnel: (id) => apiRequest(`/staff/transactions/${id}/notify/`, {
+    method: 'POST',
+  }),
+
   createWalkin: (data) => apiRequest('/staff/transactions/walkin/', {
     method: 'POST',
     body: JSON.stringify(data),

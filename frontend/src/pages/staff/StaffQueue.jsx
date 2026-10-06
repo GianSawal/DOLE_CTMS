@@ -193,6 +193,25 @@ export default function StaffQueue() {
   // Live incoming assignment banner alert
   const [liveAssignmentAlert, setLiveAssignmentAlert] = useState(null);
 
+  // Manual Notify Personnel State
+  const [notifyingId, setNotifyingId] = useState(null);
+  const [notifySuccessMsg, setNotifySuccessMsg] = useState('');
+
+  const handleNotifyPersonnel = async (tx) => {
+    if (!tx || !tx.assigned_personnel) return;
+    try {
+      setNotifyingId(tx.id);
+      setError('');
+      const res = await staffApi.notifyPersonnel(tx.id);
+      setNotifySuccessMsg(res.detail || `Notification sent to ${tx.assigned_personnel}!`);
+      setTimeout(() => setNotifySuccessMsg(''), 4500);
+    } catch (err) {
+      setError(err.message || `Failed to notify ${tx.assigned_personnel}.`);
+    } finally {
+      setNotifyingId(null);
+    }
+  };
+
   useEffect(() => {
     if (user?.linked_personnel && !user?.is_superuser) {
       setViewMyClientsOnly(true);
@@ -1079,6 +1098,35 @@ export default function StaffQueue() {
           </div>
         )}
 
+        {/* Manual Notification Success Alert Banner */}
+        {notifySuccessMsg && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: '#f0fdf4',
+            border: '1.5px solid #86efac',
+            borderRadius: '10px',
+            padding: '0.75rem 1.15rem',
+            marginBottom: '1.25rem',
+            animation: 'fadeIn 0.2s ease-out',
+            boxShadow: '0 4px 12px rgba(22, 101, 52, 0.10)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', color: '#15803d' }}>
+              <span style={{ fontSize: '1.2rem' }}>🔔</span>
+              <strong style={{ fontSize: '0.88rem' }}>{notifySuccessMsg}</strong>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNotifySuccessMsg('')}
+              className="btn btn-ghost btn-xs"
+              style={{ color: '#16a34a', fontWeight: 700 }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Personnel Assigned Queue Banner / Switcher */}
         {user?.linked_personnel && (
           <div style={{
@@ -1370,6 +1418,28 @@ export default function StaffQueue() {
                       >
                         ↩ Return to Queue
                       </button>
+
+                      {tx.assigned_personnel && (
+                        <button
+                          type="button"
+                          onClick={() => handleNotifyPersonnel(tx)}
+                          disabled={notifyingId === tx.id || actionLoading}
+                          className="btn btn-outline btn-sm"
+                          style={{
+                            color: 'var(--dole-blue)',
+                            borderColor: '#93c5fd',
+                            backgroundColor: notifyingId === tx.id ? '#dbeafe' : '#eff6ff',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                          }}
+                          title={`Send notification reminder to ${tx.assigned_personnel}`}
+                        >
+                          <span>🔔</span>
+                          <span>{notifyingId === tx.id ? 'Notifying...' : 'Notify Officer'}</span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => handleAction(tx.id, 'no-show')}
@@ -1810,6 +1880,41 @@ export default function StaffQueue() {
                         >
                           📢 Call
                         </button>
+
+                        {tx.assigned_personnel && (
+                          <button
+                            type="button"
+                            onClick={() => handleNotifyPersonnel(tx)}
+                            disabled={notifyingId === tx.id || actionLoading}
+                            className="btn btn-outline btn-sm"
+                            style={{
+                              minHeight: '34px',
+                              borderRadius: '6px',
+                              fontWeight: 700,
+                              padding: '0.35rem 0.65rem',
+                              color: '#1d4ed8',
+                              borderColor: '#93c5fd',
+                              backgroundColor: notifyingId === tx.id ? '#dbeafe' : '#eff6ff',
+                              cursor: notifyingId === tx.id ? 'wait' : 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#dbeafe';
+                              e.currentTarget.style.borderColor = '#60a5fa';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = notifyingId === tx.id ? '#dbeafe' : '#eff6ff';
+                              e.currentTarget.style.borderColor = '#93c5fd';
+                            }}
+                            title={`Send notification reminder to ${tx.assigned_personnel} that Queue #${tx.queue_no} is waiting in their queue`}
+                          >
+                            <span>🔔</span>
+                            <span>{notifyingId === tx.id ? 'Notifying...' : 'Notify'}</span>
+                          </button>
+                        )}
 
                         <button
                           type="button"

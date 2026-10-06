@@ -978,6 +978,49 @@ class StaffTransactionActionView(APIView):
             elif action == 'requeue':
                 tx = services.requeue_transaction(tx)
 
+            elif action == 'notify':
+                if not tx.assigned_personnel or not str(tx.assigned_personnel).strip():
+                    return Response({
+                        "detail": f"Cannot notify: No officer is currently assigned to Queue #{tx.queue_no}."
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                success, msg = services.notify_assigned_personnel(
+                    tx,
+                    is_reassignment=False,
+                    previous_officer=None,
+                    is_manual_reminder=True,
+                    caller_user=request.user
+                )
+
+                if not success:
+                    return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+                log_audit_event(
+                    action='NOTIFY_PERSONNEL',
+                    category=CtmsAuditLog.CATEGORY_QUEUE,
+                    actor=request.user,
+                    request=request,
+                    target_type='Transaction',
+                    target_id=tx.id,
+                    target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
+                    office=tx.office,
+                    division_name=tx.service.division.name if tx.service and tx.service.division else '',
+                    description=f"Sent notification reminder to assigned officer '{tx.assigned_personnel}' for Queue #{tx.queue_no}",
+                    details={
+                        'queue_no': tx.queue_no,
+                        'transaction_no': tx.transaction_no,
+                        'assigned_personnel': tx.assigned_personnel,
+                        'service': tx.service.name if tx.service else '',
+                    }
+                )
+
+                return Response({
+                    "detail": msg or f"Notification sent to {tx.assigned_personnel} successfully.",
+                    "notified": True,
+                    "queue_no": tx.queue_no,
+                    "officer": tx.assigned_personnel,
+                })
+
             else:
                 return Response({"detail": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
 
