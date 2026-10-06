@@ -190,6 +190,9 @@ export default function StaffQueue() {
     }
   };
 
+  // Live incoming assignment banner alert
+  const [liveAssignmentAlert, setLiveAssignmentAlert] = useState(null);
+
   useEffect(() => {
     if (user?.linked_personnel && !user?.is_superuser) {
       setViewMyClientsOnly(true);
@@ -311,8 +314,14 @@ export default function StaffQueue() {
 
   // Listen for real-time client assignment / reassignment events from NotificationBell
   useEffect(() => {
-    const handleRealtimeAssignment = () => {
+    const handleRealtimeAssignment = (e) => {
       fetchQueue();
+      if (e?.detail) {
+        setLiveAssignmentAlert(e.detail);
+        setTimeout(() => {
+          setLiveAssignmentAlert(curr => (curr?.id === e.detail.id ? null : curr));
+        }, 12000);
+      }
     };
     window.addEventListener('ctms:new-assignment', handleRealtimeAssignment);
     return () => window.removeEventListener('ctms:new-assignment', handleRealtimeAssignment);
@@ -1018,6 +1027,55 @@ export default function StaffQueue() {
               <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* Real-time In-Dashboard Alert for Newly Assigned Client */}
+        {liveAssignmentAlert && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: '#eff6ff',
+            border: '2px solid var(--dole-blue)',
+            borderRadius: '12px',
+            padding: '0.85rem 1.25rem',
+            marginBottom: '1.25rem',
+            animation: 'fadeIn 0.25s ease-out',
+            boxShadow: '0 8px 24px rgba(3, 5, 186, 0.20)',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <span style={{ fontSize: '1.6rem' }}>🔔</span>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <strong style={{ color: 'var(--dole-blue)', fontSize: '0.98rem' }}>
+                    New Client Added to Queue:
+                  </strong>
+                  <span className="mono" style={{ fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', backgroundColor: 'rgba(3, 5, 186, 0.08)', padding: '0.1rem 0.5rem', borderRadius: '6px' }}>
+                    Queue #{liveAssignmentAlert.queue_no}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: '#16a34a', fontWeight: 700, backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
+                    ✓ Auto-updated
+                  </span>
+                </div>
+                {liveAssignmentAlert.service_name && (
+                  <div style={{ color: '#475569', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                    Requested Service: <strong>{liveAssignmentAlert.service_name}</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setLiveAssignmentAlert(null)}
+              className="btn btn-outline btn-xs"
+              style={{ color: '#64748b', fontSize: '0.78rem', fontWeight: 700 }}
+            >
+              ✕ Dismiss
+            </button>
           </div>
         )}
 
