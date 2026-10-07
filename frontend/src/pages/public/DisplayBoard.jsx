@@ -354,7 +354,7 @@ export default function DisplayBoard() {
       .filter(Boolean);
     const userDivNorms = userDivs.map(d => normalizeDiv(d));
     const isUniversalNorm = (norm) => norm === 'ALL' || norm === 'FRONTDESK' || /^WINDOW(\d+)$/.test(norm);
-    const userHasAll = user?.is_superuser || user?.all_divisions_access || (userDivs.length >= 4 && allDivNorms.every(req => userDivNorms.includes(req))) || userDivNorms.some(isUniversalNorm);
+    const userHasAll = user?.is_superuser || user?.all_services_access || user?.all_divisions_access || (userDivs.length >= 4 && allDivNorms.every(req => userDivNorms.includes(req))) || userDivNorms.some(isUniversalNorm);
 
     // Restrict ONLY if staff user has a restricted subset (e.g. only 1 or 2 divisions, NOT all divisions)
     if (user && !user.is_superuser && userDivs.length > 0 && !userHasAll) {
@@ -431,7 +431,7 @@ export default function DisplayBoard() {
       .map(d => (typeof d === 'string' ? d : d?.name))
       .filter(Boolean);
     if (user && !user.is_superuser && userDivs.length > 0) {
-      if (user?.all_divisions_access) return true;
+      if (user?.all_services_access || user?.all_divisions_access) return true;
       const userDivNorms = userDivs.map(d => normalizeDiv(d));
       if (userDivNorms.some(d => d === 'ALL' || d === 'FRONTDESK' || /^WINDOW(\d+)$/.test(d))) return true;
       return allDivNorms.every(req => userDivNorms.includes(req));

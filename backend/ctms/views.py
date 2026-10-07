@@ -123,13 +123,21 @@ class StaffMeView(APIView):
         except Exception:
             pass
 
+        is_all_divs = bool(
+            user.is_superuser and (
+                not CtmsStaffDivision.objects.filter(user=user).exists() or
+                assigned_divisions.count() >= CsmDivision.objects.exclude(name__iexact='ALL').count()
+            )
+        )
+
         return Response({
             "id": user.id,
             "username": user.username,
             "first_name": user.first_name,
             "last_name": user.last_name,
             "is_superuser": user.is_superuser,
-            "all_divisions_access": has_universal_division_access(user, assigned_divisions),
+            "all_divisions_access": is_all_divs,
+            "all_services_access": has_universal_division_access(user, assigned_divisions),
             "must_change_password": must_change_password,
             "assigned_offices": CsmOfficeSerializer(assigned_offices, many=True).data,
             "assigned_divisions": CsmDivisionSerializer(assigned_divisions, many=True).data,

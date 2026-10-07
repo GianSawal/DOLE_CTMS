@@ -11,17 +11,17 @@ const TARGET_DIVISIONS = [
   { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Support Services Division 2', color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd', category: 'division' },
   { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0', category: 'division' },
   { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation Arbitration and Legal Services Unit', color: '#b45309', bg: '#fffbeb', border: '#fde68a', category: 'division' },
-  { key: 'Front Desk', alias: 'Front Desk', label: 'Front Desk', fullName: 'Front Desk / PACD (All Divisions Access)', color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4', isUniversal: true, category: 'counter' },
-  { key: 'Window 1', alias: 'Window 1', label: 'Window 1', fullName: 'Queue Window 1 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 2', alias: 'Window 2', label: 'Window 2', fullName: 'Queue Window 2 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 3', alias: 'Window 3', label: 'Window 3', fullName: 'Queue Window 3 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 4', alias: 'Window 4', label: 'Window 4', fullName: 'Queue Window 4 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 5', alias: 'Window 5', label: 'Window 5', fullName: 'Queue Window 5 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 6', alias: 'Window 6', label: 'Window 6', fullName: 'Queue Window 6 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 7', alias: 'Window 7', label: 'Window 7', fullName: 'Queue Window 7 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 8', alias: 'Window 8', label: 'Window 8', fullName: 'Queue Window 8 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 9', alias: 'Window 9', label: 'Window 9', fullName: 'Queue Window 9 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 10', alias: 'Window 10', label: 'Window 10', fullName: 'Queue Window 10 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
+  { key: 'Front Desk', alias: 'Front Desk', label: 'Front Desk', fullName: 'Front Desk / PACD (All Services Access)', color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4', isUniversal: true, category: 'counter' },
+  { key: 'Window 1', alias: 'Window 1', label: 'Window 1', fullName: 'Queue Window 1 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 2', alias: 'Window 2', label: 'Window 2', fullName: 'Queue Window 2 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 3', alias: 'Window 3', label: 'Window 3', fullName: 'Queue Window 3 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 4', alias: 'Window 4', label: 'Window 4', fullName: 'Queue Window 4 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 5', alias: 'Window 5', label: 'Window 5', fullName: 'Queue Window 5 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 6', alias: 'Window 6', label: 'Window 6', fullName: 'Queue Window 6 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 7', alias: 'Window 7', label: 'Window 7', fullName: 'Queue Window 7 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 8', alias: 'Window 8', label: 'Window 8', fullName: 'Queue Window 8 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 9', alias: 'Window 9', label: 'Window 9', fullName: 'Queue Window 9 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 10', alias: 'Window 10', label: 'Window 10', fullName: 'Queue Window 10 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
 ];
 
 export default function StaffUsers() {
@@ -313,19 +313,18 @@ export default function StaffUsers() {
   };
 
   // Check if currently selected divisions include Front Desk or any Window 1-10
-  const hasUniversalSelected = useMemo(() => {
-    if (allDivisionsSelected || role === 'admin') return true;
+  const hasUniversalCounterSelected = useMemo(() => {
     return selectedDivisionIds.some((divId) => {
       const divObj = divisions.find((d) => d.id === divId);
       if (!divObj) return false;
       const target = TARGET_DIVISIONS.find(
         (t) =>
           t.key.toLowerCase() === divObj.name.toLowerCase() ||
-          t.alias?.toLowerCase() === divObj.name.toLowerCase()
+          (t.alias && t.alias.toLowerCase() === divObj.name.toLowerCase())
       );
       return Boolean(target?.isUniversal);
     });
-  }, [selectedDivisionIds, allDivisionsSelected, role, divisions]);
+  }, [selectedDivisionIds, divisions]);
 
   // Submit Add / Edit Form
   const handleSubmitForm = async (e) => {
@@ -1413,18 +1412,18 @@ export default function StaffUsers() {
                                   </span>
                                 );
                               })}
-                              {u.all_divisions_access && (
+                              {(u.all_services_access || u.all_divisions_access) && (
                                 <span
                                   style={{
                                     fontSize: '0.7rem',
                                     fontWeight: 700,
                                     padding: '0.15rem 0.45rem',
                                     borderRadius: '9999px',
-                                    backgroundColor: '#ecfdf5',
-                                    color: '#047857',
-                                    border: '1px solid #a7f3d0',
+                                    backgroundColor: '#eef2ff',
+                                    color: '#4f46e5',
+                                    border: '1px solid #c7d2fe',
                                   }}
-                                  title="Grants access to all services across all divisions"
+                                  title="Can serve all queue services across all divisions"
                                 >
                                   ⚡ All Services
                                 </span>
@@ -2228,25 +2227,25 @@ export default function StaffUsers() {
                   )}
                 </div>
 
-                {hasUniversalSelected && (
+                {hasUniversalCounterSelected && (
                   <div
                     style={{
                       marginBottom: '0.65rem',
                       padding: '0.55rem 0.85rem',
                       borderRadius: '8px',
-                      backgroundColor: '#ecfdf5',
-                      border: '1px solid #a7f3d0',
+                      backgroundColor: '#eff6ff',
+                      border: '1px solid #bfdbfe',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.5rem',
                       fontSize: '0.78rem',
-                      color: '#065f46',
+                      color: '#1d4ed8',
                       fontWeight: 600,
                     }}
                   >
-                    <span style={{ fontSize: '1rem' }}>✨</span>
+                    <span style={{ fontSize: '1rem' }}>⚡</span>
                     <span>
-                      <strong>All Divisions Access Granted:</strong> Accounts assigned to Window 1–10 or Front Desk can access and serve all services across all divisions.
+                      <strong>All Services Access:</strong> Accounts assigned to Window 1–10 or Front Desk can access and serve all queue services across all divisions without having division-level access.
                     </span>
                   </div>
                 )}
@@ -2336,8 +2335,8 @@ export default function StaffUsers() {
                       <div style={{ fontSize: '0.73rem', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Queue Counter Windows & Front Desk (All Services Access)
                       </div>
-                      <span style={{ fontSize: '0.68rem', color: '#047857', fontWeight: 700, backgroundColor: '#ecfdf5', padding: '0.1rem 0.45rem', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
-                        ⚡ Access All Divisions
+                      <span style={{ fontSize: '0.68rem', color: '#4f46e5', fontWeight: 700, backgroundColor: '#eef2ff', padding: '0.1rem 0.45rem', borderRadius: '4px', border: '1px solid #c7d2fe' }}>
+                        ⚡ Access All Services
                       </span>
                     </div>
                     <div
@@ -2386,8 +2385,8 @@ export default function StaffUsers() {
                                 <span style={{ fontWeight: 800, color: isChecked ? tDiv.color : 'var(--text-primary)', fontSize: '0.84rem' }}>
                                   {tDiv.label}
                                 </span>
-                                <span style={{ fontSize: '0.66rem', color: '#047857', fontWeight: 700, backgroundColor: '#ecfdf5', padding: '0.05rem 0.35rem', borderRadius: '4px' }}>
-                                  All Divs
+                                <span style={{ fontSize: '0.66rem', color: '#4f46e5', fontWeight: 700, backgroundColor: '#eef2ff', padding: '0.05rem 0.35rem', borderRadius: '4px' }}>
+                                  All Services
                                 </span>
                               </div>
                               <div

@@ -328,7 +328,8 @@ class CtmsCoreTestCase(TestCase):
         }
         res_create = self.client.post("/api/staff/users/", data=create_payload, format='json')
         self.assertEqual(res_create.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(res_create.data["all_divisions_access"])
+        self.assertFalse(res_create.data["all_divisions_access"])
+        self.assertTrue(res_create.data["all_services_access"])
         self.assertIn("Window 1", res_create.data["division_names"])
 
         # 3. Create services and transactions across different divisions
@@ -341,10 +342,11 @@ class CtmsCoreTestCase(TestCase):
         window_user = User.objects.get(username="window1_staff")
         self.client.force_authenticate(user=window_user)
 
-        # Me endpoint returns all_divisions_access=True
+        # Me endpoint returns all_divisions_access=False, all_services_access=True
         res_me = self.client.get("/api/staff/auth/me/")
         self.assertEqual(res_me.status_code, status.HTTP_200_OK)
-        self.assertTrue(res_me.data["all_divisions_access"])
+        self.assertFalse(res_me.data["all_divisions_access"])
+        self.assertTrue(res_me.data["all_services_access"])
 
         # In StaffQueueView, window1_staff CAN access all services from ALL divisions
         res_queue = self.client.get(f"/api/staff/queue/?office={self.office.id}")

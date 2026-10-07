@@ -382,7 +382,7 @@ export default function StaffQueue() {
 
   const hasUniversalDivisionAccess = (usr) => {
     if (!usr) return false;
-    if (usr.is_superuser || usr.all_divisions_access) return true;
+    if (usr.is_superuser || usr.all_services_access || usr.all_divisions_access) return true;
     const assigned = usr.assigned_divisions || [];
     return assigned.some(d => isUniversalDivision(typeof d === 'string' ? d : d?.name));
   };
@@ -2330,7 +2330,7 @@ export default function StaffQueue() {
               <div style={{ fontSize: '0.75rem', marginTop: '0.35rem', fontWeight: 600 }}>
                 {hasUniversalDivisionAccess(user) ? (
                   <span style={{ color: '#059669' }}>
-                    ⚡ Universal Access: Your account ({user.assigned_divisions.map(d => d.name).join(', ')}) can create walk-ins for all divisions and services.
+                    ⚡ Universal Service Access: Your account ({user.assigned_divisions.map(d => d.name).join(', ')}) can create walk-ins for all services across all divisions.
                   </span>
                 ) : (
                   <span style={{ color: 'var(--dole-blue)' }}>

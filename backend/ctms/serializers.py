@@ -198,6 +198,7 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
     office_names = serializers.SerializerMethodField()
     all_offices_access = serializers.SerializerMethodField()
     all_divisions_access = serializers.SerializerMethodField()
+    all_services_access = serializers.SerializerMethodField()
     division_ids = serializers.SerializerMethodField()
     division_names = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
@@ -233,6 +234,7 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
             'office_names',
             'all_offices_access',
             'all_divisions_access',
+            'all_services_access',
             'division_ids',
             'division_names',
             'date_joined',
@@ -300,6 +302,13 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
         return assigned_count == 0 or (total_active_offices > 0 and assigned_count >= total_active_offices)
 
     def get_all_divisions_access(self, obj):
+        if not obj.is_superuser:
+            return False
+        total_divisions = CsmDivision.objects.exclude(name__iexact='ALL').count()
+        assigned_count = obj.staff_divisions.count()
+        return assigned_count == 0 or (total_divisions > 0 and assigned_count >= total_divisions)
+
+    def get_all_services_access(self, obj):
         if obj.is_superuser:
             return True
         div_names = list(obj.staff_divisions.values_list('division__name', flat=True))
