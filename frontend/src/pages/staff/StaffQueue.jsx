@@ -51,11 +51,33 @@ const DIVISION_OFFICER_POOLS = {
   ],
 };
 
+// Helper to normalize division names
+const normalizeDiv = (name) => (name || '').toUpperCase().replace(/\s+/g, '');
+
+const isUniversalDivision = (name) => {
+  if (!name) return false;
+  const norm = normalizeDiv(name);
+  if (norm === 'ALL' || norm === 'FRONTDESK') return true;
+  const match = norm.match(/^WINDOW(\d+)$/);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    return num >= 1 && num <= 10;
+  }
+  return false;
+};
+
+const hasUniversalDivisionAccess = (usr) => {
+  if (!usr) return false;
+  if (usr.is_superuser || usr.all_services_access || usr.all_divisions_access) return true;
+  const assigned = usr.assigned_divisions || [];
+  return assigned.some(d => isUniversalDivision(typeof d === 'string' ? d : d?.name));
+};
+
 const pickRandomDefaultOfficer = (tx, personnelList = [], busyMap = new Map(), excludeName = '') => {
   if (!tx) return '';
   const txOfficeId = tx.office_id || tx.office;
   const divName = (tx.division_name || '').trim();
-  const normDiv = (divName || '').toUpperCase().replace(/\s+/g, '');
+  const normDiv = normalizeDiv(divName);
   const txSvcId = tx.service_id || tx.service;
   const excludeClean = (excludeName || '').trim().toLowerCase();
 
@@ -90,7 +112,7 @@ const pickRandomDefaultOfficer = (tx, personnelList = [], busyMap = new Map(), e
 
   // 2. From office personnel filtered by division
   const eligible = officePersonnel.filter(p => {
-    const divs = (p.division_names || []).map(d => (d || '').toUpperCase().replace(/\s+/g, ''));
+    const divs = (p.division_names || []).map(normalizeDiv);
     return !normDiv || divs.includes(normDiv) || divs.includes('ALL') || divs.some(isUniversalDivision);
   });
 
@@ -360,28 +382,6 @@ export default function StaffQueue() {
 
   const isNextClientAssigned = Boolean(nextWaitingClient?.assigned_personnel && nextWaitingClient.assigned_personnel.trim());
 
-  // Helper to normalize division names
-  const normalizeDiv = (name) => (name || '').toUpperCase().replace(/\s+/g, '');
-
-  const isUniversalDivision = (name) => {
-    if (!name) return false;
-    const norm = normalizeDiv(name);
-    if (norm === 'ALL' || norm === 'FRONTDESK') return true;
-    const match = norm.match(/^WINDOW(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      return num >= 1 && num <= 10;
-    }
-    return false;
-  };
-
-  const hasUniversalDivisionAccess = (usr) => {
-    if (!usr) return false;
-    if (usr.is_superuser || usr.all_services_access || usr.all_divisions_access) return true;
-    const assigned = usr.assigned_divisions || [];
-    return assigned.some(d => isUniversalDivision(typeof d === 'string' ? d : d?.name));
-  };
-
   // Fetch registered personnel for the selected office
   useEffect(() => {
     if (selectedOffice) {
@@ -397,8 +397,8 @@ export default function StaffQueue() {
     if (user?.is_superuser || user?.all_divisions_access || hasUniversalDivisionAccess(user) || !user?.assigned_divisions || user.assigned_divisions.length === 0) {
       return officeServices;
     }
-    const staffDivisionNorms = user.assigned_divisions.map(d => normalizeDiv(d.name));
-    const staffDivisionIds = user.assigned_divisions.map(d => d.id);
+    const staffDivisionNorms = user.assigned_divisions.map(d => normalizeDiv(typeof d === 'string' ? d : d?.name));
+    const staffDivisionIds = user.assigned_divisions.map(d => typeof d === 'object' ? d?.id : d).filter(Boolean);
     return officeServices.filter(svc => {
       if (svc.division && staffDivisionIds.includes(svc.division)) return true;
       if (svc.division_name) {
@@ -562,7 +562,7 @@ export default function StaffQueue() {
       const txDiv = normalizeDiv(tx?.division_name);
       const userOffices = (user?.office_ids || []).map(String);
       const isUserInOffice = user?.is_superuser || user?.all_offices_access || !txOffice || userOffices.includes(String(txOffice)) || String(user?.office) === String(txOffice);
-      const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(d.name));
+      const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(typeof d === 'string' ? d : d?.name));
       const canUserSelfAssign = isUserInOffice && (user?.is_superuser || hasUniversalDivisionAccess(user) || !txDiv || loggedInUserDivs.includes(txDiv) || loggedInUserDivs.some(isUniversalDivision));
       if (canUserSelfAssign) {
         const candidate = (user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user?.username || ''));
@@ -594,7 +594,7 @@ export default function StaffQueue() {
       if (targetOfficeId && matchedIneligible.office_id && String(matchedIneligible.office_id) !== String(targetOfficeId)) {
         setError(`Cannot assign ${matchedIneligible.full_name}: Personnel is assigned to ${matchedIneligible.office_name || 'another office'} and cannot be assigned to queues at ${assignTx.office_name || 'this office'}.`);
       } else {
-        setError(`Cannot assign ${matchedIneligible.full_name}: assigned to ${matchedIneligible.division_names?.join(', ')} and cannot be assigned to ${assignTx.division_name || 'other'} division services.`);
+        setError(`Cannot assign ${matchedIneligible.full_name}: assigned to ${Array.isArray(matchedIneligible.division_names) ? matchedIneligible.division_names.join(', ') : (matchedIneligible.division_names || 'other')} and cannot be assigned to ${assignTx.division_name || 'other'} division services.`);
       }
       return;
     }
@@ -2555,7 +2555,7 @@ export default function StaffQueue() {
                 </>
               ) : (
                 <>
-                  ⚠️ <strong>Division Restriction Violation:</strong> <strong>{matchedIneligible.full_name}</strong> is assigned to division(s) <strong>{matchedIneligible.division_names?.join(', ')}</strong> and cannot access or be assigned to services under the <strong>{assignTx?.division_name}</strong> division.
+                  ⚠️ <strong>Division Restriction Violation:</strong> <strong>{matchedIneligible.full_name}</strong> is assigned to division(s) <strong>{Array.isArray(matchedIneligible.division_names) ? matchedIneligible.division_names.join(', ') : (matchedIneligible.division_names || '')}</strong> and cannot access or be assigned to services under the <strong>{assignTx?.division_name}</strong> division.
                 </>
               )}
             </div>

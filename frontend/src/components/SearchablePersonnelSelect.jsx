@@ -411,7 +411,7 @@ export default function SearchablePersonnelSelect({
               )}
 
               {/* Division badges */}
-              {selectedPersonnel.division_names && (
+              {Array.isArray(selectedPersonnel.division_names) && selectedPersonnel.division_names.length > 0 && (
                 <>
                   {selectedPersonnel.division_names.length <= 3 ? (
                     selectedPersonnel.division_names.map((d) => getDivisionBadge(d))
@@ -872,7 +872,7 @@ export default function SearchablePersonnelSelect({
                         </div>
 
                         {/* Division Badges Row */}
-                        {p.division_names && p.division_names.length > 0 && (
+                        {Array.isArray(p.division_names) && p.division_names.length > 0 && (
                           <div
                             style={{
                               display: 'flex',
@@ -888,7 +888,7 @@ export default function SearchablePersonnelSelect({
                               <>
                                 {p.division_names.slice(0, 5).map((d) => getDivisionBadge(d))}
                                 <span
-                                  title={p.division_names.join(', ')}
+                                  title={Array.isArray(p.division_names) ? p.division_names.join(', ') : ''}
                                   style={{
                                     fontSize: '0.68rem',
                                     fontWeight: 700,
@@ -959,7 +959,7 @@ export default function SearchablePersonnelSelect({
                             gap: '0.25rem',
                           }}
                         >
-                          🚫 Busy · #{busyInfo.queue_no}
+                          🚫 Busy · #{busyInfo?.queue_no || ''}
                         </span>
                       )}
 
