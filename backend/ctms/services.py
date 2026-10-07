@@ -7,6 +7,7 @@ from .models import (
     CsmService,
     CsmResponse,
     CtmsCounter,
+    CtmsEmployee,
     CtmsServiceDefaultOfficer,
     CtmsTransaction,
     DolePersonnel,
@@ -76,23 +77,120 @@ DIVISION_OFFICER_POOLS = {
     ],
 }
 
+def find_personnel_by_name_or_id(name_or_id, office=None):
+    """
+    Finds a DolePersonnel or CtmsEmployee record by employee_id, username, or full_name.
+    Prioritizes personnel assigned to `office` when specified.
+    """
+    if not name_or_id:
+        return None
+
+    clean_str = str(name_or_id).strip()
+    if not clean_str:
+        return None
+
+    clean_lower = clean_str.lower()
+
+    # 1. Search in target office first (DolePersonnel)
+    if office:
+        target_office_id = getattr(office, 'id', office)
+        p = DolePersonnel.objects.filter(office_id=target_office_id, employee_id__iexact=clean_str).first()
+        if p:
+            return p
+        for cand in DolePersonnel.objects.filter(office_id=target_office_id).select_related('office').prefetch_related('divisions'):
+            c_full = cand.full_name.strip().lower()
+            c_simple = f"{cand.first_name} {cand.last_name}".strip().lower()
+            if clean_lower in (c_full, c_simple) or c_full in clean_lower:
+                return cand
+
+        # Search in target office (CtmsEmployee)
+        emp = CtmsEmployee.objects.filter(
+            models.Q(office_id=target_office_id) & (
+                models.Q(employee_id__iexact=clean_str) |
+                models.Q(user__username__iexact=clean_str)
+            )
+        ).first()
+        if emp:
+            return emp
+        for cand in CtmsEmployee.objects.filter(office_id=target_office_id).select_related('office').prefetch_related('divisions'):
+            c_full = cand.full_name.strip().lower()
+            c_simple = f"{cand.first_name} {cand.last_name}".strip().lower()
+            if clean_lower in (c_full, c_simple) or c_full in clean_lower:
+                return cand
+
+    # 2. Search globally across all offices (DolePersonnel)
+    p = DolePersonnel.objects.filter(employee_id__iexact=clean_str).select_related('office').first()
+    if p:
+        return p
+    for cand in DolePersonnel.objects.all().select_related('office').prefetch_related('divisions'):
+        c_full = cand.full_name.strip().lower()
+        c_simple = f"{cand.first_name} {cand.last_name}".strip().lower()
+        if clean_lower in (c_full, c_simple) or c_full in clean_lower:
+            return cand
+
+    # 3. Search globally across all offices (CtmsEmployee)
+    emp = CtmsEmployee.objects.filter(
+        models.Q(employee_id__iexact=clean_str) |
+        models.Q(user__username__iexact=clean_str)
+    ).select_related('office').first()
+    if emp:
+        return emp
+    for cand in CtmsEmployee.objects.all().select_related('office').prefetch_related('divisions'):
+        c_full = cand.full_name.strip().lower()
+        c_simple = f"{cand.first_name} {cand.last_name}".strip().lower()
+        if clean_lower in (c_full, c_simple) or c_full in clean_lower:
+            return cand
+
+    return None
+
+
+def validate_personnel_office_assignment(office, personnel_name_or_id):
+    """
+    Enforces office restriction:
+    Personnel or employees assigned to a specific office should only be eligible
+    for queue assignments within that same office.
+    Personnel from other offices must not appear in the list of available personnel
+    and must not be assignable to queues outside their assigned office.
+    """
+    if not office or not personnel_name_or_id:
+        return True, None
+
+    personnel = find_personnel_by_name_or_id(personnel_name_or_id, office=office)
+    if personnel and personnel.office:
+        p_office_id = getattr(personnel.office, 'id', personnel.office_id)
+        target_office_id = getattr(office, 'id', office)
+        if p_office_id != target_office_id:
+            p_office_name = getattr(personnel.office, 'name', 'another office')
+            target_office_name = getattr(office, 'name', 'this office')
+            return False, (
+                f"Cannot assign {personnel.full_name}: Personnel is assigned to {p_office_name} "
+                f"and cannot be assigned to queues at {target_office_name}."
+            )
+
+    return True, None
+
+
 def get_default_officer_for_service(service, office=None):
     """
     Automatically determines the default officer based on the service selected by the client.
-    1. Checks database overrides in CtmsServiceDefaultOfficer.
-    2. Randomly selects an active, available officer belonging to the service's division.
-    3. Falls back to randomized division officer pools or service keyword mappings.
+    Strictly filters candidates by the client's registered office:
+    Personnel from other offices must not appear as available or default personnel for that queue.
+    1. Checks explicitly assigned personnel configured for this specific service belonging to `office`.
+    2. Checks database overrides in CtmsServiceDefaultOfficer for this office.
+    3. Randomly selects an active, available officer belonging to the service's division within `office`.
+    4. Falls back to randomized division officer pools or service keyword mappings ONLY if belonging to `office`
+       (or in test/mock environments where no registered personnel exist).
     """
     if not service:
         return None
 
     # 1. Primary: Check explicitly assigned personnel configured for this specific service
     try:
-        assigned_qs = service.assigned_personnel.filter(is_active=True)
         if office:
-            office_assigned = assigned_qs.filter(office=office)
-            if office_assigned.exists():
-                assigned_qs = office_assigned
+            assigned_qs = service.assigned_personnel.filter(is_active=True, office=office)
+        else:
+            assigned_qs = service.assigned_personnel.filter(is_active=True)
+
         assigned_candidates = [p.full_name.strip() for p in assigned_qs]
         if assigned_candidates:
             active_clean = set()
@@ -118,8 +216,15 @@ def get_default_officer_for_service(service, office=None):
         db_override = None
         if office:
             db_override = CtmsServiceDefaultOfficer.objects.filter(service=service, office=office).first()
-        if not db_override:
-            db_override = CtmsServiceDefaultOfficer.objects.filter(service=service, office__isnull=True).first()
+            if not db_override:
+                cand = CtmsServiceDefaultOfficer.objects.filter(service=service, office__isnull=True).first()
+                if cand and cand.officer_name:
+                    is_valid, _ = validate_personnel_office_assignment(office, cand.officer_name.strip())
+                    if is_valid:
+                        db_override = cand
+        else:
+            db_override = CtmsServiceDefaultOfficer.objects.filter(service=service).first()
+
         if db_override and db_override.officer_name:
             return db_override.officer_name.strip()
     except Exception:
@@ -137,7 +242,7 @@ def get_default_officer_for_service(service, office=None):
         candidates = []
         for p in personnel_qs.prefetch_related('divisions'):
             p_divs = [d.name.replace(' ', '').upper() for d in p.divisions.all()]
-            if div_clean in p_divs or 'ALL' in p_divs:
+            if div_clean in p_divs or 'ALL' in p_divs or any(is_universal_division_name(d.name) for d in p.divisions.all()):
                 candidates.append(p.full_name.strip())
 
         if candidates:
@@ -162,14 +267,42 @@ def get_default_officer_for_service(service, office=None):
         # Division fallback pool
         fallback_pool = DIVISION_OFFICER_POOLS.get(div_name) or DIVISION_OFFICER_POOLS.get(div_clean)
         if fallback_pool:
-            import random
-            return random.choice(fallback_pool)
+            if office:
+                has_any_personnel = DolePersonnel.objects.filter(is_active=True).exists()
+                valid_pool = []
+                for officer_name in fallback_pool:
+                    is_valid, _ = validate_personnel_office_assignment(office, officer_name)
+                    if is_valid:
+                        if has_any_personnel:
+                            cand_p = find_personnel_by_name_or_id(officer_name, office=office)
+                            if cand_p and getattr(cand_p, 'office_id', None) == getattr(office, 'id', office):
+                                valid_pool.append(officer_name)
+                        else:
+                            # Test/mock environments where no DolePersonnel records exist
+                            valid_pool.append(officer_name)
+                if valid_pool:
+                    import random
+                    return random.choice(valid_pool)
+            else:
+                import random
+                return random.choice(fallback_pool)
 
-    # 3. Service-specific keyword mapping fallback
+    # 4. Service-specific keyword mapping fallback
     s_name = (getattr(service, 'name', '') or '').lower()
     for kw, officer in SERVICE_DEFAULT_OFFICERS.items():
         if kw in s_name:
-            return officer
+            if office:
+                is_valid, _ = validate_personnel_office_assignment(office, officer)
+                if is_valid:
+                    has_any_personnel = DolePersonnel.objects.filter(is_active=True).exists()
+                    if has_any_personnel:
+                        cand_p = find_personnel_by_name_or_id(officer, office=office)
+                        if cand_p and getattr(cand_p, 'office_id', None) == getattr(office, 'id', office):
+                            return officer
+                    else:
+                        return officer
+            else:
+                return officer
 
     return None
 
@@ -227,6 +360,11 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
         # Automatically assign default personnel member based on the service selected
         if not assigned_personnel:
             assigned_personnel = get_default_officer_for_service(service, office=office)
+        else:
+            # If explicitly provided, validate eligibility for this office
+            is_valid, _ = validate_personnel_office_assignment(office, str(assigned_personnel).strip())
+            if not is_valid:
+                assigned_personnel = get_default_officer_for_service(service, office=office)
 
         tx = CtmsTransaction.objects.create(
             transaction_no=tx_no,
@@ -264,17 +402,15 @@ def notify_assigned_personnel(tx, is_reassignment=False, previous_officer=None, 
 
     clean = str(tx.assigned_personnel).strip().lower()
 
-    personnel = None
-    qs = DolePersonnel.objects.filter(is_active=True).select_related('user')
-    if tx.office:
-        qs_off = qs.filter(office=tx.office)
-        if qs_off.exists():
-            qs = qs_off
-
-    for p in qs:
-        if p.employee_id.strip().lower() == clean or p.full_name.strip().lower() == clean:
-            personnel = p
-            break
+    personnel = find_personnel_by_name_or_id(tx.assigned_personnel, office=tx.office)
+    if not personnel:
+        qs = DolePersonnel.objects.filter(is_active=True).select_related('user')
+        if tx.office:
+            qs = qs.filter(office=tx.office)
+        for p in qs:
+            if p.employee_id.strip().lower() == clean or p.full_name.strip().lower() == clean:
+                personnel = p
+                break
 
     recipient_user = None
     if personnel and personnel.user:
@@ -343,8 +479,14 @@ def notify_assigned_personnel(tx, is_reassignment=False, previous_officer=None, 
 
 def assign_personnel_to_transaction(tx, personnel):
     """Staff assigns a designated officer / personnel to a transaction."""
+    clean_personnel = (personnel or "").strip()
+    if clean_personnel and tx.office:
+        valid_off, err_off = validate_personnel_office_assignment(tx.office, clean_personnel)
+        if not valid_off:
+            raise ValueError(err_off)
+
     old_officer = tx.assigned_personnel
-    tx.assigned_personnel = (personnel or "").strip()
+    tx.assigned_personnel = clean_personnel
     tx.save(update_fields=['assigned_personnel'])
     if tx.assigned_personnel:
         is_reassign = bool(old_officer and old_officer.strip().lower() != tx.assigned_personnel.lower())
@@ -376,7 +518,12 @@ def call_next_transaction(office, counter, personnel=None):
             return None
 
         if personnel:
-            tx.assigned_personnel = str(personnel).strip()
+            clean_p = str(personnel).strip()
+            if clean_p and office:
+                valid_off, err_off = validate_personnel_office_assignment(office, clean_p)
+                if not valid_off:
+                    raise ValueError(err_off)
+            tx.assigned_personnel = clean_p
 
         if not tx.assigned_personnel:
             raise ValueError(f"Cannot call queue #{tx.queue_no}: A personnel must be assigned before calling.")
@@ -408,7 +555,12 @@ def call_specific_transaction(tx, counter=None, personnel=None):
         raise ValueError(f"Cannot call a transaction with status '{tx.status}'.")
 
     if personnel:
-        tx.assigned_personnel = str(personnel).strip()
+        clean_p = str(personnel).strip()
+        if clean_p and tx.office:
+            valid_off, err_off = validate_personnel_office_assignment(tx.office, clean_p)
+            if not valid_off:
+                raise ValueError(err_off)
+        tx.assigned_personnel = clean_p
 
     if not tx.assigned_personnel:
         raise ValueError(f"Cannot call queue #{tx.queue_no}: A personnel must be assigned before calling.")

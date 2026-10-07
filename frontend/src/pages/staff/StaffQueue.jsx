@@ -53,14 +53,21 @@ const DIVISION_OFFICER_POOLS = {
 
 const pickRandomDefaultOfficer = (tx, personnelList = [], busyMap = new Map(), excludeName = '') => {
   if (!tx) return '';
+  const txOfficeId = tx.office_id || tx.office;
   const divName = (tx.division_name || '').trim();
   const normDiv = (divName || '').toUpperCase().replace(/\s+/g, '');
   const txSvcId = tx.service_id || tx.service;
   const excludeClean = (excludeName || '').trim().toLowerCase();
 
-  // 1. Primary: From personnel explicitly associated with this specific service
-  if (personnelList && personnelList.length > 0 && txSvcId) {
-    const serviceAssigned = personnelList.filter(p =>
+  // Strictly filter personnel to the transaction's registered office
+  const officePersonnel = (personnelList || []).filter(p => {
+    if (!txOfficeId || !p.office_id) return true;
+    return String(p.office_id) === String(txOfficeId);
+  });
+
+  // 1. Primary: From personnel explicitly associated with this specific service within this office
+  if (officePersonnel.length > 0 && txSvcId) {
+    const serviceAssigned = officePersonnel.filter(p =>
       Array.isArray(p.service_ids) && p.service_ids.includes(Number(txSvcId))
     );
     if (serviceAssigned.length > 0) {
@@ -82,9 +89,9 @@ const pickRandomDefaultOfficer = (tx, personnelList = [], busyMap = new Map(), e
   }
 
   // 2. From office personnel filtered by division
-  const eligible = (personnelList || []).filter(p => {
+  const eligible = officePersonnel.filter(p => {
     const divs = (p.division_names || []).map(d => (d || '').toUpperCase().replace(/\s+/g, ''));
-    return !normDiv || divs.includes(normDiv) || divs.includes('ALL');
+    return !normDiv || divs.includes(normDiv) || divs.includes('ALL') || divs.some(isUniversalDivision);
   });
 
   if (eligible.length > 0) {
@@ -106,19 +113,7 @@ const pickRandomDefaultOfficer = (tx, personnelList = [], busyMap = new Map(), e
     }
   }
 
-  // 3. Division fallback pool
-  const fallbackPool = DIVISION_OFFICER_POOLS[divName] ||
-                       DIVISION_OFFICER_POOLS[normDiv];
-  if (fallbackPool && fallbackPool.length > 0) {
-    const available = fallbackPool.filter(name => !busyMap.has(name.trim().toLowerCase()));
-    let pool = available.length > 0 ? available : fallbackPool;
-    if (excludeClean && pool.length > 1) {
-      const filtered = pool.filter(n => n.trim().toLowerCase() !== excludeClean);
-      if (filtered.length > 0) pool = filtered;
-    }
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-
+  // 3. Do NOT pick cross-office fallback officers. Rely only on office-filtered default if provided
   return tx.default_officer || '';
 };
 
@@ -463,7 +458,10 @@ export default function StaffQueue() {
     return null;
   }, [busyPersonnelMap]);
 
-  // For the current transaction: separate eligible personnel (same division) vs ineligible
+  // Target office for the transaction being assigned
+  const targetOfficeId = assignTx?.office_id || assignTx?.office || selectedOffice;
+
+  // For the current transaction: separate eligible personnel (same office & division) vs ineligible
   const txDivNorm = normalizeDiv(assignTx?.division_name);
 
   const eligiblePersonnel = useMemo(() => {
@@ -471,6 +469,10 @@ export default function StaffQueue() {
     const txSvcId = assignTx?.service_id || assignTx?.service;
 
     const filtered = officePersonnel.filter(p => {
+      // Office Restriction: must belong to the transaction's registered office
+      if (targetOfficeId && p.office_id && String(p.office_id) !== String(targetOfficeId)) {
+        return false;
+      }
       if (!txDivNorm) return true;
       const divs = (p.division_names || []).map(normalizeDiv);
       return divs.includes(txDivNorm) || divs.includes('ALL') || divs.some(isUniversalDivision);
@@ -490,15 +492,21 @@ export default function StaffQueue() {
 
       return (a.full_name || '').localeCompare(b.full_name || '');
     });
-  }, [officePersonnel, txDivNorm, assignTx, getBusyInfo]);
+  }, [officePersonnel, txDivNorm, assignTx, targetOfficeId, getBusyInfo]);
 
   const ineligiblePersonnel = useMemo(() => {
-    if (!txDivNorm) return [];
+    if (!officePersonnel || officePersonnel.length === 0) return [];
     return officePersonnel.filter(p => {
+      // Office mismatch: personnel assigned to other office
+      if (targetOfficeId && p.office_id && String(p.office_id) !== String(targetOfficeId)) {
+        return true;
+      }
+      // Division mismatch:
+      if (!txDivNorm) return false;
       const divs = (p.division_names || []).map(normalizeDiv);
       return !divs.includes(txDivNorm) && !divs.includes('ALL') && !divs.some(isUniversalDivision);
     });
-  }, [officePersonnel, txDivNorm]);
+  }, [officePersonnel, txDivNorm, targetOfficeId]);
 
   // Check if currently selected / typed name matches an unavailable / busy officer
   const matchedBusyOfficer = useMemo(() => {
@@ -526,16 +534,10 @@ export default function StaffQueue() {
 
   const handleOpenAssignModal = (tx) => {
     setAssignTx(tx);
+    const txOffice = tx?.office_id || tx?.office || selectedOffice;
 
-    // If client already has an assigned officer, retain it;
-    // otherwise automatically prefill a single randomized available officer from this division
-    let defaultName = tx?.assigned_personnel ? tx.assigned_personnel.trim() : '';
-    if (!defaultName) {
-      defaultName = pickRandomDefaultOfficer(tx, officePersonnel, busyPersonnelMap);
-    }
-
-    if (selectedOffice) {
-      staffApi.getPersonnel({ office: selectedOffice, active_only: 'true' })
+    if (txOffice) {
+      staffApi.getPersonnel({ office: txOffice, active_only: 'true' })
         .then(data => {
           const list = Array.isArray(data) ? data : [];
           setOfficePersonnel(list);
@@ -548,11 +550,20 @@ export default function StaffQueue() {
         .catch(() => {});
     }
 
-    // Fallback: If still no officer found and staff can self-assign, fallback to self if available
+    // If client already has an assigned officer, retain it;
+    // otherwise automatically prefill a single randomized available officer from this office and division
+    let defaultName = tx?.assigned_personnel ? tx.assigned_personnel.trim() : '';
+    if (!defaultName) {
+      defaultName = pickRandomDefaultOfficer(tx, officePersonnel, busyPersonnelMap);
+    }
+
+    // Fallback: If still no officer found and staff can self-assign, fallback to self if available and assigned to this office
     if (!defaultName) {
       const txDiv = normalizeDiv(tx?.division_name);
+      const userOffices = (user?.office_ids || []).map(String);
+      const isUserInOffice = user?.is_superuser || user?.all_offices_access || !txOffice || userOffices.includes(String(txOffice)) || String(user?.office) === String(txOffice);
       const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(d.name));
-      const canUserSelfAssign = user?.is_superuser || hasUniversalDivisionAccess(user) || !txDiv || loggedInUserDivs.includes(txDiv) || loggedInUserDivs.some(isUniversalDivision);
+      const canUserSelfAssign = isUserInOffice && (user?.is_superuser || hasUniversalDivisionAccess(user) || !txDiv || loggedInUserDivs.includes(txDiv) || loggedInUserDivs.some(isUniversalDivision));
       if (canUserSelfAssign) {
         const candidate = (user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user?.username || ''));
         const selfBusy = getBusyInfo(candidate);
@@ -580,7 +591,11 @@ export default function StaffQueue() {
     if (!assignTx || !assignPersonnelName.trim()) return;
 
     if (matchedIneligible) {
-      setError(`Cannot assign ${matchedIneligible.full_name}: assigned to ${matchedIneligible.division_names.join(', ')} and cannot be assigned to ${assignTx.division_name || 'other'} division services.`);
+      if (targetOfficeId && matchedIneligible.office_id && String(matchedIneligible.office_id) !== String(targetOfficeId)) {
+        setError(`Cannot assign ${matchedIneligible.full_name}: Personnel is assigned to ${matchedIneligible.office_name || 'another office'} and cannot be assigned to queues at ${assignTx.office_name || 'this office'}.`);
+      } else {
+        setError(`Cannot assign ${matchedIneligible.full_name}: assigned to ${matchedIneligible.division_names?.join(', ')} and cannot be assigned to ${assignTx.division_name || 'other'} division services.`);
+      }
       return;
     }
 
@@ -2534,7 +2549,15 @@ export default function StaffQueue() {
               marginBottom: '1.25rem',
               lineHeight: 1.45,
             }}>
-              ⚠️ <strong>Division Restriction Violation:</strong> <strong>{matchedIneligible.full_name}</strong> is assigned to division(s) <strong>{matchedIneligible.division_names?.join(', ')}</strong> and cannot access or be assigned to services under the <strong>{assignTx?.division_name}</strong> division.
+              {targetOfficeId && matchedIneligible.office_id && String(matchedIneligible.office_id) !== String(targetOfficeId) ? (
+                <>
+                  ⚠️ <strong>Office Restriction Violation:</strong> <strong>{matchedIneligible.full_name}</strong> is assigned to <strong>{matchedIneligible.office_name || 'another office'}</strong> and cannot be assigned to queues at <strong>{assignTx?.office_name || 'this office'}</strong>.
+                </>
+              ) : (
+                <>
+                  ⚠️ <strong>Division Restriction Violation:</strong> <strong>{matchedIneligible.full_name}</strong> is assigned to division(s) <strong>{matchedIneligible.division_names?.join(', ')}</strong> and cannot access or be assigned to services under the <strong>{assignTx?.division_name}</strong> division.
+                </>
+              )}
             </div>
           )}
 

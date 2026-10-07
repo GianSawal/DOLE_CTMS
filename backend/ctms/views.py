@@ -667,47 +667,29 @@ class StaffQueueView(APIView):
 
 def validate_personnel_division_assignment(tx, personnel_name_or_id):
     """
-    Enforces division restriction:
-    A personnel can only be assigned to services belonging to their assigned division.
-    For example, if assigned to TSSD1, they can only be assigned to services under TSSD1,
-    and cannot be assigned to services belonging to other divisions.
+    Enforces office and division restrictions:
+    1. A personnel can only be assigned to queue transactions within their assigned office.
+       Personnel from other offices must not be assignable to queues outside their assigned office.
+    2. A personnel can only be assigned to services belonging to their assigned division.
     """
-    if not tx or not tx.service or not tx.service.division or not personnel_name_or_id:
+    if not tx or not personnel_name_or_id:
+        return True, None
+
+    # 1. Office Restriction Enforcement
+    if tx.office:
+        valid_office, office_err = services.validate_personnel_office_assignment(tx.office, personnel_name_or_id)
+        if not valid_office:
+            return False, office_err
+
+    # 2. Division Restriction Enforcement
+    if not tx.service or not tx.service.division:
         return True, None
 
     svc_div = tx.service.division.name.strip().upper().replace(' ', '')
     if svc_div == 'ALL':
         return True, None
 
-    clean_str = str(personnel_name_or_id).strip()
-
-    # Look up in DolePersonnel by employee_id first
-    personnel = DolePersonnel.objects.filter(employee_id__iexact=clean_str).first()
-
-    # If not found by ID, look up by full name or parts in DolePersonnel
-    if not personnel:
-        for candidate in DolePersonnel.objects.all().prefetch_related('divisions'):
-            c_full = candidate.full_name.strip().lower()
-            c_simple = f"{candidate.first_name} {candidate.last_name}".strip().lower()
-            if clean_str.lower() in (c_full, c_simple) or c_full in clean_str.lower():
-                personnel = candidate
-                break
-
-    # Fallback to CtmsEmployee if any
-    if not personnel:
-        emp = CtmsEmployee.objects.filter(
-            models.Q(employee_id__iexact=clean_str) |
-            models.Q(user__username__iexact=clean_str)
-        ).first()
-        if not emp:
-            for candidate in CtmsEmployee.objects.all().prefetch_related('divisions'):
-                c_full = candidate.full_name.strip().lower()
-                c_simple = f"{candidate.first_name} {candidate.last_name}".strip().lower()
-                if clean_str.lower() in (c_full, c_simple) or c_full in clean_str.lower():
-                    emp = candidate
-                    break
-        personnel = emp
-
+    personnel = services.find_personnel_by_name_or_id(personnel_name_or_id, office=tx.office)
     if personnel:
         p_divs = [d.name.strip().upper().replace(' ', '') for d in personnel.divisions.all()]
         has_universal_p = any(
@@ -856,6 +838,12 @@ class StaffCallNextView(APIView):
             counter = None
 
         personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
+        if personnel and str(personnel).strip():
+            clean_str = str(personnel).strip()
+            valid_off, off_err = services.validate_personnel_office_assignment(office, clean_str)
+            if not valid_off:
+                return Response({"detail": off_err}, status=status.HTTP_400_BAD_REQUEST)
+
         if personnel and str(personnel).strip() and counter:
             div = CsmDivision.objects.filter(name=counter.name).first()
             if div and not services.is_universal_division_name(counter.name):
@@ -2147,6 +2135,10 @@ class StaffPersonnelViewSet(viewsets.ModelViewSet):
         office_id = self.request.query_params.get('office')
         if office_id:
             qs = qs.filter(office_id=office_id)
+        elif not self.request.user.is_superuser:
+            staff_offices = get_staff_offices(self.request.user)
+            if staff_offices.exists():
+                qs = qs.filter(office__in=staff_offices)
 
         division_param = self.request.query_params.get('division')
         if division_param:
@@ -2548,6 +2540,10 @@ class StaffServiceViewSet(viewsets.ModelViewSet):
         office_id = request.query_params.get('office')
         if office_id:
             personnel_qs = personnel_qs.filter(office_id=office_id)
+        elif not request.user.is_superuser:
+            staff_offices = get_staff_offices(request.user)
+            if staff_offices.exists():
+                personnel_qs = personnel_qs.filter(office__in=staff_offices)
 
         search = request.query_params.get('search')
         if search:

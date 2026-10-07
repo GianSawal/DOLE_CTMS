@@ -41,7 +41,14 @@ class CsmServiceSerializer(serializers.ModelSerializer):
 
     def get_default_officer(self, obj):
         from .services import get_default_officer_for_service
-        return get_default_officer_for_service(obj)
+        office = self.context.get('office')
+        if not office:
+            req = self.context.get('request')
+            if req:
+                off_param = req.query_params.get('office')
+                if off_param and str(off_param).isdigit():
+                    office = int(off_param)
+        return get_default_officer_for_service(obj, office=office)
 
 
 class StaffServicePersonnelBriefSerializer(serializers.ModelSerializer):
@@ -93,7 +100,14 @@ class StaffServiceSerializer(serializers.ModelSerializer):
 
     def get_default_officer(self, obj):
         from .services import get_default_officer_for_service
-        return get_default_officer_for_service(obj)
+        office = self.context.get('office')
+        if not office:
+            req = self.context.get('request')
+            if req:
+                off_param = req.query_params.get('office')
+                if off_param and str(off_param).isdigit():
+                    office = int(off_param)
+        return get_default_officer_for_service(obj, office=office)
 
     def get_assigned_personnel_ids(self, obj):
         return [p.id for p in obj.assigned_personnel.all()]

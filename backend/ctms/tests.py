@@ -11,6 +11,7 @@ from .models import (
     CsmResponse,
     CtmsCounter,
     CtmsStaffOffice,
+    CtmsStaffDivision,
     CtmsTransaction,
     CtmsServiceDefaultOfficer,
     DolePersonnel,
@@ -26,6 +27,7 @@ from .services import (
     undo_done,
     requeue_transaction,
     get_default_officer_for_service,
+    validate_personnel_office_assignment,
     DIVISION_OFFICER_POOLS,
 )
 from .serializers import StaffTransactionSerializer
@@ -1373,6 +1375,99 @@ class CtmsCoreTestCase(TestCase):
             'is_qr_enabled': False,
         }, format='json')
         self.assertEqual(res_unauthorized.status_code, 403)
+
+    def test_personnel_office_restriction_and_assignment_isolation(self):
+        # 1. Create two separate offices: Clark Satellite Office and DOLE Regional Office III
+        clark_office = CsmOffice.objects.create(name="Clark Satellite Office", code="CSO", is_active=True)
+        ro3_office = CsmOffice.objects.create(name="DOLE Regional Office III", code="RO3", is_active=True)
+
+        # Create counter for Clark
+        clark_counter = CtmsCounter.objects.create(office=clark_office, name="TSSD 1", is_active=True)
+
+        # Create division and service
+        tssd1 = CsmDivision.objects.create(name="TSSD 1")
+        service = CsmService.objects.create(name="Special Labor Service", division=tssd1, is_active=True, sort_order=10)
+
+        # 2. Create personnel in DOLE Regional Office III and Clark Satellite Office
+        p_ro3 = DolePersonnel.objects.create(
+            employee_id="RO3-001",
+            first_name="Regional",
+            last_name="Officer",
+            office=ro3_office,
+            is_active=True,
+        )
+        p_ro3.divisions.add(tssd1)
+
+        p_clark = DolePersonnel.objects.create(
+            employee_id="CSO-001",
+            first_name="Clark",
+            last_name="Personnel",
+            office=clark_office,
+            is_active=True,
+        )
+        p_clark.divisions.add(tssd1)
+
+        # Associate both personnel with the service
+        service.assigned_personnel.add(p_ro3, p_clark)
+
+        # 3. Test get_default_officer_for_service for Clark only picks Clark personnel
+        default_officer_clark = get_default_officer_for_service(service, office=clark_office)
+        self.assertEqual(default_officer_clark, "Clark Personnel")
+
+        default_officer_ro3 = get_default_officer_for_service(service, office=ro3_office)
+        self.assertEqual(default_officer_ro3, "Regional Officer")
+
+        # 4. Create transaction at Clark Satellite Office -> assigned_personnel must be Clark Personnel
+        tx_clark = create_transaction(clark_office, service, client_name="Clark Client")
+        self.assertEqual(tx_clark.assigned_personnel, "Clark Personnel")
+
+        # 5. Attempting to assign Regional Officer to Clark queue via API is rejected
+        clark_staff = User.objects.create_user(username="clarkstaff", password="password123", is_staff=True)
+        CtmsStaffOffice.objects.create(user=clark_staff, office=clark_office)
+        CtmsStaffDivision.objects.create(user=clark_staff, division=tssd1)
+        self.client.force_authenticate(user=clark_staff)
+
+        res_assign_ro3 = self.client.post(f"/api/staff/transactions/{tx_clark.id}/assign/", {
+            "personnel": "Regional Officer"
+        })
+        self.assertEqual(res_assign_ro3.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cannot be assigned to queues at Clark Satellite Office", res_assign_ro3.data['detail'])
+
+        # Attempting to assign by employee ID of RO3 officer is also rejected
+        res_assign_ro3_id = self.client.post(f"/api/staff/transactions/{tx_clark.id}/assign/", {
+            "personnel": "RO3-001"
+        })
+        self.assertEqual(res_assign_ro3_id.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cannot be assigned to queues at Clark Satellite Office", res_assign_ro3_id.data['detail'])
+
+        # Assigning Clark Personnel succeeds
+        res_assign_clark = self.client.post(f"/api/staff/transactions/{tx_clark.id}/assign/", {
+            "personnel": "Clark Personnel"
+        })
+        self.assertEqual(res_assign_clark.status_code, status.HTTP_200_OK)
+
+        # 6. Attempting to call next with RO3 officer at Clark is rejected
+        res_call_ro3 = self.client.post("/api/staff/call-next/", {
+            "office": clark_office.id,
+            "counter": clark_counter.id,
+            "personnel": "Regional Officer"
+        })
+        self.assertEqual(res_call_ro3.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cannot be assigned to queues at Clark Satellite Office", res_call_ro3.data['detail'])
+
+        # 7. Verify /api/staff/services/{id}/eligible-personnel/?office=clark_office.id only lists Clark personnel
+        res_eligible = self.client.get(f"/api/staff/services/{service.id}/eligible-personnel/?office={clark_office.id}")
+        self.assertEqual(res_eligible.status_code, status.HTTP_200_OK)
+        eligible_names = [p['full_name'] for p in res_eligible.data['personnel']]
+        self.assertIn("Clark Personnel", eligible_names)
+        self.assertNotIn("Regional Officer", eligible_names)
+
+        # 8. Verify /api/staff/personnel/?office=clark_office.id only lists Clark personnel
+        res_personnel = self.client.get(f"/api/staff/personnel/?office={clark_office.id}")
+        self.assertEqual(res_personnel.status_code, status.HTTP_200_OK)
+        personnel_names = [p['full_name'] for p in res_personnel.data]
+        self.assertIn("Clark Personnel", personnel_names)
+        self.assertNotIn("Regional Officer", personnel_names)
 
 
 
