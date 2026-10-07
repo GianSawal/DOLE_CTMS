@@ -32,6 +32,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('ctms_staff_counter');
     localStorage.removeItem('ctms_staff_office');
     localStorage.removeItem('ctms_tv_division_filter');
+    localStorage.removeItem('ctms_tv_selected_divisions');
     localStorage.setItem('ctms_access_token', data.access);
     localStorage.setItem('ctms_refresh_token', data.refresh);
     localStorage.setItem('ctms_user', JSON.stringify(data.user));
@@ -46,6 +47,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('ctms_staff_counter');
     localStorage.removeItem('ctms_staff_office');
     localStorage.removeItem('ctms_tv_division_filter');
+    localStorage.removeItem('ctms_tv_selected_divisions');
     setUser(null);
   };
 

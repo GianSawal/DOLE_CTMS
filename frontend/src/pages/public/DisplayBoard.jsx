@@ -47,53 +47,21 @@ function getFallbackDesc(serviceName) {
 }
 
 const KNOWN_DIVISIONS = [
-  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Services & Support Division 1 (Labor Standards / OSH)', color: '#1e40af', accent: '#3b82f6', bgLight: '#dbeafe', bgDark: '#172554' },
-  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Services & Support Division 2 (Employment / Welfare)', color: '#047857', accent: '#10b981', bgLight: '#d1fae5', bgDark: '#064e3b' },
-  { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division (Finance / Admin)', color: '#b45309', accent: '#f59e0b', bgLight: '#fef3c7', bgDark: '#451a03' },
-  { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation-Arbitration & Legal Services Unit', color: '#6d28d9', accent: '#8b5cf6', bgLight: '#ede9fe', bgDark: '#3b0764' },
-];
-
-const SIMULTANEOUS_PAIRS = [
-  {
-    value: 'TSSD 1,TSSD 2',
-    label: 'Simultaneous (TSSD 1 & TSSD 2 Only)',
-    divisions: ['TSSD 1', 'TSSD 2'],
-  },
-  {
-    value: 'IMSD,MALSU',
-    label: 'Simultaneous (IMSD & MALSU Only)',
-    divisions: ['IMSD', 'MALSU'],
-  },
-  {
-    value: 'IMSD,TSSD 1',
-    label: 'Simultaneous (IMSD & TSSD 1 Only)',
-    divisions: ['IMSD', 'TSSD 1'],
-  },
-  {
-    value: 'IMSD,TSSD 2',
-    label: 'Simultaneous (IMSD & TSSD 2 Only)',
-    divisions: ['IMSD', 'TSSD 2'],
-  },
-  {
-    value: 'TSSD 1,MALSU',
-    label: 'Simultaneous (TSSD 1 & MALSU Only)',
-    divisions: ['TSSD 1', 'MALSU'],
-  },
-  {
-    value: 'TSSD 2,MALSU',
-    label: 'Simultaneous (TSSD 2 & MALSU Only)',
-    divisions: ['TSSD 2', 'MALSU'],
-  },
-  {
-    value: 'TSSD 1,TSSD 2,IMSD',
-    label: 'Simultaneous (TSSD 1, TSSD 2 & IMSD)',
-    divisions: ['TSSD 1', 'TSSD 2', 'IMSD'],
-  },
-  {
-    value: 'TSSD 1,TSSD 2,MALSU',
-    label: 'Simultaneous (TSSD 1, TSSD 2 & MALSU)',
-    divisions: ['TSSD 1', 'TSSD 2', 'MALSU'],
-  },
+  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Services & Support Division 1 (Labor Standards / OSH)', color: '#1e40af', accent: '#3b82f6', bgLight: '#dbeafe', bgDark: '#172554', category: 'division' },
+  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Services & Support Division 2 (Employment / Welfare)', color: '#047857', accent: '#10b981', bgLight: '#d1fae5', bgDark: '#064e3b', category: 'division' },
+  { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division (Finance / Admin)', color: '#b45309', accent: '#f59e0b', bgLight: '#fef3c7', bgDark: '#451a03', category: 'division' },
+  { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation-Arbitration & Legal Services Unit', color: '#6d28d9', accent: '#8b5cf6', bgLight: '#ede9fe', bgDark: '#3b0764', category: 'division' },
+  { key: 'Front Desk', alias: 'Front Desk', label: 'Front Desk', fullName: 'Front Desk / Public Assistance & Complaints Desk (PACD)', color: '#0f766e', accent: '#14b8a6', bgLight: '#f0fdfa', bgDark: '#134e4a', category: 'counter' },
+  { key: 'Window 1', alias: 'Window 1', label: 'Window 1', fullName: 'Queue Service Window 1', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
+  { key: 'Window 2', alias: 'Window 2', label: 'Window 2', fullName: 'Queue Service Window 2', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
+  { key: 'Window 3', alias: 'Window 3', label: 'Window 3', fullName: 'Queue Service Window 3', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
+  { key: 'Window 4', alias: 'Window 4', label: 'Window 4', fullName: 'Queue Service Window 4', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
+  { key: 'Window 5', alias: 'Window 5', label: 'Window 5', fullName: 'Queue Service Window 5', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
+  { key: 'Window 6', alias: 'Window 6', label: 'Window 6', fullName: 'Queue Service Window 6', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
+  { key: 'Window 7', alias: 'Window 7', label: 'Window 7', fullName: 'Queue Service Window 7', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
+  { key: 'Window 8', alias: 'Window 8', label: 'Window 8', fullName: 'Queue Service Window 8', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
+  { key: 'Window 9', alias: 'Window 9', label: 'Window 9', fullName: 'Queue Service Window 9', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
+  { key: 'Window 10', alias: 'Window 10', label: 'Window 10', fullName: 'Queue Service Window 10', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
 ];
 
 function normalizeDiv(name) {
@@ -103,7 +71,23 @@ function normalizeDiv(name) {
 function matchDivision(divName) {
   if (!divName) return null;
   const norm = normalizeDiv(divName);
-  return KNOWN_DIVISIONS.find(d => normalizeDiv(d.key) === norm || normalizeDiv(d.alias) === norm || norm.includes(normalizeDiv(d.alias)));
+  // 1. Exact match by key or alias
+  const exact = KNOWN_DIVISIONS.find(d => normalizeDiv(d.key) === norm || normalizeDiv(d.alias) === norm);
+  if (exact) return exact;
+
+  // 2. Window-specific regex check (e.g. "Window 1", "Window 10")
+  const winMatch = norm.match(/^WINDOW(\d+)/);
+  if (winMatch) {
+    const num = winMatch[1];
+    return KNOWN_DIVISIONS.find(d => d.key === `Window ${num}` || normalizeDiv(d.key) === `WINDOW${num}`);
+  }
+
+  // 3. Substring match for divisions
+  return KNOWN_DIVISIONS.find(d => {
+    const aliasNorm = normalizeDiv(d.alias);
+    if (!aliasNorm) return false;
+    return norm.includes(aliasNorm);
+  });
 }
 
 // Dynamically scale down layout and font sizes based on queue volume AND number of simultaneous division columns
@@ -308,10 +292,102 @@ export default function DisplayBoard() {
   const location = useLocation();
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
 
-  // Selected division filter: '' means simultaneous display of all eligible divisions
-  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState(() => {
-    return localStorage.getItem('ctms_tv_division_filter') || '';
+  // Selected divisions & windows for simultaneous TV display
+  const [selectedDivisions, setSelectedDivisions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ctms_tv_selected_divisions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch { }
+
+    const oldFilter = localStorage.getItem('ctms_tv_division_filter');
+    if (oldFilter && oldFilter.trim() && oldFilter !== 'ALL') {
+      const parts = oldFilter.split(',').map(s => s.trim()).filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+
+    return ['TSSD 1', 'TSSD 2', 'IMSD', 'MALSU'];
   });
+
+  const filterDropdownRef = useRef(null);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+
+  const updateSelectedDivisions = (newDivs) => {
+    setSelectedDivisions(newDivs);
+    try {
+      localStorage.setItem('ctms_tv_selected_divisions', JSON.stringify(newDivs));
+      localStorage.setItem('ctms_tv_division_filter', newDivs.join(','));
+    } catch (e) {
+      console.warn('Failed to save selected divisions:', e);
+    }
+  };
+
+  const handleToggleDivisionCheckbox = (key) => {
+    const keyNorm = normalizeDiv(key);
+    const exists = selectedDivisions.some(sd => normalizeDiv(sd) === keyNorm || matchDivision(sd)?.key === key);
+    let updated;
+    if (exists) {
+      updated = selectedDivisions.filter(sd => normalizeDiv(sd) !== keyNorm && matchDivision(sd)?.key !== key);
+    } else {
+      updated = [...selectedDivisions, key];
+    }
+    updateSelectedDivisions(updated);
+  };
+
+  const handleSelectOnly = (key) => {
+    updateSelectedDivisions([key]);
+  };
+
+  const handleSelectOperationalOnly = () => {
+    updateSelectedDivisions(['TSSD 1', 'TSSD 2', 'IMSD', 'MALSU']);
+  };
+
+  const handleSelectWindowsOnly = () => {
+    updateSelectedDivisions([
+      'Front Desk',
+      'Window 1', 'Window 2', 'Window 3', 'Window 4', 'Window 5',
+      'Window 6', 'Window 7', 'Window 8', 'Window 9', 'Window 10'
+    ]);
+  };
+
+  const handleSelectAllChoices = () => {
+    updateSelectedDivisions([
+      'TSSD 1', 'TSSD 2', 'IMSD', 'MALSU',
+      'Front Desk',
+      'Window 1', 'Window 2', 'Window 3', 'Window 4', 'Window 5',
+      'Window 6', 'Window 7', 'Window 8', 'Window 9', 'Window 10'
+    ]);
+  };
+
+  const handleClearAllChoices = () => {
+    updateSelectedDivisions([]);
+  };
+
+  // Close filter dropdown on outside click or Escape key
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target)) {
+        setShowFilterDropdown(false);
+      }
+    }
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        setShowFilterDropdown(false);
+      }
+    }
+    if (showFilterDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [showFilterDropdown]);
 
   // Custom division display order for Now Serving drag-and-drop
   const orderStorageKey = officeId ? `ctms_tv_division_order_${officeId}` : 'ctms_tv_division_order';
@@ -334,7 +410,7 @@ export default function DisplayBoard() {
       if (saved) {
         setCustomDivisionOrder(JSON.parse(saved));
       }
-    } catch {}
+    } catch { }
   }, [orderStorageKey]);
 
   // Calculate divisions eligible for this account/screen
@@ -377,7 +453,7 @@ export default function DisplayBoard() {
       baseDivs = displayData.all_divisions.filter(d => d && d.toUpperCase().trim() !== 'ALL');
     }
     if (baseDivs.length === 0) {
-      baseDivs = KNOWN_DIVISIONS.map(d => d.key);
+      baseDivs = KNOWN_DIVISIONS.filter(d => d.category === 'division').map(d => d.key);
     }
 
     // Also include any active division found in serving or upcoming queue
@@ -442,76 +518,106 @@ export default function DisplayBoard() {
     return allDivNorms.every(req => eligibleNorms.includes(req));
   }, [user, searchParams, eligibleDivisions]);
 
-  // Reset division filter if it's a restricted pair but the account no longer has full division access
+  // Reset selected divisions if account loses full division access
   useEffect(() => {
-    if (selectedDivisionFilter && selectedDivisionFilter.includes(',') && !hasAccessToAllDivisions) {
-      setSelectedDivisionFilter('');
-      localStorage.removeItem('ctms_tv_division_filter');
-    }
-  }, [hasAccessToAllDivisions, selectedDivisionFilter]);
-
-  // Active divisions to render simultaneously (validated against eligibleDivisions)
-  const activeDivisionsToRender = useMemo(() => {
-    let result = eligibleDivisions;
-
-    if (selectedDivisionFilter && selectedDivisionFilter !== 'ALL') {
-      // Check if it's comma-separated divisions (e.g. simultaneous pairs)
-      if (selectedDivisionFilter.includes(',')) {
-        const parts = selectedDivisionFilter.split(',').map(s => s.trim()).filter(Boolean);
-        const matched = parts
-          .map(part => {
-            const targetNorm = normalizeDiv(part);
-            return eligibleDivisions.find(ed => {
-              if (normalizeDiv(ed) === targetNorm) return true;
-              const m1 = matchDivision(ed);
-              const m2 = matchDivision(part);
-              return m1 && m2 && m1.alias === m2.alias;
-            });
-          })
-          .filter(Boolean);
-
-        if (matched.length === parts.length) {
-          result = matched;
-        }
-      } else {
-        // Check if it's a single division
-        const validMatch = eligibleDivisions.find(
-          d => normalizeDiv(d) === normalizeDiv(selectedDivisionFilter)
-        );
-        if (validMatch) {
-          return [validMatch];
-        }
+    if (!hasAccessToAllDivisions && eligibleDivisions.length > 0) {
+      const filtered = selectedDivisions.filter(sd =>
+        eligibleDivisions.some(ed => normalizeDiv(ed) === normalizeDiv(sd))
+      );
+      if (filtered.length !== selectedDivisions.length && filtered.length > 0) {
+        updateSelectedDivisions(filtered);
       }
     }
+  }, [hasAccessToAllDivisions, eligibleDivisions]);
 
-    if (!result || result.length <= 1) {
-      return result || [];
+  const simultaneousTriggerLabel = useMemo(() => {
+    if (!selectedDivisions || selectedDivisions.length === 0) {
+      return 'Display View: None (Choose)';
     }
+
+    const ops = ['TSSD 1', 'TSSD 2', 'IMSD', 'MALSU'];
+    const isAllOps = ops.length === selectedDivisions.length &&
+      ops.every(op => selectedDivisions.some(s => normalizeDiv(s) === normalizeDiv(op)));
+
+    if (isAllOps) {
+      return 'Simultaneous (All Divisions: TSSD 1, TSSD 2, IMSD & MALSU)';
+    }
+
+    if (selectedDivisions.length === 1) {
+      const match = matchDivision(selectedDivisions[0]);
+      return `Show ${match?.label || selectedDivisions[0]} Only`;
+    }
+
+    if (selectedDivisions.length <= 3) {
+      const labels = selectedDivisions.map(d => matchDivision(d)?.label || d);
+      return `Simultaneous (${labels.join(' & ')})`;
+    }
+
+    return `Simultaneous (${selectedDivisions.length} Active)`;
+  }, [selectedDivisions]);
+
+  const operationalDivisionChoices = useMemo(() => {
+    const base = KNOWN_DIVISIONS.filter(d => d.category === 'division');
+    if (user && !user.is_superuser && !hasAccessToAllDivisions && eligibleDivisions.length > 0) {
+      return base.filter(d => eligibleDivisions.some(ed => normalizeDiv(ed) === normalizeDiv(d.key)));
+    }
+    (eligibleDivisions || []).forEach(ed => {
+      const match = matchDivision(ed);
+      if (!match || match.category === 'division') {
+        const norm = normalizeDiv(ed);
+        if (!base.some(b => normalizeDiv(b.key) === norm)) {
+          base.push({
+            key: ed,
+            alias: ed,
+            label: ed,
+            fullName: ed,
+            color: '#3b82f6',
+            accent: '#60a5fa',
+            bgLight: '#eff6ff',
+            bgDark: '#1e293b',
+            category: 'division',
+          });
+        }
+      }
+    });
+    return base;
+  }, [eligibleDivisions, user, hasAccessToAllDivisions]);
+
+  const counterWindowChoices = useMemo(() => {
+    return KNOWN_DIVISIONS.filter(d => d.category === 'counter');
+  }, []);
+
+  // Active divisions & windows to render simultaneously
+  const activeDivisionsToRender = useMemo(() => {
+    // 1. URL search params override (?divisions=TSSD1,TSSD2 or ?division=TSSD1)
+    const paramDivs = searchParams.get('divisions') || searchParams.get('division');
+    if (paramDivs) {
+      const parts = paramDivs.split(',').map(s => s.trim()).filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+
+    // 2. Restricted staff account check
+    if (user && !user.is_superuser && !hasAccessToAllDivisions && eligibleDivisions.length > 0) {
+      const userAllowed = selectedDivisions.filter(sd =>
+        eligibleDivisions.some(ed => normalizeDiv(ed) === normalizeDiv(sd))
+      );
+      if (userAllowed.length > 0) {
+        return userAllowed;
+      }
+      return eligibleDivisions;
+    }
+
+    if (!selectedDivisions || selectedDivisions.length === 0) {
+      return [];
+    }
+
+    let result = [...selectedDivisions];
 
     // Apply custom order if present
     if (customDivisionOrder && customDivisionOrder.length > 0) {
-      const masterOrder = [...customDivisionOrder];
-      // Append any eligible divisions not yet recorded in masterOrder
-      eligibleDivisions.forEach(ed => {
-        if (!masterOrder.some(m => normalizeDiv(m) === normalizeDiv(ed))) {
-          masterOrder.push(ed);
-        }
-      });
-
-      return [...result].sort((a, b) => {
-        const idxA = masterOrder.findIndex(d => {
-          if (normalizeDiv(d) === normalizeDiv(a)) return true;
-          const ma = matchDivision(a);
-          const md = matchDivision(d);
-          return ma && md && ma.alias === md.alias;
-        });
-        const idxB = masterOrder.findIndex(d => {
-          if (normalizeDiv(d) === normalizeDiv(b)) return true;
-          const mb = matchDivision(b);
-          const md = matchDivision(d);
-          return mb && md && mb.alias === md.alias;
-        });
-
+      result.sort((a, b) => {
+        const idxA = customDivisionOrder.findIndex(d => normalizeDiv(d) === normalizeDiv(a));
+        const idxB = customDivisionOrder.findIndex(d => normalizeDiv(d) === normalizeDiv(b));
         const posA = idxA !== -1 ? idxA : 999;
         const posB = idxB !== -1 ? idxB : 999;
         return posA - posB;
@@ -519,7 +625,7 @@ export default function DisplayBoard() {
     }
 
     return result;
-  }, [eligibleDivisions, selectedDivisionFilter, customDivisionOrder]);
+  }, [searchParams, user, hasAccessToAllDivisions, eligibleDivisions, selectedDivisions, customDivisionOrder]);
 
   // Reorder divisions via drag-and-drop
   const handleDropDivision = (sourceDivName, targetDivName) => {
@@ -527,25 +633,15 @@ export default function DisplayBoard() {
 
     setCustomDivisionOrder(prev => {
       const master = [...(prev || [])];
-      const allDivs = [...activeDivisionsToRender, ...(eligibleDivisions || [])];
+      const allDivs = [...activeDivisionsToRender, ...selectedDivisions];
       allDivs.forEach(div => {
         if (!master.some(m => normalizeDiv(m) === normalizeDiv(div))) {
           master.push(div);
         }
       });
 
-      const sourceIdx = master.findIndex(d => {
-        if (normalizeDiv(d) === normalizeDiv(sourceDivName)) return true;
-        const m1 = matchDivision(d);
-        const m2 = matchDivision(sourceDivName);
-        return m1 && m2 && m1.alias === m2.alias;
-      });
-      const targetIdx = master.findIndex(d => {
-        if (normalizeDiv(d) === normalizeDiv(targetDivName)) return true;
-        const m1 = matchDivision(d);
-        const m2 = matchDivision(targetDivName);
-        return m1 && m2 && m1.alias === m2.alias;
-      });
+      const sourceIdx = master.findIndex(d => normalizeDiv(d) === normalizeDiv(sourceDivName));
+      const targetIdx = master.findIndex(d => normalizeDiv(d) === normalizeDiv(targetDivName));
 
       if (sourceIdx === -1 || targetIdx === -1 || sourceIdx === targetIdx) {
         return prev;
@@ -575,7 +671,7 @@ export default function DisplayBoard() {
       for (const targetDiv of activeDivisionsToRender) {
         const m1 = matchDivision(targetDiv);
         const m2 = matchDivision(divOrCounterName);
-        if (m1 && m2 && m1.alias === m2.alias) {
+        if (m1 && m2 && m1.key === m2.key) {
           return targetDiv;
         }
       }
@@ -583,35 +679,43 @@ export default function DisplayBoard() {
     };
   }, [activeDivisionsToRender]);
 
-  // Group serving items strictly by division (never mix other divisions like TSSD1/TSSD2 into IMSD)
+  // Group serving items strictly by division or counter
   const servingByDivision = useMemo(() => {
     const groups = {};
     activeDivisionsToRender.forEach(div => {
       groups[div] = [];
     });
 
-    const isRestrictedAccount = Boolean(
-      (searchParams.get('divisions') || searchParams.get('division')) ||
-      (user && !user.is_superuser && user.assigned_divisions?.length > 0 && !hasAccessToAllDivisions) ||
-      (displayData?.user_divisions?.length > 0 && !hasAccessToAllDivisions)
-    );
-
     (displayData?.serving || []).forEach(item => {
-      const itemDiv = item.division_name || item.counter || '';
-      const matchedDiv = findMatchingActiveDivision(itemDiv);
+      activeDivisionsToRender.forEach(col => {
+        const colMeta = matchDivision(col);
+        const isCounterCol = colMeta?.category === 'counter' || /^WINDOW(\d+)$/i.test(normalizeDiv(col)) || normalizeDiv(col) === 'FRONTDESK';
 
-      if (matchedDiv) {
-        groups[matchedDiv].push(item);
-      } else if (!isRestrictedAccount && !item.division_name && !matchDivision(item.counter) && activeDivisionsToRender.length > 0) {
-        // Only if the item has no division at all AND this display is not restricted to specific divisions
-        groups[activeDivisionsToRender[0]].push(item);
-      }
+        let matches = false;
+        if (isCounterCol) {
+          // Counter column matches if ticket was called at this counter
+          if (item.counter && (normalizeDiv(item.counter) === normalizeDiv(col) || matchDivision(item.counter)?.key === col)) {
+            matches = true;
+          }
+        } else {
+          // Division column matches if ticket belongs to this division
+          if (item.division_name && (normalizeDiv(item.division_name) === normalizeDiv(col) || matchDivision(item.division_name)?.key === col)) {
+            matches = true;
+          } else if (!item.division_name && item.counter && (normalizeDiv(item.counter) === normalizeDiv(col) || matchDivision(item.counter)?.key === col)) {
+            matches = true;
+          }
+        }
+
+        if (matches && !groups[col].some(existing => existing.id === item.id)) {
+          groups[col].push(item);
+        }
+      });
     });
 
     return groups;
-  }, [activeDivisionsToRender, displayData?.serving, displayData?.user_divisions, findMatchingActiveDivision, searchParams, user, hasAccessToAllDivisions]);
+  }, [activeDivisionsToRender, displayData?.serving]);
 
-  // Group upcoming tickets strictly by division
+  // Group upcoming tickets strictly by division or counter
   const nextByDivision = useMemo(() => {
     const groups = {};
     activeDivisionsToRender.forEach(div => {
@@ -619,36 +723,56 @@ export default function DisplayBoard() {
     });
 
     (displayData?.next_details || []).forEach(item => {
-      const matchedDiv = findMatchingActiveDivision(item.division_name);
-      if (matchedDiv) {
-        groups[matchedDiv].push(item.queue_no);
-      }
+      activeDivisionsToRender.forEach(col => {
+        const colMeta = matchDivision(col);
+        const isCounterCol = colMeta?.category === 'counter' || /^WINDOW(\d+)$/i.test(normalizeDiv(col)) || normalizeDiv(col) === 'FRONTDESK';
+
+        let matches = false;
+        if (!isCounterCol) {
+          if (item.division_name && (normalizeDiv(item.division_name) === normalizeDiv(col) || matchDivision(item.division_name)?.key === col)) {
+            matches = true;
+          }
+        } else {
+          if (item.counter && (normalizeDiv(item.counter) === normalizeDiv(col) || matchDivision(item.counter)?.key === col)) {
+            matches = true;
+          }
+        }
+
+        if (matches && !groups[col].includes(item.queue_no)) {
+          groups[col].push(item.queue_no);
+        }
+      });
     });
 
     return groups;
-  }, [activeDivisionsToRender, displayData?.next_details, findMatchingActiveDivision]);
+  }, [activeDivisionsToRender, displayData?.next_details]);
 
   // Right-side "NEXT IN LINE" list filtered strictly to activeDivisionsToRender
   const filteredNextNumbers = useMemo(() => {
-    const isRestrictedAccount = Boolean(
-      (searchParams.get('divisions') || searchParams.get('division')) ||
-      (user && !user.is_superuser && user.assigned_divisions?.length > 0 && !hasAccessToAllDivisions) ||
-      (displayData?.user_divisions?.length > 0 && !hasAccessToAllDivisions) ||
-      (selectedDivisionFilter && selectedDivisionFilter !== 'ALL')
-    );
-
     if (Array.isArray(displayData?.next_details) && displayData.next_details.length > 0) {
-      const hasAnyDivisionTags = displayData.next_details.some(item => Boolean(item.division_name));
-      if (isRestrictedAccount || hasAnyDivisionTags) {
-        return displayData.next_details
-          .filter(item => Boolean(findMatchingActiveDivision(item.division_name)))
-          .map(item => item.queue_no)
-          .slice(0, 10);
+      if (activeDivisionsToRender.length > 0 && activeDivisionsToRender.length < 15) {
+        const matched = displayData.next_details.filter(item => {
+          return activeDivisionsToRender.some(col => {
+            const colMeta = matchDivision(col);
+            const isCounterCol = colMeta?.category === 'counter';
+            if (!isCounterCol && item.division_name) {
+              return normalizeDiv(item.division_name) === normalizeDiv(col) || matchDivision(item.division_name)?.key === col;
+            }
+            if (isCounterCol && item.counter) {
+              return normalizeDiv(item.counter) === normalizeDiv(col) || matchDivision(item.counter)?.key === col;
+            }
+            return false;
+          });
+        });
+
+        if (matched.length > 0) {
+          return matched.map(m => m.queue_no).slice(0, 10);
+        }
       }
     }
 
-    return isRestrictedAccount ? [] : (displayData?.next || []);
-  }, [displayData?.next, displayData?.next_details, displayData?.user_divisions, findMatchingActiveDivision, searchParams, selectedDivisionFilter, user]);
+    return (displayData?.next || []).slice(0, 10);
+  }, [displayData?.next, displayData?.next_details, activeDivisionsToRender]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -746,7 +870,7 @@ export default function DisplayBoard() {
         const url = active ? (parsed.videoUrl || parsed.url) : null;
         if (url && !isFolderLike(url)) return sanitizeVideoUrl(url);
       }
-    } catch {}
+    } catch { }
 
     // Only if local loading is finished and no uploaded or local video exists
     return '';
@@ -814,7 +938,7 @@ export default function DisplayBoard() {
           JSON.stringify({ event: 'command', func: 'setVolume', args: [10] }),
           '*'
         );
-      } catch {}
+      } catch { }
     }
   };
 
@@ -826,7 +950,7 @@ export default function DisplayBoard() {
           JSON.stringify({ event: 'command', func: 'setVolume', args: [80] }),
           '*'
         );
-      } catch {}
+      } catch { }
     }
   };
 
@@ -842,7 +966,7 @@ export default function DisplayBoard() {
             videoRef.current.muted = false;
             videoRef.current.volume = isDuckingRef.current ? 0.08 : defaultVideoVolumeRef.current;
             if (!isUserPausedRef.current && !isVideoTarget && videoRef.current.paused) {
-              videoRef.current.play().catch(() => {});
+              videoRef.current.play().catch(() => { });
             }
           }
         }
@@ -891,7 +1015,7 @@ export default function DisplayBoard() {
         playPromise.catch(() => {
           if (!isUserPausedRef.current) {
             v.muted = true;
-            v.play().catch(() => {});
+            v.play().catch(() => { });
           }
         });
       }
@@ -1014,7 +1138,7 @@ export default function DisplayBoard() {
               p.catch(() => {
                 if (videoRef.current) {
                   videoRef.current.muted = true;
-                  videoRef.current.play().catch(() => {});
+                  videoRef.current.play().catch(() => { });
                 }
               });
             }
@@ -1196,7 +1320,7 @@ export default function DisplayBoard() {
       playPromise.catch(() => {
         if (!isUserPausedRef.current) {
           video.muted = true;
-          video.play().catch(() => {});
+          video.play().catch(() => { });
         }
       });
     }
@@ -1344,7 +1468,7 @@ export default function DisplayBoard() {
           }
         };
       }
-    } catch {}
+    } catch { }
 
     // Storage fallback for cross-tab sync
     const handleStorage = (e) => {
@@ -1371,7 +1495,7 @@ export default function DisplayBoard() {
             }
             fetchDisplay();
           }
-        } catch {}
+        } catch { }
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -1381,10 +1505,10 @@ export default function DisplayBoard() {
       clearInterval(interval);
       cancelAllAnnouncements();
       if (bc) {
-        try { bc.close(); } catch {}
+        try { bc.close(); } catch { }
       }
       if (videoBc) {
-        try { videoBc.close(); } catch {}
+        try { videoBc.close(); } catch { }
       }
       window.removeEventListener('storage', handleStorage);
     };
@@ -1392,9 +1516,9 @@ export default function DisplayBoard() {
 
   const toggleFullScreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch(() => { });
     } else {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen().catch(() => { });
     }
   };
 
@@ -1603,68 +1727,381 @@ export default function DisplayBoard() {
           >
             🌐 {lang === 'en' ? 'Filipino' : 'English'}
           </button>
-          {eligibleDivisions.length > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <select
-                value={selectedDivisionFilter}
-                onChange={(e) => {
-                  setSelectedDivisionFilter(e.target.value);
-                  localStorage.setItem('ctms_tv_division_filter', e.target.value);
-                }}
+          {(hasAccessToAllDivisions || eligibleDivisions.length > 1) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', position: 'relative' }} ref={filterDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setShowFilterDropdown(prev => !prev)}
                 className={`staff-custom-select ${isLight ? 'tv-select-light' : 'tv-select-dark'}`}
                 style={{
-                  padding: '0.25rem 1.8rem 0.25rem 0.65rem',
+                  padding: '0.3rem 0.85rem',
                   fontSize: '0.78rem',
                   fontWeight: 700,
                   borderRadius: '6px',
                   border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.25)',
                   backgroundColor: isLight ? '#ffffff' : '#0f172a',
                   color: isLight ? '#0f172a' : '#ffffff',
-                  colorScheme: isLight ? 'light' : 'dark',
-                  boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none',
+                  boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.08)' : '0 2px 4px rgba(0,0,0,0.3)',
                   minHeight: '32px',
                   cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  whiteSpace: 'nowrap',
+                  userSelect: 'none',
                 }}
-                title="Select division display mode"
+                title="Click to choose divisions or windows with checkboxes"
               >
-                <option
-                  value=""
+                <span style={{ fontSize: '0.85rem' }}>☑</span>
+                <span>{simultaneousTriggerLabel}</span>
+                <span style={{ fontSize: '0.65rem', opacity: 0.7, transform: showFilterDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}>▼</span>
+              </button>
+
+              {showFilterDropdown && (
+                <div
                   style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    right: 0,
+                    width: '360px',
+                    maxHeight: '480px',
                     backgroundColor: isLight ? '#ffffff' : '#0f172a',
-                    color: isLight ? '#0f172a' : '#ffffff',
+                    border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '12px',
+                    boxShadow: isLight
+                      ? '0 12px 28px -4px rgba(0, 0, 0, 0.15), 0 8px 10px -4px rgba(0, 0, 0, 0.08)'
+                      : '0 16px 36px -4px rgba(0, 0, 0, 0.7), 0 8px 16px -4px rgba(0, 0, 0, 0.5)',
+                    zIndex: 9999,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
                   }}
                 >
-                  {eligibleDivisions.length >= 4
-                    ? 'Simultaneous (All Divisions: TSSD 1, TSSD 2, IMSD & MALSU)'
-                    : `Simultaneous (${eligibleDivisions.map(d => matchDivision(d)?.alias || d).join(' & ')})`}
-                </option>
-                {hasAccessToAllDivisions && SIMULTANEOUS_PAIRS.filter(pair =>
-                  pair.divisions.every(pDiv => eligibleDivisions.some(ed => normalizeDiv(ed) === normalizeDiv(pDiv)))
-                ).map(pair => (
-                  <option
-                    key={pair.value}
-                    value={pair.value}
-                    style={{
-                      backgroundColor: isLight ? '#ffffff' : '#0f172a',
-                      color: isLight ? '#0f172a' : '#ffffff',
-                    }}
-                  >
-                    {pair.label}
-                  </option>
-                ))}
-                {eligibleDivisions.map(d => (
-                  <option
-                    key={d}
-                    value={d}
-                    style={{
-                      backgroundColor: isLight ? '#ffffff' : '#0f172a',
-                      color: isLight ? '#0f172a' : '#ffffff',
-                    }}
-                  >
-                    Show {matchDivision(d)?.label || d} Only
-                  </option>
-                ))}
-              </select>
+                  {/* Popover Header */}
+                  <div style={{
+                    padding: '0.75rem 1rem 0.6rem',
+                    borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+                    backgroundColor: isLight ? '#f8fafc' : '#1e293b',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                      <div style={{ fontWeight: 800, fontSize: '0.85rem', color: isLight ? '#0f172a' : '#f8fafc' }}>
+                        Simultaneous View Choices
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowFilterDropdown(false)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: isLight ? '#64748b' : '#94a3b8',
+                          cursor: 'pointer',
+                          fontSize: '0.95rem',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                        }}
+                        title="Close"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div style={{ fontSize: '0.73rem', color: isLight ? '#64748b' : '#94a3b8', marginBottom: '0.5rem' }}>
+                      Check which divisions or windows to display together:
+                    </div>
+
+                    {/* Quick Action Badges */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        onClick={handleSelectOperationalOnly}
+                        className="btn btn-xs"
+                        style={{
+                          fontSize: '0.68rem',
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          backgroundColor: isLight ? '#e0f2fe' : 'rgba(56, 189, 248, 0.15)',
+                          color: isLight ? '#0369a1' : '#38bdf8',
+                          border: isLight ? '1px solid #bae6fd' : '1px solid rgba(56, 189, 248, 0.3)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        All Divisions
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSelectWindowsOnly}
+                        className="btn btn-xs"
+                        style={{
+                          fontSize: '0.68rem',
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          backgroundColor: isLight ? '#ede9fe' : 'rgba(168, 85, 247, 0.15)',
+                          color: isLight ? '#6d28d9' : '#c084fc',
+                          border: isLight ? '1px solid #ddd6fe' : '1px solid rgba(168, 85, 247, 0.3)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Windows Only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSelectAllChoices}
+                        className="btn btn-xs"
+                        style={{
+                          fontSize: '0.68rem',
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          backgroundColor: isLight ? '#dcfce7' : 'rgba(34, 197, 94, 0.15)',
+                          color: isLight ? '#15803d' : '#4ade80',
+                          border: isLight ? '1px solid #bbf7d0' : '1px solid rgba(34, 197, 94, 0.3)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearAllChoices}
+                        className="btn btn-xs"
+                        style={{
+                          fontSize: '0.68rem',
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          backgroundColor: isLight ? '#fee2e2' : 'rgba(239, 68, 68, 0.15)',
+                          color: isLight ? '#b91c1c' : '#f87171',
+                          border: isLight ? '1px solid #fecaca' : '1px solid rgba(239, 68, 68, 0.3)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Scrollable Checkbox List */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0' }}>
+                    {/* Group 1: Operational Divisions */}
+                    <div style={{
+                      padding: '0.35rem 0.9rem',
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      color: isLight ? '#64748b' : '#94a3b8',
+                      backgroundColor: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
+                    }}>
+                      Operational Divisions
+                    </div>
+                    {operationalDivisionChoices.map(div => {
+                      const checked = selectedDivisions.some(sd => normalizeDiv(sd) === normalizeDiv(div.key) || matchDivision(sd)?.key === div.key);
+                      return (
+                        <div
+                          key={div.key}
+                          onClick={() => handleToggleDivisionCheckbox(div.key)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.45rem 0.9rem',
+                            cursor: 'pointer',
+                            backgroundColor: checked
+                              ? (isLight ? '#eff6ff' : 'rgba(59, 130, 246, 0.12)')
+                              : 'transparent',
+                            transition: 'background-color 0.1s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!checked) e.currentTarget.style.backgroundColor = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!checked) e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                        >
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer', minWidth: 0, flex: 1, margin: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {}}
+                              style={{
+                                width: '15px',
+                                height: '15px',
+                                cursor: 'pointer',
+                                accentColor: div.accent || '#3b82f6',
+                              }}
+                            />
+                            <span
+                              style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                backgroundColor: div.accent || '#3b82f6',
+                                flexShrink: 0,
+                              }}
+                            />
+                            <div style={{ minWidth: 0 }}>
+                              <span style={{
+                                fontWeight: checked ? 800 : 600,
+                                fontSize: '0.82rem',
+                                color: isLight ? '#0f172a' : '#f8fafc',
+                              }}>
+                                {div.label}
+                              </span>
+                              {div.fullName && (
+                                <span style={{
+                                  marginLeft: '0.35rem',
+                                  fontSize: '0.7rem',
+                                  color: isLight ? '#64748b' : '#94a3b8',
+                                }}>
+                                  ({div.fullName.split('(')[0].trim()})
+                                </span>
+                              )}
+                            </div>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectOnly(div.key);
+                            }}
+                            style={{
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '4px',
+                              border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.2)',
+                              background: 'transparent',
+                              color: isLight ? '#64748b' : '#94a3b8',
+                              cursor: 'pointer',
+                            }}
+                            title={`Show only ${div.label}`}
+                          >
+                            Only
+                          </button>
+                        </div>
+                      );
+                    })}
+
+                    {/* Group 2: Service Windows & Desks */}
+                    <div style={{
+                      marginTop: '0.5rem',
+                      padding: '0.35rem 0.9rem',
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      color: isLight ? '#64748b' : '#94a3b8',
+                      backgroundColor: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
+                    }}>
+                      Counters & Service Windows
+                    </div>
+                    {counterWindowChoices.map(counter => {
+                      const checked = selectedDivisions.some(sd => normalizeDiv(sd) === normalizeDiv(counter.key) || matchDivision(sd)?.key === counter.key);
+                      return (
+                        <div
+                          key={counter.key}
+                          onClick={() => handleToggleDivisionCheckbox(counter.key)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.45rem 0.9rem',
+                            cursor: 'pointer',
+                            backgroundColor: checked
+                              ? (isLight ? '#eff6ff' : 'rgba(59, 130, 246, 0.12)')
+                              : 'transparent',
+                            transition: 'background-color 0.1s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!checked) e.currentTarget.style.backgroundColor = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!checked) e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                        >
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer', minWidth: 0, flex: 1, margin: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {}}
+                              style={{
+                                width: '15px',
+                                height: '15px',
+                                cursor: 'pointer',
+                                accentColor: counter.accent || '#6366f1',
+                              }}
+                            />
+                            <span
+                              style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                backgroundColor: counter.accent || '#6366f1',
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span style={{
+                              fontWeight: checked ? 800 : 600,
+                              fontSize: '0.82rem',
+                              color: isLight ? '#0f172a' : '#f8fafc',
+                            }}>
+                              {counter.label}
+                            </span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectOnly(counter.key);
+                            }}
+                            style={{
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '4px',
+                              border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.2)',
+                              background: 'transparent',
+                              color: isLight ? '#64748b' : '#94a3b8',
+                              cursor: 'pointer',
+                            }}
+                            title={`Show only ${counter.label}`}
+                          >
+                            Only
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Popover Footer */}
+                  <div style={{
+                    padding: '0.5rem 0.9rem',
+                    borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+                    backgroundColor: isLight ? '#f8fafc' : '#1e293b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <span style={{ fontSize: '0.72rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
+                      {selectedDivisions.length} selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowFilterDropdown(false)}
+                      className="btn btn-primary btn-xs"
+                      style={{
+                        fontSize: '0.72rem',
+                        padding: '0.2rem 0.75rem',
+                        fontWeight: 700,
+                        borderRadius: '6px',
+                      }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <button
@@ -1715,7 +2152,50 @@ export default function DisplayBoard() {
             gap: activeDivisionsToRender.length >= 4 ? '0.65rem' : (activeDivisionsToRender.length > 1 ? '0.85rem' : '1.25rem'),
             minHeight: 0,
           }}>
-            {activeDivisionsToRender.map((divName) => {
+            {activeDivisionsToRender.length === 0 ? (
+              <div style={{
+                gridColumn: '1 / -1',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '3rem 2rem',
+                borderRadius: '16px',
+                backgroundColor: themeStyles.cardBg,
+                border: `2px dashed ${isLight ? '#cbd5e1' : 'rgba(255,255,255,0.2)'}`,
+                boxShadow: themeStyles.cardShadow,
+                color: isLight ? '#64748b' : '#94a3b8',
+                textAlign: 'center',
+                gap: '1rem',
+              }}>
+                <span style={{ fontSize: '3rem' }}>🖥️</span>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: themeStyles.titleColor }}>
+                  No Divisions or Windows Selected
+                </div>
+                <div style={{ fontSize: '0.95rem', maxWidth: '440px', lineHeight: 1.5 }}>
+                  Click the <strong>Simultaneous View</strong> button in the header to choose which operational divisions or service windows will appear on this screen.
+                </div>
+                <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={handleSelectOperationalOnly}
+                    className="btn btn-primary btn-sm"
+                    style={{ fontWeight: 700 }}
+                  >
+                    Show Operational Divisions
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSelectWindowsOnly}
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontWeight: 700 }}
+                  >
+                    Show Windows 1–10
+                  </button>
+                </div>
+              </div>
+            ) : (
+              activeDivisionsToRender.map((divName) => {
               const divMeta = matchDivision(divName);
               const divItems = servingByDivision[divName] || [];
               const divUpcoming = nextByDivision[divName] || [];
@@ -2271,7 +2751,8 @@ export default function DisplayBoard() {
                   )}
                 </div>
               );
-            })}
+            })
+          )}
           </div>
         </section>
 
