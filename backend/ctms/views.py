@@ -129,6 +129,7 @@ class StaffMeView(APIView):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "is_superuser": user.is_superuser,
+            "all_divisions_access": has_universal_division_access(user, assigned_divisions),
             "must_change_password": must_change_password,
             "assigned_offices": CsmOfficeSerializer(assigned_offices, many=True).data,
             "assigned_divisions": CsmDivisionSerializer(assigned_divisions, many=True).data,
@@ -173,6 +174,24 @@ def get_staff_divisions(user):
     except Exception:
         pass
     return CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
+
+
+def has_universal_division_access(user, assigned_divisions=None):
+    """
+    Returns True if user is superuser OR has an assigned division corresponding
+    to Window 1-10 or Front Desk, granting access to all services of all divisions.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    if assigned_divisions is None:
+        assigned_divisions = get_staff_divisions(user)
+    for div in assigned_divisions:
+        div_name = getattr(div, 'name', str(div))
+        if services.is_universal_division_name(div_name):
+            return True
+    return False
 
 
 class IsStaffUser(permissions.BasePermission):
@@ -348,7 +367,7 @@ class PublicDisplayBoardView(APIView):
         user_divisions = []
         restrict_to_divisions = False
 
-        if user and user.is_staff and not user.is_superuser:
+        if user and user.is_staff and not user.is_superuser and not has_universal_division_access(user):
             has_explicit_divs = CtmsStaffDivision.objects.filter(user=user).exists()
             if not has_explicit_divs:
                 try:
@@ -515,8 +534,11 @@ class StaffQueueView(APIView):
 
         counters_qs = CtmsCounter.objects.filter(office=office, is_active=True).order_by('id')
 
-        # If regular staff (non-superuser), restrict counters and divisions to only assigned divisions
-        if not request.user.is_superuser:
+        # Determine universal division access (Window 1-10, Front Desk, or superuser)
+        is_universal = request.user.is_superuser or has_universal_division_access(request.user, allowed_divisions)
+
+        # If regular staff (non-superuser and non-universal), restrict counters and divisions to only assigned divisions
+        if not is_universal:
             allowed_counter_ids = [
                 c.id for c in counters_qs
                 if c.name.strip().upper().replace(' ', '') in allowed_div_norms
@@ -525,6 +547,13 @@ class StaffQueueView(APIView):
             divisions_data = allowed_divisions
         else:
             divisions_data = all_divisions.exclude(name__iexact='ALL')
+            if not request.user.is_superuser and allowed_div_norms:
+                user_counter_ids = [
+                    c.id for c in counters_qs
+                    if c.name.strip().upper().replace(' ', '') in allowed_div_norms
+                ]
+                if user_counter_ids:
+                    counters_qs = counters_qs.filter(id__in=user_counter_ids)
 
         # Waiting list: priority first, then FIFO
         waiting_qs = CtmsTransaction.objects.filter(
@@ -547,8 +576,8 @@ class StaffQueueView(APIView):
             status=CtmsTransaction.STATUS_PENDING
         ).select_related('office', 'service', 'service__division', 'counter', 'served_by')
 
-        # If not superuser, restrict waiting, serving, and pending queues to the user's assigned divisions
-        if not request.user.is_superuser:
+        # If not superuser and not universal, restrict waiting, serving, and pending queues to the user's assigned divisions
+        if not is_universal:
             waiting_qs = waiting_qs.filter(service__division__in=allowed_divisions)
             serving_qs = serving_qs.filter(service__division__in=allowed_divisions)
             pending_qs = pending_qs.filter(service__division__in=allowed_divisions)
@@ -556,13 +585,13 @@ class StaffQueueView(APIView):
         if counter_id:
             counter = CtmsCounter.objects.filter(pk=counter_id, office=office, is_active=True).first()
             if counter and not request.user.is_superuser:
-                if counter.name.strip().upper().replace(' ', '') not in allowed_div_norms:
+                if counter.name.strip().upper().replace(' ', '') not in allowed_div_norms and not is_universal:
                     # Stale counter_id from a previous user session in localStorage: fallback to first allowed counter
                     counter = counters_qs.first()
             if counter:
                 serving_qs = serving_qs.filter(counter=counter)
                 division = CsmDivision.objects.filter(name__iexact=counter.name.strip()).first()
-                if division:
+                if division and not services.is_universal_division_name(counter.name):
                     waiting_qs = waiting_qs.filter(service__division=division)
                     pending_qs = pending_qs.filter(
                         models.Q(service__division=division) | models.Q(counter=counter)
@@ -673,7 +702,11 @@ def validate_personnel_division_assignment(tx, personnel_name_or_id):
 
     if personnel:
         p_divs = [d.name.strip().upper().replace(' ', '') for d in personnel.divisions.all()]
-        if p_divs and svc_div not in p_divs and 'ALL' not in p_divs:
+        has_universal_p = any(
+            d in ('ALL', 'FRONTDESK') or (d.startswith('WINDOW') and d.replace('WINDOW', '').isdigit())
+            for d in p_divs
+        )
+        if not has_universal_p and p_divs and svc_div not in p_divs and 'ALL' not in p_divs:
             div_names = ', '.join([d.name for d in personnel.divisions.all()])
             return False, f"Cannot assign {personnel.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {tx.service.name} ({tx.service.division.name})."
 
@@ -747,7 +780,7 @@ class StaffCreateWalkinView(APIView):
         if not allowed_offices.filter(pk=data['office'].pk).exists():
             return Response({"detail": "Forbidden: You are not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
 
-        if not request.user.is_superuser:
+        if not request.user.is_superuser and not has_universal_division_access(request.user):
             allowed_divs = get_staff_divisions(request.user)
             if data['service'].division and not allowed_divs.filter(pk=data['service'].division_id).exists():
                 return Response({
@@ -809,7 +842,7 @@ class StaffCallNextView(APIView):
 
         if counter_id:
             counter = get_object_or_404(CtmsCounter, pk=counter_id, office=office, is_active=True)
-            if not request.user.is_superuser and counter.name not in allowed_div_names:
+            if not request.user.is_superuser and not has_universal_division_access(request.user, allowed_divs) and counter.name not in allowed_div_names:
                 return Response({"detail": "Forbidden: You are not authorized to call clients for this counter / division."}, status=status.HTTP_403_FORBIDDEN)
         else:
             counter = None
@@ -817,7 +850,7 @@ class StaffCallNextView(APIView):
         personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
         if personnel and str(personnel).strip() and counter:
             div = CsmDivision.objects.filter(name=counter.name).first()
-            if div:
+            if div and not services.is_universal_division_name(counter.name):
                 clean_str = str(personnel).strip()
                 emp = CtmsEmployee.objects.filter(
                     models.Q(employee_id__iexact=clean_str) |
@@ -833,7 +866,11 @@ class StaffCallNextView(APIView):
                 if emp:
                     emp_divs = [d.name.strip().upper().replace(' ', '') for d in emp.divisions.all()]
                     c_div = div.name.strip().upper().replace(' ', '')
-                    if emp_divs and c_div not in emp_divs and 'ALL' not in emp_divs:
+                    has_universal_emp = any(
+                        d in ('ALL', 'FRONTDESK') or (d.startswith('WINDOW') and d.replace('WINDOW', '').isdigit())
+                        for d in emp_divs
+                    )
+                    if not has_universal_emp and emp_divs and c_div not in emp_divs and 'ALL' not in emp_divs:
                         div_names = ', '.join([d.name for d in emp.divisions.all()])
                         return Response({
                             "detail": f"Cannot assign {emp.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {div.name}."
@@ -883,7 +920,7 @@ class StaffTransactionActionView(APIView):
         if not allowed_offices.filter(pk=tx.office_id).exists():
             return Response({"detail": "Forbidden: Not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
 
-        if not request.user.is_superuser:
+        if not request.user.is_superuser and not has_universal_division_access(request.user):
             allowed_divs = get_staff_divisions(request.user)
             if tx.service and tx.service.division and not allowed_divs.filter(pk=tx.service.division_id).exists():
                 return Response({"detail": "Forbidden: You are not authorized to access transactions for this division."}, status=status.HTTP_403_FORBIDDEN)
@@ -2064,7 +2101,13 @@ class CsmDivisionListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        for std_div in ('IMSD', 'TSSD 1', 'TSSD 2', 'MALSU'):
+        standard_divisions = [
+            'IMSD', 'TSSD 1', 'TSSD 2', 'MALSU',
+            'Front Desk',
+            'Window 1', 'Window 2', 'Window 3', 'Window 4', 'Window 5',
+            'Window 6', 'Window 7', 'Window 8', 'Window 9', 'Window 10',
+        ]
+        for std_div in standard_divisions:
             if not CsmDivision.objects.filter(name__iexact=std_div).exists():
                 CsmDivision.objects.get_or_create(name=std_div)
         divisions = CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
@@ -2490,7 +2533,8 @@ class StaffServiceViewSet(viewsets.ModelViewSet):
             personnel_qs = personnel_qs.filter(
                 models.Q(divisions=service.division) |
                 models.Q(divisions__name__in=names) |
-                models.Q(divisions__name__iexact='ALL')
+                models.Q(divisions__name__iexact='ALL') |
+                models.Q(divisions__name__in=list(services.UNIVERSAL_DIVISION_NAMES))
             ).distinct()
 
         office_id = request.query_params.get('office')
@@ -2574,7 +2618,10 @@ class StaffServiceViewSet(viewsets.ModelViewSet):
             mismatched = []
             for p in personnel_qs:
                 p_div_names = {d.name.upper() for d in p.divisions.all()} | {d.name.replace(' ', '').upper() for d in p.divisions.all()}
-                if not (p_div_names & allowed_divs):
+                has_universal_p = any(
+                    services.is_universal_division_name(d.name) for d in p.divisions.all()
+                )
+                if not has_universal_p and not (p_div_names & allowed_divs):
                     p_div_str = ', '.join([d.name for d in p.divisions.all()]) or 'None'
                     mismatched.append(f"{p.full_name} ({p.employee_id}) [Divisions: {p_div_str}]")
 

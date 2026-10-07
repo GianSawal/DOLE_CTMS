@@ -28,6 +28,32 @@ SERVICE_DEFAULT_OFFICERS = {
     'general labor': 'ROY OCAMPO',
 }
 
+UNIVERSAL_DIVISION_NAMES = {
+    'FRONT DESK', 'FRONTDESK',
+    'WINDOW 1', 'WINDOW 2', 'WINDOW 3', 'WINDOW 4', 'WINDOW 5',
+    'WINDOW 6', 'WINDOW 7', 'WINDOW 8', 'WINDOW 9', 'WINDOW 10',
+    'WINDOW1', 'WINDOW2', 'WINDOW3', 'WINDOW4', 'WINDOW5',
+    'WINDOW6', 'WINDOW7', 'WINDOW8', 'WINDOW9', 'WINDOW10',
+}
+
+def is_universal_division_name(name):
+    """
+    Returns True if the division or counter name corresponds to a universal queue line
+    (Front Desk or Window 1-10) that can access and serve all services across all divisions.
+    """
+    if not name:
+        return False
+    clean = str(name).strip().upper()
+    norm = clean.replace(' ', '')
+    if clean in UNIVERSAL_DIVISION_NAMES or norm in UNIVERSAL_DIVISION_NAMES:
+        return True
+    if clean.startswith('WINDOW ') or norm.startswith('WINDOW'):
+        suffix = norm.replace('WINDOW', '').strip()
+        if suffix.isdigit() and 1 <= int(suffix) <= 10:
+            return True
+    return False
+
+
 DIVISION_OFFICER_POOLS = {
     'TSSD 2': [
         'CAMILLE SANTOS',
@@ -340,7 +366,7 @@ def call_next_transaction(office, counter, personnel=None):
 
         if counter:
             division = CsmDivision.objects.filter(name=counter.name).first()
-            if division:
+            if division and not is_universal_division_name(counter.name):
                 waiting_qs = waiting_qs.filter(service__division=division)
 
         waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
@@ -399,7 +425,11 @@ def call_specific_transaction(tx, counter=None, personnel=None):
         if div_counter:
             if not assigned_counter:
                 assigned_counter = div_counter
-            elif assigned_counter.name != div_counter.name and CsmDivision.objects.filter(name__iexact=assigned_counter.name).exists():
+            elif (
+                assigned_counter.name != div_counter.name
+                and CsmDivision.objects.filter(name__iexact=assigned_counter.name).exists()
+                and not is_universal_division_name(assigned_counter.name)
+            ):
                 # The passed counter belongs to another division (e.g. IMSD instead of TSSD 1)
                 assigned_counter = div_counter
 

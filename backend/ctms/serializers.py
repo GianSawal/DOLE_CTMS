@@ -14,6 +14,7 @@ from .models import (
     CtmsAuditLog,
     CtmsNotification,
 )
+from .services import is_universal_division_name
 
 User = get_user_model()
 
@@ -299,10 +300,13 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
         return assigned_count == 0 or (total_active_offices > 0 and assigned_count >= total_active_offices)
 
     def get_all_divisions_access(self, obj):
-        if not obj.is_superuser:
-            return False
+        if obj.is_superuser:
+            return True
+        div_names = list(obj.staff_divisions.values_list('division__name', flat=True))
+        if any(is_universal_division_name(name) for name in div_names):
+            return True
         total_divisions = CsmDivision.objects.exclude(name__iexact='ALL').count()
-        assigned_count = obj.staff_divisions.count()
+        assigned_count = len(div_names)
         return assigned_count == 0 or (total_divisions > 0 and assigned_count >= total_divisions)
 
     def get_office(self, obj):

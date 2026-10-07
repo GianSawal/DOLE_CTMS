@@ -297,6 +297,80 @@ class CtmsCoreTestCase(TestCase):
         res_forbidden_call = self.client.post(f"/api/staff/transactions/{tx2.id}/call/", data={"counter": cnt_tssd2.id, "personnel": "Jane Doe"})
         self.assertEqual(res_forbidden_call.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_window_and_front_desk_division_universal_access(self):
+        from .models import CtmsEmployee
+        admin_user = User.objects.create_superuser(username="admin_univ", password="password")
+        self.client.force_authenticate(user=admin_user)
+
+        # 1. /api/staff/divisions/ ensures and returns Window 1-10 and Front Desk
+        res_divs = self.client.get("/api/staff/divisions/")
+        self.assertEqual(res_divs.status_code, status.HTTP_200_OK)
+        div_names = [d['name'] for d in res_divs.data]
+        self.assertIn("Front Desk", div_names)
+        for i in range(1, 11):
+            self.assertIn(f"Window {i}", div_names)
+
+        div_window1 = CsmDivision.objects.get(name="Window 1")
+        div_frontdesk = CsmDivision.objects.get(name="Front Desk")
+        div_tssd1 = CsmDivision.objects.get(name="TSSD 1")
+        div_tssd2 = CsmDivision.objects.get(name="TSSD 2")
+
+        # 2. Admin creates user assigned to Window 1
+        create_payload = {
+            "username": "window1_staff",
+            "first_name": "Window",
+            "last_name": "One",
+            "office": self.office.id,
+            "office_ids": [self.office.id],
+            "division_ids": [div_window1.id],
+            "password": "Password123!",
+            "role": "staff",
+        }
+        res_create = self.client.post("/api/staff/users/", data=create_payload, format='json')
+        self.assertEqual(res_create.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(res_create.data["all_divisions_access"])
+        self.assertIn("Window 1", res_create.data["division_names"])
+
+        # 3. Create services and transactions across different divisions
+        svc_tssd1, _ = CsmService.objects.get_or_create(name="Service TSSD 1 Univ", defaults={'division': div_tssd1, 'is_active': True})
+        svc_tssd2, _ = CsmService.objects.get_or_create(name="Service TSSD 2 Univ", defaults={'division': div_tssd2, 'is_active': True})
+        tx1 = create_transaction(self.office, svc_tssd1, client_name="TSSD 1 Client")
+        tx2 = create_transaction(self.office, svc_tssd2, client_name="TSSD 2 Client")
+
+        # 4. Authenticate as window1_staff
+        window_user = User.objects.get(username="window1_staff")
+        self.client.force_authenticate(user=window_user)
+
+        # Me endpoint returns all_divisions_access=True
+        res_me = self.client.get("/api/staff/auth/me/")
+        self.assertEqual(res_me.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_me.data["all_divisions_access"])
+
+        # In StaffQueueView, window1_staff CAN access all services from ALL divisions
+        res_queue = self.client.get(f"/api/staff/queue/?office={self.office.id}")
+        self.assertEqual(res_queue.status_code, status.HTTP_200_OK)
+        waiting_ids = [item['id'] for item in res_queue.data['waiting']]
+        self.assertIn(tx1.id, waiting_ids)
+        self.assertIn(tx2.id, waiting_ids)
+
+        # 5. Window 1 staff can create walk-in for any division's service
+        res_walkin = self.client.post("/api/staff/transactions/walkin/", data={
+            "office": self.office.id,
+            "service": svc_tssd2.id,
+            "client_name": "Walkin Any Division",
+            "is_priority": False,
+        }, format='json')
+        self.assertEqual(res_walkin.status_code, status.HTTP_201_CREATED)
+
+        # 6. Window 1 staff can call transactions from any division
+        cnt_w1 = CtmsCounter.objects.get(office=self.office, name="Window 1")
+        res_call = self.client.post(f"/api/staff/transactions/{tx2.id}/call/", data={
+            "counter": cnt_w1.id,
+            "personnel": "Window One"
+        }, format='json')
+        self.assertEqual(res_call.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_call.data["counter_name"], "Window 1")
+
     def test_first_time_login_password_change(self):
         from .models import CtmsEmployee
         admin_user = User.objects.create_superuser(username="admin_sec", password="adminpassword")

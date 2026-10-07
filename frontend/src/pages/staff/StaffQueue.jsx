@@ -368,6 +368,25 @@ export default function StaffQueue() {
   // Helper to normalize division names
   const normalizeDiv = (name) => (name || '').toUpperCase().replace(/\s+/g, '');
 
+  const isUniversalDivision = (name) => {
+    if (!name) return false;
+    const norm = normalizeDiv(name);
+    if (norm === 'ALL' || norm === 'FRONTDESK') return true;
+    const match = norm.match(/^WINDOW(\d+)$/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      return num >= 1 && num <= 10;
+    }
+    return false;
+  };
+
+  const hasUniversalDivisionAccess = (usr) => {
+    if (!usr) return false;
+    if (usr.is_superuser || usr.all_divisions_access) return true;
+    const assigned = usr.assigned_divisions || [];
+    return assigned.some(d => isUniversalDivision(typeof d === 'string' ? d : d?.name));
+  };
+
   // Fetch registered personnel for the selected office
   useEffect(() => {
     if (selectedOffice) {
@@ -380,7 +399,7 @@ export default function StaffQueue() {
   // Filter walk-in services to staff's division(s) if not superuser
   const filteredOfficeServices = useMemo(() => {
     if (!officeServices || officeServices.length === 0) return [];
-    if (user?.is_superuser || !user?.assigned_divisions || user.assigned_divisions.length === 0) {
+    if (user?.is_superuser || user?.all_divisions_access || hasUniversalDivisionAccess(user) || !user?.assigned_divisions || user.assigned_divisions.length === 0) {
       return officeServices;
     }
     const staffDivisionNorms = user.assigned_divisions.map(d => normalizeDiv(d.name));
@@ -389,7 +408,7 @@ export default function StaffQueue() {
       if (svc.division && staffDivisionIds.includes(svc.division)) return true;
       if (svc.division_name) {
         const norm = normalizeDiv(svc.division_name);
-        if (staffDivisionNorms.includes(norm) || norm === 'ALL') return true;
+        if (staffDivisionNorms.includes(norm) || norm === 'ALL' || staffDivisionNorms.some(isUniversalDivision)) return true;
       }
       return false;
     });
@@ -454,7 +473,7 @@ export default function StaffQueue() {
     const filtered = officePersonnel.filter(p => {
       if (!txDivNorm) return true;
       const divs = (p.division_names || []).map(normalizeDiv);
-      return divs.includes(txDivNorm) || divs.includes('ALL');
+      return divs.includes(txDivNorm) || divs.includes('ALL') || divs.some(isUniversalDivision);
     });
 
     // Sort: officers explicitly associated with this service first, then available officers first, then alphabetical
@@ -477,7 +496,7 @@ export default function StaffQueue() {
     if (!txDivNorm) return [];
     return officePersonnel.filter(p => {
       const divs = (p.division_names || []).map(normalizeDiv);
-      return !divs.includes(txDivNorm) && !divs.includes('ALL');
+      return !divs.includes(txDivNorm) && !divs.includes('ALL') && !divs.some(isUniversalDivision);
     });
   }, [officePersonnel, txDivNorm]);
 
@@ -533,7 +552,7 @@ export default function StaffQueue() {
     if (!defaultName) {
       const txDiv = normalizeDiv(tx?.division_name);
       const loggedInUserDivs = (user?.assigned_divisions || []).map(d => normalizeDiv(d.name));
-      const canUserSelfAssign = user?.is_superuser || !txDiv || loggedInUserDivs.includes(txDiv);
+      const canUserSelfAssign = user?.is_superuser || hasUniversalDivisionAccess(user) || !txDiv || loggedInUserDivs.includes(txDiv) || loggedInUserDivs.some(isUniversalDivision);
       if (canUserSelfAssign) {
         const candidate = (user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user?.username || ''));
         const selfBusy = getBusyInfo(candidate);
@@ -2308,8 +2327,16 @@ export default function StaffQueue() {
               searchPlaceholder="Search services or division..."
             />
             {user && !user.is_superuser && user.assigned_divisions?.length > 0 && (
-              <div style={{ fontSize: '0.75rem', color: 'var(--dole-blue)', marginTop: '0.35rem', fontWeight: 600 }}>
-                🔒 Limited to your division: {user.assigned_divisions.map(d => d.name).join(', ')}
+              <div style={{ fontSize: '0.75rem', marginTop: '0.35rem', fontWeight: 600 }}>
+                {hasUniversalDivisionAccess(user) ? (
+                  <span style={{ color: '#059669' }}>
+                    ⚡ Universal Access: Your account ({user.assigned_divisions.map(d => d.name).join(', ')}) can create walk-ins for all divisions and services.
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--dole-blue)' }}>
+                    🔒 Limited to your division: {user.assigned_divisions.map(d => d.name).join(', ')}
+                  </span>
+                )}
               </div>
             )}
           </div>

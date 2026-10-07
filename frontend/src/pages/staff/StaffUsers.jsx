@@ -7,10 +7,21 @@ import SearchablePersonnelSelect from '../../components/SearchablePersonnelSelec
 const ITEMS_PER_PAGE = 10;
 
 const TARGET_DIVISIONS = [
-  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Support Services Division 1', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
-  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Support Services Division 2', color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
-  { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
-  { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation Arbitration and Legal Services Unit', color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Support Services Division 1', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', category: 'division' },
+  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Support Services Division 2', color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd', category: 'division' },
+  { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0', category: 'division' },
+  { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation Arbitration and Legal Services Unit', color: '#b45309', bg: '#fffbeb', border: '#fde68a', category: 'division' },
+  { key: 'Front Desk', alias: 'Front Desk', label: 'Front Desk', fullName: 'Front Desk / PACD (All Divisions Access)', color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4', isUniversal: true, category: 'counter' },
+  { key: 'Window 1', alias: 'Window 1', label: 'Window 1', fullName: 'Queue Window 1 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 2', alias: 'Window 2', label: 'Window 2', fullName: 'Queue Window 2 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 3', alias: 'Window 3', label: 'Window 3', fullName: 'Queue Window 3 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 4', alias: 'Window 4', label: 'Window 4', fullName: 'Queue Window 4 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 5', alias: 'Window 5', label: 'Window 5', fullName: 'Queue Window 5 (All Divisions Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 6', alias: 'Window 6', label: 'Window 6', fullName: 'Queue Window 6 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 7', alias: 'Window 7', label: 'Window 7', fullName: 'Queue Window 7 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 8', alias: 'Window 8', label: 'Window 8', fullName: 'Queue Window 8 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 9', alias: 'Window 9', label: 'Window 9', fullName: 'Queue Window 9 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
+  { key: 'Window 10', alias: 'Window 10', label: 'Window 10', fullName: 'Queue Window 10 (All Divisions Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
 ];
 
 export default function StaffUsers() {
@@ -107,6 +118,8 @@ export default function StaffUsers() {
       map[name] = div.id;
       if (name === 'TSSD 1') map['TSSD1'] = div.id;
       if (name === 'TSSD 2') map['TSSD2'] = div.id;
+      map[name.toLowerCase()] = div.id;
+      map[name.toUpperCase().replace(/\s+/g, '')] = div.id;
     });
     return map;
   }, [divisions]);
@@ -275,10 +288,12 @@ export default function StaffUsers() {
 
   // Toggle division selection
   const handleToggleDivision = (divKey, divAlias) => {
-    let targetId = divisionMap[divKey] || divisionMap[divAlias];
+    let targetId = divisionMap[divKey] || (divAlias && divisionMap[divAlias]);
     if (!targetId) {
       const found = divisions.find(
-        (d) => d.name.toLowerCase() === divKey.toLowerCase() || d.name.toLowerCase() === divAlias.toLowerCase()
+        (d) =>
+          d.name.toLowerCase() === divKey.toLowerCase() ||
+          (divAlias && d.name.toLowerCase() === divAlias.toLowerCase())
       );
       if (found) targetId = found.id;
     }
@@ -296,6 +311,21 @@ export default function StaffUsers() {
       return updated;
     });
   };
+
+  // Check if currently selected divisions include Front Desk or any Window 1-10
+  const hasUniversalSelected = useMemo(() => {
+    if (allDivisionsSelected || role === 'admin') return true;
+    return selectedDivisionIds.some((divId) => {
+      const divObj = divisions.find((d) => d.id === divId);
+      if (!divObj) return false;
+      const target = TARGET_DIVISIONS.find(
+        (t) =>
+          t.key.toLowerCase() === divObj.name.toLowerCase() ||
+          t.alias?.toLowerCase() === divObj.name.toLowerCase()
+      );
+      return Boolean(target?.isUniversal);
+    });
+  }, [selectedDivisionIds, allDivisionsSelected, role, divisions]);
 
   // Submit Add / Edit Form
   const handleSubmitForm = async (e) => {
@@ -1020,10 +1050,11 @@ export default function StaffUsers() {
               }}
             >
               <option value="">All Divisions</option>
-              <option value="TSSD 1">TSSD 1</option>
-              <option value="TSSD 2">TSSD 2</option>
-              <option value="IMSD">IMSD</option>
-              <option value="MALSU">MALSU</option>
+              {TARGET_DIVISIONS.map((t) => (
+                <option key={t.key} value={t.key}>
+                  {t.label}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -1357,10 +1388,10 @@ export default function StaffUsers() {
                               <span>All Divisions Access</span>
                             </span>
                           ) : u.division_names && u.division_names.length > 0 ? (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
                               {u.division_names.map((divName) => {
                                 const targetDiv = TARGET_DIVISIONS.find(
-                                  (t) => t.key.toLowerCase() === divName.toLowerCase() || t.alias.toLowerCase() === divName.toLowerCase()
+                                  (t) => t.key.toLowerCase() === divName.toLowerCase() || (t.alias && t.alias.toLowerCase() === divName.toLowerCase())
                                 );
                                 const color = targetDiv?.color || '#374151';
                                 const bg = targetDiv?.bg || '#f3f4f6';
@@ -1382,6 +1413,22 @@ export default function StaffUsers() {
                                   </span>
                                 );
                               })}
+                              {u.all_divisions_access && (
+                                <span
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    padding: '0.15rem 0.45rem',
+                                    borderRadius: '9999px',
+                                    backgroundColor: '#ecfdf5',
+                                    color: '#047857',
+                                    border: '1px solid #a7f3d0',
+                                  }}
+                                  title="Grants access to all services across all divisions"
+                                >
+                                  ⚡ All Services
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <span
@@ -2181,67 +2228,186 @@ export default function StaffUsers() {
                   )}
                 </div>
 
+                {hasUniversalSelected && (
+                  <div
+                    style={{
+                      marginBottom: '0.65rem',
+                      padding: '0.55rem 0.85rem',
+                      borderRadius: '8px',
+                      backgroundColor: '#ecfdf5',
+                      border: '1px solid #a7f3d0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.78rem',
+                      color: '#065f46',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span style={{ fontSize: '1rem' }}>✨</span>
+                    <span>
+                      <strong>All Divisions Access Granted:</strong> Accounts assigned to Window 1–10 or Front Desk can access and serve all services across all divisions.
+                    </span>
+                  </div>
+                )}
+
                 <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                    gap: '0.65rem',
+                    maxHeight: '340px',
+                    overflowY: 'auto',
+                    paddingRight: '0.35rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.85rem',
                   }}
                 >
-                  {TARGET_DIVISIONS.map((tDiv) => {
-                    const targetId = divisionMap[tDiv.key] || divisionMap[tDiv.alias];
-                    const isChecked = Boolean(
-                      allDivisionsSelected || (targetId && selectedDivisionIds.includes(targetId))
-                    );
+                  {/* Category 1: Operational Divisions */}
+                  <div>
+                    <div style={{ fontSize: '0.73rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.45rem' }}>
+                      Operational Divisions (Service-Specific Queue Lines)
+                    </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                        gap: '0.55rem',
+                      }}
+                    >
+                      {TARGET_DIVISIONS.filter((d) => d.category === 'division').map((tDiv) => {
+                        const targetId = divisionMap[tDiv.key] || (tDiv.alias && divisionMap[tDiv.alias]);
+                        const isChecked = Boolean(
+                          allDivisionsSelected || (targetId && selectedDivisionIds.includes(targetId))
+                        );
 
-                    return (
-                      <div
-                        key={tDiv.key}
-                        onClick={() => handleToggleDivision(tDiv.key, tDiv.alias)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.65rem',
-                          padding: '0.65rem 0.85rem',
-                          borderRadius: 'var(--radius-md)',
-                          border: isChecked ? `2px solid ${tDiv.color}` : '1px solid var(--border-color)',
-                          backgroundColor: isChecked ? tDiv.bg : 'var(--bg-ground)',
-                          cursor: 'pointer',
-                          userSelect: 'none',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {}} // Handled by card click
-                          style={{
-                            width: '16px',
-                            height: '16px',
-                            accentColor: tDiv.color,
-                            cursor: 'pointer',
-                          }}
-                        />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 800, color: isChecked ? tDiv.color : 'var(--text-primary)', fontSize: '0.84rem' }}>
-                            {tDiv.label}
-                          </div>
+                        return (
                           <div
+                            key={tDiv.key}
+                            onClick={() => handleToggleDivision(tDiv.key, tDiv.alias)}
                             style={{
-                              fontSize: '0.72rem',
-                              color: 'var(--text-muted)',
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.65rem',
+                              padding: '0.65rem 0.85rem',
+                              borderRadius: 'var(--radius-md)',
+                              border: isChecked ? `2px solid ${tDiv.color}` : '1px solid var(--border-color)',
+                              backgroundColor: isChecked ? tDiv.bg : 'var(--bg-ground)',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              transition: 'all 0.15s ease',
                             }}
-                            title={tDiv.fullName}
                           >
-                            {tDiv.fullName}
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}}
+                              style={{
+                                width: '16px',
+                                height: '16px',
+                                accentColor: tDiv.color,
+                                cursor: 'pointer',
+                              }}
+                            />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 800, color: isChecked ? tDiv.color : 'var(--text-primary)', fontSize: '0.84rem' }}>
+                                {tDiv.label}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '0.72rem',
+                                  color: 'var(--text-muted)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                                title={tDiv.fullName}
+                              >
+                                {tDiv.fullName}
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Category 2: Queue Counter Windows & Front Desk */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.3rem' }}>
+                      <div style={{ fontSize: '0.73rem', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Queue Counter Windows & Front Desk (All Services Access)
                       </div>
-                    );
-                  })}
+                      <span style={{ fontSize: '0.68rem', color: '#047857', fontWeight: 700, backgroundColor: '#ecfdf5', padding: '0.1rem 0.45rem', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+                        ⚡ Access All Divisions
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                        gap: '0.55rem',
+                      }}
+                    >
+                      {TARGET_DIVISIONS.filter((d) => d.category === 'counter').map((tDiv) => {
+                        const targetId = divisionMap[tDiv.key] || (tDiv.alias && divisionMap[tDiv.alias]);
+                        const isChecked = Boolean(
+                          allDivisionsSelected || (targetId && selectedDivisionIds.includes(targetId))
+                        );
+
+                        return (
+                          <div
+                            key={tDiv.key}
+                            onClick={() => handleToggleDivision(tDiv.key, tDiv.alias)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.65rem',
+                              padding: '0.65rem 0.85rem',
+                              borderRadius: 'var(--radius-md)',
+                              border: isChecked ? `2px solid ${tDiv.color}` : '1px solid var(--border-color)',
+                              backgroundColor: isChecked ? tDiv.bg : 'var(--bg-ground)',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}}
+                              style={{
+                                width: '16px',
+                                height: '16px',
+                                accentColor: tDiv.color,
+                                cursor: 'pointer',
+                              }}
+                            />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <span style={{ fontWeight: 800, color: isChecked ? tDiv.color : 'var(--text-primary)', fontSize: '0.84rem' }}>
+                                  {tDiv.label}
+                                </span>
+                                <span style={{ fontSize: '0.66rem', color: '#047857', fontWeight: 700, backgroundColor: '#ecfdf5', padding: '0.05rem 0.35rem', borderRadius: '4px' }}>
+                                  All Divs
+                                </span>
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '0.72rem',
+                                  color: 'var(--text-muted)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                                title={tDiv.fullName}
+                              >
+                                {tDiv.fullName}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
 
