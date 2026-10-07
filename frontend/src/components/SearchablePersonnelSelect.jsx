@@ -7,6 +7,9 @@ const DIVISION_BADGES = {
   'TSSD2': { color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
   'IMSD': { color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
   'MALSU': { color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+  'Front Desk': { color: '#0e7490', bg: '#ecfeff', border: '#a5f3fc' },
+  'FRONT DESK': { color: '#0e7490', bg: '#ecfeff', border: '#a5f3fc' },
+  'ALL': { color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4' },
 };
 
 function getInitials(name) {
@@ -249,18 +252,29 @@ export default function SearchablePersonnelSelect({
 
   const getDivisionBadge = (divisionName) => {
     if (!divisionName) return null;
-    const style = DIVISION_BADGES[divisionName.trim()] || {
-      color: '#475569',
-      bg: '#f1f5f9',
-      border: '#cbd5e1',
-    };
+    const trimmed = divisionName.trim();
+    let style = DIVISION_BADGES[trimmed];
+
+    if (!style) {
+      const lower = trimmed.toLowerCase();
+      if (lower.startsWith('window') || lower.startsWith('counter')) {
+        style = { color: '#4338ca', bg: '#eef2ff', border: '#c7d2fe' };
+      } else if (lower.includes('front desk')) {
+        style = { color: '#0e7490', bg: '#ecfeff', border: '#a5f3fc' };
+      } else if (lower === 'all' || lower.includes('all services')) {
+        style = { color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4' };
+      } else {
+        style = { color: '#475569', bg: '#f1f5f9', border: '#cbd5e1' };
+      }
+    }
+
     return (
       <span
         key={divisionName}
         style={{
-          fontSize: '0.7rem',
+          fontSize: '0.68rem',
           fontWeight: 700,
-          padding: '0.12rem 0.45rem',
+          padding: '0.1rem 0.4rem',
           borderRadius: '4px',
           color: style.color,
           backgroundColor: style.bg,
@@ -397,7 +411,34 @@ export default function SearchablePersonnelSelect({
               )}
 
               {/* Division badges */}
-              {selectedPersonnel.division_names?.map((d) => getDivisionBadge(d))}
+              {selectedPersonnel.division_names && (
+                <>
+                  {selectedPersonnel.division_names.length <= 3 ? (
+                    selectedPersonnel.division_names.map((d) => getDivisionBadge(d))
+                  ) : (
+                    <>
+                      {selectedPersonnel.division_names.slice(0, 2).map((d) => getDivisionBadge(d))}
+                      <span
+                        title={selectedPersonnel.division_names.join(', ')}
+                        style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          padding: '0.1rem 0.4rem',
+                          borderRadius: '4px',
+                          color: '#475569',
+                          backgroundColor: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                          cursor: 'help',
+                        }}
+                      >
+                        +{selectedPersonnel.division_names.length - 2} more
+                      </span>
+                    </>
+                  )}
+                </>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8' }}>
@@ -554,6 +595,7 @@ export default function SearchablePersonnelSelect({
             style={{
               maxHeight: maxListHeight,
               overflowY: 'auto',
+              overflowX: 'hidden',
               padding: '0.25rem 0',
             }}
           >
@@ -684,7 +726,7 @@ export default function SearchablePersonnelSelect({
                     style={{
                       padding: '0.65rem 0.85rem',
                       display: 'flex',
-                      alignItems: 'center',
+                      alignItems: 'flex-start',
                       justifyContent: 'space-between',
                       cursor: isBusy ? 'not-allowed' : 'pointer',
                       opacity: isBusy ? 0.65 : 1,
@@ -702,10 +744,11 @@ export default function SearchablePersonnelSelect({
                         : '3px solid transparent',
                       transition: 'background-color 0.1s ease',
                       gap: '0.75rem',
+                      overflow: 'hidden',
                     }}
                   >
                     {/* Left: Avatar + Details */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem', flex: 1, minWidth: 0 }}>
                       <div
                         style={{
                           width: '32px',
@@ -721,6 +764,7 @@ export default function SearchablePersonnelSelect({
                           fontWeight: 800,
                           fontSize: '0.75rem',
                           flexShrink: 0,
+                          marginTop: '2px',
                           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.12)',
                         }}
                       >
@@ -812,10 +856,10 @@ export default function SearchablePersonnelSelect({
                           style={{
                             fontSize: '0.78rem',
                             color: '#64748b',
-                            marginTop: '0.15rem',
+                            marginTop: '0.18rem',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '0.5rem',
+                            gap: '0.45rem',
                             flexWrap: 'wrap',
                           }}
                         >
@@ -826,11 +870,59 @@ export default function SearchablePersonnelSelect({
                             </span>
                           )}
                         </div>
+
+                        {/* Division Badges Row */}
+                        {p.division_names && p.division_names.length > 0 && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              flexWrap: 'wrap',
+                              marginTop: '0.3rem',
+                            }}
+                          >
+                            {p.division_names.length <= 6 ? (
+                              p.division_names.map((d) => getDivisionBadge(d))
+                            ) : (
+                              <>
+                                {p.division_names.slice(0, 5).map((d) => getDivisionBadge(d))}
+                                <span
+                                  title={p.division_names.join(', ')}
+                                  style={{
+                                    fontSize: '0.68rem',
+                                    fontWeight: 700,
+                                    padding: '0.1rem 0.4rem',
+                                    borderRadius: '4px',
+                                    color: '#475569',
+                                    backgroundColor: '#f1f5f9',
+                                    border: '1px solid #cbd5e1',
+                                    cursor: 'help',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  +{p.division_names.length - 5} more
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    {/* Right: Specialist Badge, Busy info, Division badges, Checkmark */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                    {/* Right: Specialist Badge, Busy info, Checkmark */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-end',
+                        justifyContent: 'flex-start',
+                        gap: '0.35rem',
+                        flexShrink: 0,
+                        marginLeft: '0.5rem',
+                        paddingTop: '2px',
+                      }}
+                    >
                       {serviceId &&
                         Array.isArray(p.service_ids) &&
                         p.service_ids.includes(Number(serviceId)) && (
@@ -851,7 +943,7 @@ export default function SearchablePersonnelSelect({
                           </span>
                         )}
 
-                      {isBusy ? (
+                      {isBusy && (
                         <span
                           style={{
                             fontSize: '0.72rem',
@@ -869,10 +961,6 @@ export default function SearchablePersonnelSelect({
                         >
                           🚫 Busy · #{busyInfo.queue_no}
                         </span>
-                      ) : (
-                        <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                          {p.division_names?.map((d) => getDivisionBadge(d))}
-                        </div>
                       )}
 
                       {isSelected && !isBusy && (
@@ -880,8 +968,8 @@ export default function SearchablePersonnelSelect({
                           style={{
                             color: 'var(--dole-blue)',
                             fontWeight: 800,
-                            fontSize: '0.95rem',
-                            marginLeft: '0.3rem',
+                            fontSize: '1rem',
+                            lineHeight: 1,
                           }}
                         >
                           ✓
