@@ -111,6 +111,24 @@ export default function StaffPersonnel() {
   const [officeId, setOfficeId] = useState('');
   const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
 
+  // Position Management state
+  const [positionsList, setPositionsList] = useState(() => {
+    try {
+      const cached = localStorage.getItem('dole_ctms_positions_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+    return DOLE_POSITIONS.map((title) => ({ id: null, title, is_custom: false }));
+  });
+  const [isAddingPosition, setIsAddingPosition] = useState(false);
+  const [newPositionName, setNewPositionName] = useState('');
+  const [savingPosition, setSavingPosition] = useState(false);
+  const [showManagePositionsModal, setShowManagePositionsModal] = useState(false);
+  const [deletingPositionId, setDeletingPositionId] = useState(null);
+  const [showStandardPositionsInManager, setShowStandardPositionsInManager] = useState(false);
+
   // Delete Confirmation Modal
   const [deleteModalPersonnel, setDeleteModalPersonnel] = useState(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -123,10 +141,11 @@ export default function StaffPersonnel() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [perRes, offRes, divRes] = await Promise.allSettled([
+      const [perRes, offRes, divRes, posRes] = await Promise.allSettled([
         staffApi.getPersonnel(),
         staffApi.getOffices(),
         staffApi.getDivisions(),
+        staffApi.getPositions(),
       ]);
 
       if (perRes.status === 'fulfilled') {
@@ -137,6 +156,12 @@ export default function StaffPersonnel() {
       }
       if (divRes.status === 'fulfilled') {
         setDivisions(Array.isArray(divRes.value) ? divRes.value : []);
+      }
+      if (posRes.status === 'fulfilled' && Array.isArray(posRes.value)) {
+        setPositionsList(posRes.value);
+        try {
+          localStorage.setItem('dole_ctms_positions_cache', JSON.stringify(posRes.value));
+        } catch (_) {}
       }
     } catch (err) {
       showToast(err.message || 'Failed to load personnel data', 'error');
@@ -175,6 +200,180 @@ export default function StaffPersonnel() {
     return TARGET_DIVISIONS.map((t) => ({ id: divisionMap[t.key] || t.key, name: t.label }));
   }, [divisions, divisionMap]);
 
+  // Normalize positions list for dropdowns and management
+  const normalizedPositions = useMemo(() => {
+    const map = new Map();
+
+    // 1. Seed with DOLE_POSITIONS standard items
+    DOLE_POSITIONS.forEach((title) => {
+      map.set(title.toLowerCase(), { id: null, title, is_custom: false, personnel_count: 0 });
+    });
+
+    // 2. Overlay positions from API or cached state
+    if (Array.isArray(positionsList)) {
+      positionsList.forEach((p) => {
+        const t = typeof p === 'string' ? p.trim() : (p?.title || '').trim();
+        if (t) {
+          const key = t.toLowerCase();
+          const existing = map.get(key);
+          map.set(key, {
+            id: typeof p === 'object' && p?.id ? p.id : existing?.id || null,
+            title: t,
+            is_custom:
+              typeof p === 'object' && typeof p?.is_custom === 'boolean'
+                ? p.is_custom
+                : existing
+                ? existing.is_custom
+                : true,
+            personnel_count:
+              typeof p === 'object' && typeof p?.personnel_count === 'number'
+                ? p.personnel_count
+                : existing?.personnel_count || 0,
+          });
+        }
+      });
+    }
+
+    // 3. Ensure any existing personnel positions in table are accounted for
+    personnelList.forEach((per) => {
+      if (per?.position && per.position.trim()) {
+        const pTitle = per.position.trim();
+        const key = pTitle.toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, {
+            id: null,
+            title: pTitle,
+            is_custom: !DOLE_POSITIONS.includes(pTitle),
+            personnel_count: 1,
+          });
+        }
+      }
+    });
+
+    // 4. Ensure position currently selected in the form is present
+    if (position && position.trim()) {
+      const cur = position.trim();
+      const key = cur.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          id: null,
+          title: cur,
+          is_custom: !DOLE_POSITIONS.includes(cur),
+          personnel_count: 0,
+        });
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
+  }, [positionsList, personnelList, position]);
+
+  const customPositions = useMemo(() => {
+    return normalizedPositions.filter((p) => p.is_custom);
+  }, [normalizedPositions]);
+
+  const standardPositions = useMemo(() => {
+    return normalizedPositions.filter((p) => !p.is_custom);
+  }, [normalizedPositions]);
+
+  // Save new position handler (saves to backend and automatically selects)
+  const handleSaveNewPosition = async (customName = null) => {
+    const raw = typeof customName === 'string' ? customName : newPositionName;
+    const trimmed = (raw || '').trim();
+    if (!trimmed) {
+      showToast('Please enter a position title.', 'error');
+      return;
+    }
+
+    // Check if already in list
+    const existing = normalizedPositions.find(
+      (p) => p.title.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (existing) {
+      setPosition(existing.title);
+      setIsAddingPosition(false);
+      setNewPositionName('');
+      showToast(`Position "${existing.title}" is already in the list and has been selected.`);
+      return;
+    }
+
+    setSavingPosition(true);
+    try {
+      const res = await staffApi.createPosition({ title: trimmed });
+      const addedObj = res && res.id ? res : { id: null, title: trimmed, is_custom: true, personnel_count: 0 };
+      setPositionsList((prev) => {
+        const next = [...prev, addedObj];
+        try {
+          localStorage.setItem('dole_ctms_positions_cache', JSON.stringify(next));
+        } catch (_) {}
+        return next;
+      });
+      setPosition(trimmed);
+      setIsAddingPosition(false);
+      setNewPositionName('');
+      showToast(`Position "${trimmed}" added and selected!`);
+    } catch (err) {
+      // In case of network or API error, fallback to local addition
+      const fallbackObj = { id: null, title: trimmed, is_custom: true, personnel_count: 0 };
+      setPositionsList((prev) => {
+        const next = [...prev, fallbackObj];
+        try {
+          localStorage.setItem('dole_ctms_positions_cache', JSON.stringify(next));
+        } catch (_) {}
+        return next;
+      });
+      setPosition(trimmed);
+      setIsAddingPosition(false);
+      setNewPositionName('');
+      showToast(`Position "${trimmed}" added to selection.`);
+    } finally {
+      setSavingPosition(false);
+    }
+  };
+
+  // Delete custom position handler
+  const handleDeletePosition = async (posObj) => {
+    if (!posObj || !posObj.is_custom) return;
+
+    // Guard: check if any personnel currently have this position
+    const assignedCount = personnelList.filter(
+      (p) => (p.position || '').toLowerCase() === posObj.title.toLowerCase()
+    ).length;
+
+    if (assignedCount > 0) {
+      showToast(`Cannot delete "${posObj.title}" because it is currently assigned to ${assignedCount} personnel record(s).`, 'error');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to remove the position "${posObj.title}" from the options list?`)) {
+      return;
+    }
+
+    setDeletingPositionId(posObj.id || posObj.title);
+    try {
+      if (posObj.id) {
+        await staffApi.deletePosition(posObj.id);
+      }
+      setPositionsList((prev) => {
+        const next = prev.filter((p) => {
+          const t = typeof p === 'string' ? p : p.title;
+          return t.toLowerCase() !== posObj.title.toLowerCase();
+        });
+        try {
+          localStorage.setItem('dole_ctms_positions_cache', JSON.stringify(next));
+        } catch (_) {}
+        return next;
+      });
+      if (position.toLowerCase() === posObj.title.toLowerCase()) {
+        setPosition('');
+      }
+      showToast(`Position "${posObj.title}" removed.`);
+    } catch (err) {
+      showToast(err.message || 'Failed to delete position.', 'error');
+    } finally {
+      setDeletingPositionId(null);
+    }
+  };
+
   // Open Create Modal
   const openCreateModal = () => {
     setModalMode('create');
@@ -184,6 +383,8 @@ export default function StaffPersonnel() {
     setLastName('');
     setEmployeeId('');
     setPosition('');
+    setIsAddingPosition(false);
+    setNewPositionName('');
     setOfficeId(offices[0]?.id || '');
     setSelectedDivisionIds([]);
     setShowModal(true);
@@ -198,6 +399,8 @@ export default function StaffPersonnel() {
     setLastName(p.last_name || '');
     setEmployeeId(p.employee_id || '');
     setPosition(p.position || '');
+    setIsAddingPosition(false);
+    setNewPositionName('');
     setOfficeId(p.office || p.office_id || '');
 
     let currentDivIds = [];
@@ -456,25 +659,45 @@ export default function StaffPersonnel() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="btn btn-primary"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.65rem 1.25rem',
-              fontSize: '0.92rem',
-              fontWeight: 700,
-              backgroundColor: 'var(--dole-blue)',
-              color: '#fff',
-              borderRadius: 'var(--radius-md)',
-              boxShadow: 'var(--shadow-md)',
-            }}
-          >
-            <span>➕</span> Add Personnel Information
-          </button>
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setShowManagePositionsModal(true)}
+              className="btn btn-outline"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.65rem 1rem',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: '#fff',
+              }}
+              title="Manage and view custom and standard DOLE positions"
+            >
+              <span>💼</span> Positions Directory{customPositions.length > 0 ? ` (${customPositions.length})` : ''}
+            </button>
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.65rem 1.25rem',
+                fontSize: '0.92rem',
+                fontWeight: 700,
+                backgroundColor: 'var(--dole-blue)',
+                color: '#fff',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-md)',
+              }}
+            >
+              <span>➕</span> Add Personnel Information
+            </button>
+          </div>
         </div>
 
         {/* Division Restriction Policy Banner */}
@@ -1092,13 +1315,69 @@ export default function StaffPersonnel() {
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                    Position <span style={{ color: 'var(--dole-red)' }}>*</span>
-                  </label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                    <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', margin: 0 }}>
+                      Position <span style={{ color: 'var(--dole-red)' }}>*</span>
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingPosition((prev) => !prev);
+                          setNewPositionName('');
+                        }}
+                        style={{
+                          background: isAddingPosition ? '#eff6ff' : 'transparent',
+                          border: isAddingPosition ? '1px solid var(--dole-blue)' : '1px solid #cbd5e1',
+                          color: 'var(--dole-blue)',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title={isAddingPosition ? 'Cancel adding position' : 'Add a new custom position to the options list'}
+                      >
+                        <span>{isAddingPosition ? '✕ Cancel' : '➕ Add Position'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowManagePositionsModal(true)}
+                        style={{
+                          background: 'transparent',
+                          border: '1px solid #cbd5e1',
+                          color: 'var(--text-secondary)',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title="Manage added positions directory"
+                      >
+                        <span>⚙️ Manage{customPositions.length > 0 ? ` (${customPositions.length})` : ''}</span>
+                      </button>
+                    </div>
+                  </div>
+
                   <select
-                    required
+                    required={!isAddingPosition}
                     value={position}
-                    onChange={(e) => setPosition(e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === '__add_new__') {
+                        setIsAddingPosition(true);
+                      } else {
+                        setPosition(e.target.value);
+                      }
+                    }}
                     style={{
                       width: '100%',
                       padding: '0.62rem 0.8rem',
@@ -1110,15 +1389,114 @@ export default function StaffPersonnel() {
                     }}
                   >
                     <option value="" disabled>-- Select Position --</option>
-                    {DOLE_POSITIONS.map((pos) => (
-                      <option key={pos} value={pos}>
-                        {pos}
-                      </option>
-                    ))}
-                    {position && !DOLE_POSITIONS.includes(position) && (
+                    <option value="__add_new__" style={{ color: 'var(--dole-blue)', fontWeight: 700, backgroundColor: '#f0f9ff' }}>
+                      ➕ + Add New Position...
+                    </option>
+                    {customPositions.length > 0 && (
+                      <optgroup label={`⭐ Custom / Added Positions (${customPositions.length})`}>
+                        {customPositions.map((pos) => (
+                          <option key={`custom-${pos.id || pos.title}`} value={pos.title}>
+                            {pos.title}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="DOLE Standard Positions">
+                      {standardPositions.map((pos) => (
+                        <option key={`std-${pos.id || pos.title}`} value={pos.title}>
+                          {pos.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {position && !normalizedPositions.some((p) => p.title.toLowerCase() === position.toLowerCase()) && (
                       <option value={position}>{position} (Current)</option>
                     )}
                   </select>
+
+                  {/* Inline Quick Add Position Field */}
+                  {isAddingPosition && (
+                    <div
+                      style={{
+                        marginTop: '0.5rem',
+                        padding: '0.75rem',
+                        backgroundColor: '#f8fafc',
+                        border: '1.5px dashed var(--dole-blue)',
+                        borderRadius: 'var(--radius-sm)',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--dole-blue)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          ➕ Add New Position
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddingPosition(false);
+                            setNewPositionName('');
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            fontSize: '0.85rem',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: 0,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="Enter position title (e.g. Senior Arbiter)..."
+                          value={newPositionName}
+                          onChange={(e) => setNewPositionName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSaveNewPosition();
+                            } else if (e.key === 'Escape') {
+                              setIsAddingPosition(false);
+                            }
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '0.55rem 0.75rem',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border-color)',
+                            fontSize: '0.85rem',
+                            outline: 'none',
+                            backgroundColor: '#fff',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          disabled={savingPosition || !newPositionName.trim()}
+                          onClick={() => handleSaveNewPosition()}
+                          style={{
+                            padding: '0.55rem 0.9rem',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: 'var(--dole-blue)',
+                            color: '#fff',
+                            border: 'none',
+                            fontSize: '0.82rem',
+                            fontWeight: 700,
+                            cursor: savingPosition || !newPositionName.trim() ? 'not-allowed' : 'pointer',
+                            opacity: savingPosition || !newPositionName.trim() ? 0.6 : 1,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {savingPosition ? 'Saving...' : 'Add & Select'}
+                        </button>
+                      </div>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem', display: 'block' }}>
+                        Press Enter to save. The position will be immediately saved to the directory and selected.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1382,6 +1760,298 @@ export default function StaffPersonnel() {
                 }}
               >
                 {deleteSubmitting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* Modal: Manage Positions Directory                        */}
+      {/* ========================================================= */}
+      {showManagePositionsModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(17, 24, 39, 0.65)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10001,
+            padding: '1rem',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              borderRadius: 'var(--radius-lg)',
+              maxWidth: '560px',
+              width: '100%',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 45px rgba(0,0,0,0.22)',
+              border: '1px solid var(--border-color)',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: '1.25rem 1.5rem',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'var(--bg-ground)',
+              }}
+            >
+              <div>
+                <h3 style={{ fontSize: '1.15rem', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span>💼</span> Positions Directory
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Manage official and custom positions for DOLE personnel.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManagePositionsModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.2rem',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '0.2rem',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Add New Position Box */}
+              <div
+                style={{
+                  padding: '1rem',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 'var(--radius-md)',
+                }}
+              >
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
+                  ➕ Add New Position to Directory
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Enter position title..."
+                    value={newPositionName}
+                    onChange={(e) => setNewPositionName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSaveNewPosition();
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-color)',
+                      fontSize: '0.85rem',
+                      outline: 'none',
+                      backgroundColor: '#fff',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={savingPosition || !newPositionName.trim()}
+                    onClick={() => handleSaveNewPosition()}
+                    style={{
+                      padding: '0.55rem 1rem',
+                      backgroundColor: 'var(--dole-blue)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 'var(--radius-sm)',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: savingPosition || !newPositionName.trim() ? 'not-allowed' : 'pointer',
+                      opacity: savingPosition || !newPositionName.trim() ? 0.6 : 1,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {savingPosition ? 'Adding...' : 'Add Position'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Positions List */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <h4 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    Custom Added Positions ({customPositions.length})
+                  </h4>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    Added dynamically by administrator
+                  </span>
+                </div>
+
+                {customPositions.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '1.25rem',
+                      textAlign: 'center',
+                      backgroundColor: 'var(--bg-ground)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px dashed var(--border-color)',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    No custom positions added yet. Use the field above or in the personnel form to add positions.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '220px', overflowY: 'auto' }}>
+                    {customPositions.map((pos) => {
+                      const assignedCount = personnelList.filter(
+                        (p) => (p.position || '').toLowerCase() === pos.title.toLowerCase()
+                      ).length;
+                      return (
+                        <div
+                          key={`manage-${pos.id || pos.title}`}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '0.6rem 0.85rem',
+                            backgroundColor: 'var(--bg-ground)',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border-color)',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
+                              {pos.title}
+                            </div>
+                            <span style={{ fontSize: '0.72rem', color: assignedCount > 0 ? 'var(--dole-blue)' : 'var(--text-muted)' }}>
+                              {assignedCount > 0 ? `👤 Assigned to ${assignedCount} personnel` : '👤 Not currently assigned'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={deletingPositionId === (pos.id || pos.title) || assignedCount > 0}
+                            onClick={() => handleDeletePosition(pos)}
+                            style={{
+                              background: 'none',
+                              border: '1px solid',
+                              borderColor: assignedCount > 0 ? '#e2e8f0' : 'rgba(239, 68, 68, 0.4)',
+                              color: assignedCount > 0 ? '#94a3b8' : 'var(--dole-red)',
+                              borderRadius: '4px',
+                              padding: '0.3rem 0.55rem',
+                              fontSize: '0.74rem',
+                              fontWeight: 600,
+                              cursor: assignedCount > 0 ? 'not-allowed' : 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                            }}
+                            title={assignedCount > 0 ? 'Cannot delete: Assigned to personnel' : 'Delete this position'}
+                          >
+                            🗑️ Delete
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Standard Positions Collapsible */}
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowStandardPositionsInManager((prev) => !prev)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    color: 'var(--dole-blue)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <span>{showStandardPositionsInManager ? '▼' : '▶'}</span>
+                  <span>DOLE Standard Positions ({standardPositions.length})</span>
+                </button>
+                {showStandardPositionsInManager && (
+                  <div
+                    style={{
+                      marginTop: '0.6rem',
+                      maxHeight: '180px',
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '0.35rem',
+                      padding: '0.6rem',
+                      backgroundColor: 'var(--bg-ground)',
+                      borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    {standardPositions.map((pos) => (
+                      <span
+                        key={`std-chip-${pos.title}`}
+                        style={{
+                          fontSize: '0.74rem',
+                          backgroundColor: '#fff',
+                          border: '1px solid var(--border-color)',
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '12px',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        {pos.title}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                padding: '0.85rem 1.5rem',
+                borderTop: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-ground)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowManagePositionsModal(false)}
+                className="btn btn-primary"
+                style={{
+                  padding: '0.5rem 1.2rem',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  backgroundColor: 'var(--dole-blue)',
+                  color: '#fff',
+                }}
+              >
+                Done
               </button>
             </div>
           </div>

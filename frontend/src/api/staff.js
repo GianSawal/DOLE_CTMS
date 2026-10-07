@@ -148,6 +148,16 @@ export const staffApi = {
     method: 'POST',
   }),
 
+  // Positions Management (Admin Only)
+  getPositions: () => apiRequest('/staff/positions/'),
+  createPosition: (data) => apiRequest('/staff/positions/', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  deletePosition: (id) => apiRequest(`/staff/positions/${id}/`, {
+    method: 'DELETE',
+  }),
+
   getEmployees: (filters = {}) => {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => {

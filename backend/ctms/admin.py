@@ -12,6 +12,7 @@ from .models import (
     CtmsServiceDefaultOfficer,
     CtmsTransaction,
     CtmsAuditLog,
+    DolePosition,
 )
 
 @admin.register(CsmDivision)
@@ -131,4 +132,12 @@ class CtmsAuditLogAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(DolePosition)
+class DolePositionAdmin(admin.ModelAdmin):
+    list_display = ('id', 'title', 'is_custom', 'created_at')
+    search_fields = ('title',)
+    list_filter = ('is_custom',)
+    ordering = ('title',)
 

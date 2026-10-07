@@ -10,6 +10,7 @@ from .models import (
     CtmsStaffDivision,
     CtmsEmployee,
     DolePersonnel,
+    DolePosition,
     CtmsTransaction,
     CtmsAuditLog,
     CtmsNotification,
@@ -201,6 +202,24 @@ class DolePersonnelSerializer(serializers.ModelSerializer):
 
     def get_service_names(self, obj):
         return [s.name for s in obj.services.all()]
+
+
+class DolePositionSerializer(serializers.ModelSerializer):
+    personnel_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DolePosition
+        fields = [
+            'id',
+            'title',
+            'is_custom',
+            'created_at',
+            'personnel_count',
+        ]
+        read_only_fields = ['id', 'created_at', 'personnel_count']
+
+    def get_personnel_count(self, obj):
+        return DolePersonnel.objects.filter(position__iexact=obj.title).count()
 
 
 class CtmsUserAccountSerializer(serializers.ModelSerializer):

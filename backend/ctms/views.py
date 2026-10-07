@@ -32,6 +32,8 @@ from .models import (
     CtmsStaffDivision,
     CtmsEmployee,
     DolePersonnel,
+    DolePosition,
+    DEFAULT_DOLE_POSITIONS,
     CtmsDisplayConfig,
     CtmsOfficeQrConfig,
     CtmsTransaction,
@@ -48,6 +50,7 @@ from .serializers import (
     CtmsStaffOfficeSerializer,
     CtmsEmployeeSerializer,
     DolePersonnelSerializer,
+    DolePositionSerializer,
     CtmsUserAccountSerializer,
     CtmsNotificationSerializer,
     CheckinRequestSerializer,
@@ -2330,6 +2333,107 @@ class StaffPersonnelViewSet(viewsets.ModelViewSet):
             "is_active": instance.is_active,
             "message": f"Personnel status set to {'active' if instance.is_active else 'inactive'}."
         })
+
+
+class StaffPositionViewSet(viewsets.ModelViewSet):
+    """
+    CRUD management for DOLE positions catalog.
+    Enables administrators to view, add, and remove custom positions dynamically.
+    """
+    serializer_class = DolePositionSerializer
+    queryset = DolePosition.objects.all().order_by('title')
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsStaffUser()]
+        return [IsAdminUserOnly()]
+
+    def list(self, request, *args, **kwargs):
+        # Auto-seed standard positions if not yet populated
+        if not DolePosition.objects.filter(is_custom=False).exists():
+            default_objs = [DolePosition(title=title, is_custom=False) for title in DEFAULT_DOLE_POSITIONS]
+            DolePosition.objects.bulk_create(default_objs, ignore_conflicts=True)
+
+            # Also seed any distinct positions already used in DolePersonnel records
+            existing_pers_pos = (
+                DolePersonnel.objects.exclude(position='')
+                .values_list('position', flat=True)
+                .distinct()
+            )
+            custom_objs = [
+                DolePosition(title=pos.strip(), is_custom=True)
+                for pos in existing_pers_pos
+                if pos.strip() and not DolePosition.objects.filter(title__iexact=pos.strip()).exists()
+            ]
+            if custom_objs:
+                DolePosition.objects.bulk_create(custom_objs, ignore_conflicts=True)
+
+        return super().list(request, *args, **kwargs)
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        title = str(request.data.get('title', '')).strip()
+        if not title:
+            return Response({"detail": "Position title is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(title) > 150:
+            return Response({"detail": "Position title cannot exceed 150 characters."}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = DolePosition.objects.filter(title__iexact=title).first()
+        if existing:
+            return Response(
+                {
+                    "detail": f"Position '{existing.title}' already exists.",
+                    "position": DolePositionSerializer(existing).data,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        pos_obj = DolePosition.objects.create(title=title, is_custom=True)
+
+        log_audit_event(
+            action='POSITION_CREATE',
+            category=CtmsAuditLog.CATEGORY_PERSONNEL,
+            actor=request.user,
+            request=request,
+            target_type='Position',
+            target_id=pos_obj.id,
+            target_repr=pos_obj.title,
+            description=f"Created custom position '{pos_obj.title}'"
+        )
+
+        return Response(DolePositionSerializer(pos_obj).data, status=status.HTTP_201_CREATED)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not instance.is_custom:
+            return Response(
+                {"detail": "Standard DOLE positions cannot be deleted."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        active_count = DolePersonnel.objects.filter(position__iexact=instance.title).count()
+        if active_count > 0:
+            return Response(
+                {"detail": f"Cannot delete '{instance.title}' because it is assigned to {active_count} personnel record(s)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        pos_title = instance.title
+        instance.delete()
+
+        log_audit_event(
+            action='POSITION_DELETE',
+            category=CtmsAuditLog.CATEGORY_PERSONNEL,
+            actor=request.user,
+            request=request,
+            target_type='Position',
+            target_id=kwargs.get('pk', ''),
+            target_repr=pos_title,
+            description=f"Deleted custom position '{pos_title}'"
+        )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class StaffAuditLogListView(APIView):

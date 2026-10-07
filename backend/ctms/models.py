@@ -218,6 +218,72 @@ class DolePersonnel(models.Model):
         return f"{self.first_name}{mid} {self.last_name}"
 
 
+DEFAULT_DOLE_POSITIONS = [
+    'Accountant II',
+    'Administrative Aide',
+    'Administrative Aide I',
+    'Administrative Aide II',
+    'Administrative Aide III',
+    'Administrative Aide IV',
+    'Administrative Aide V',
+    'Administrative Aide VI',
+    'Administrative Assistant I',
+    'Administrative Assistant II',
+    'Administrative Assistant III',
+    'Administrative Assistant IV',
+    'Administrative Officer II',
+    'Administrative Officer IV',
+    'Attorney III',
+    'Attorney IV',
+    'Chief Administrative Officer',
+    'Department Legislative Liaison Specialist',
+    'Director',
+    'GIP',
+    'Information System Analyst II',
+    'Information Technology Officer I',
+    'Information Technology Officer II',
+    'Job Order',
+    'Labor and Employment Officer I',
+    'Labor and Employment Officer II',
+    'Labor and Employment Officer III',
+    'Planning Officer I',
+    'Planning Officer II',
+    'Planning Officer III',
+    'Planning Officer V',
+    'Project Evaluation Officer I',
+    'Project Evaluation Officer II',
+    'Project Evaluation Officer III',
+    'Project Evaluation Officer IV',
+    'Project Evaluation Officer V',
+    'Regional Director',
+    'Senior Labor and Employment Officer',
+    'Sheriff',
+    'Statistician',
+    'Supervising Administrative Officer',
+    'Supervising Labor Employment Officer',
+]
+
+
+class DolePosition(models.Model):
+    """
+    Positions directory for DOLE personnel.
+    Supports standard pre-configured positions and custom admin-added positions.
+    """
+    id = models.BigAutoField(primary_key=True)
+    title = models.CharField(max_length=150, unique=True)
+    is_custom = models.BooleanField(default=True, help_text="True if created dynamically by administrator")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ctms_dole_position'
+        verbose_name = 'DOLE Position'
+        verbose_name_plural = 'DOLE Positions'
+        ordering = ['title']
+
+    def __str__(self):
+        return self.title
+
+
 class CtmsDisplayConfig(models.Model):
     id = models.BigAutoField(primary_key=True)
     office = models.OneToOneField(CsmOffice, on_delete=models.CASCADE, related_name='display_config')

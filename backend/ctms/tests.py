@@ -15,6 +15,7 @@ from .models import (
     CtmsTransaction,
     CtmsServiceDefaultOfficer,
     DolePersonnel,
+    DolePosition,
     CtmsAuditLog,
     CtmsNotification,
     CtmsOfficeQrConfig,
@@ -1468,6 +1469,43 @@ class CtmsCoreTestCase(TestCase):
         personnel_names = [p['full_name'] for p in res_personnel.data]
         self.assertIn("Clark Personnel", personnel_names)
         self.assertNotIn("Regional Officer", personnel_names)
+
+    def test_position_management_api(self):
+        """Test listing, adding, and deleting positions by admin."""
+        admin_user = User.objects.create_superuser(username="adminpos", password="password123")
+        self.client.force_authenticate(user=admin_user)
+
+        # 1. Listing positions automatically seeds standard positions
+        res_list = self.client.get("/api/staff/positions/")
+        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(res_list.data), 42)
+        titles = [p['title'] for p in res_list.data]
+        self.assertIn("Accountant II", titles)
+        self.assertIn("Director", titles)
+
+        # 2. Add a new custom position
+        new_pos_title = "Senior Labor Relations Arbiter"
+        res_create = self.client.post("/api/staff/positions/", {"title": new_pos_title})
+        self.assertEqual(res_create.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res_create.data["title"], new_pos_title)
+        self.assertTrue(res_create.data["is_custom"])
+        pos_id = res_create.data["id"]
+
+        # 3. Duplicate position rejected
+        res_dup = self.client.post("/api/staff/positions/", {"title": new_pos_title.lower()})
+        self.assertEqual(res_dup.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already exists", res_dup.data["detail"])
+
+        # 4. Cannot delete standard position
+        standard_pos = DolePosition.objects.filter(is_custom=False).first()
+        res_del_std = self.client.delete(f"/api/staff/positions/{standard_pos.id}/")
+        self.assertEqual(res_del_std.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Standard DOLE positions cannot be deleted", res_del_std.data["detail"])
+
+        # 5. Delete custom position succeeds when not assigned to personnel
+        res_del_custom = self.client.delete(f"/api/staff/positions/{pos_id}/")
+        self.assertEqual(res_del_custom.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(DolePosition.objects.filter(id=pos_id).exists())
 
 
 
