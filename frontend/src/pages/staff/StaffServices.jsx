@@ -12,7 +12,96 @@ export const DIVISION_COLORS = {
   'TSSD2': { color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd', label: 'TSSD 2' },
   'IMSD': { color: '#047857', bg: '#ecfdf5', border: '#a7f3d0', label: 'IMSD' },
   'MALSU': { color: '#b45309', bg: '#fffbeb', border: '#fde68a', label: 'MALSU' },
+  'ORD': { color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe', label: 'ORD' },
+  'FRONT DESK': { color: '#475569', bg: '#f1f5f9', border: '#cbd5e1', label: 'Front Desk' },
   'ALL': { color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', label: 'ALL DIVISIONS' },
+};
+
+/**
+ * Intelligently format personnel division and window/counter badges.
+ * Groups consecutive windows (e.g. Windows 2–8) into a clean, compact badge
+ * to avoid blowing out row width and squishing officer information.
+ */
+export const formatPersonnelBadges = (divisionNames = []) => {
+  if (!divisionNames || divisionNames.length === 0) return [];
+
+  const orgDivisions = [];
+  const windowNumbers = [];
+  const otherBadges = [];
+
+  divisionNames.forEach((name) => {
+    if (!name) return;
+    const trimmed = String(name).trim();
+    const windowMatch = trimmed.match(/^window\s*(\d+)$/i);
+    if (windowMatch) {
+      windowNumbers.push(parseInt(windowMatch[1], 10));
+    } else if (/^front\s*desk$/i.test(trimmed)) {
+      otherBadges.push({ label: 'Front Desk', type: 'counter' });
+    } else {
+      orgDivisions.push(trimmed);
+    }
+  });
+
+  const badges = [];
+
+  // 1. Primary organizational divisions
+  orgDivisions.forEach((div) => {
+    badges.push({
+      key: `org-${div}`,
+      label: div,
+      type: 'org',
+      tooltip: `Division: ${div}`,
+    });
+  });
+
+  // 2. Window / Counter summary
+  if (windowNumbers.length > 0) {
+    windowNumbers.sort((a, b) => a - b);
+    const count = windowNumbers.length;
+    const fullListStr = windowNumbers.map((n) => `Window ${n}`).join(', ');
+
+    if (count === 1) {
+      badges.push({
+        key: `win-${windowNumbers[0]}`,
+        label: `Window ${windowNumbers[0]}`,
+        type: 'window',
+        tooltip: `Counter: Window ${windowNumbers[0]}`,
+      });
+    } else if (count === 2) {
+      badges.push({
+        key: `win-${windowNumbers.join('-')}`,
+        label: `Win ${windowNumbers[0]} & ${windowNumbers[1]}`,
+        type: 'window',
+        tooltip: `Assigned Counters: Window ${windowNumbers[0]}, Window ${windowNumbers[1]}`,
+      });
+    } else {
+      const isContiguous = windowNumbers.every(
+        (val, i) => i === 0 || val === windowNumbers[i - 1] + 1
+      );
+      const rangeLabel = isContiguous
+        ? `Windows ${windowNumbers[0]}–${windowNumbers[count - 1]}`
+        : `${count} Windows (${windowNumbers.slice(0, 3).join(', ')}${count > 3 ? '…' : ''})`;
+
+      badges.push({
+        key: `win-range-${windowNumbers[0]}-${windowNumbers[count - 1]}`,
+        label: rangeLabel,
+        type: 'window',
+        tooltip: `Assigned Counters (${count}): ${fullListStr}`,
+      });
+    }
+  }
+
+  // 3. Other counters (e.g. Front Desk)
+  otherBadges.forEach((b) => {
+    badges.push({
+      key: `other-${b.label}`,
+      label: b.label,
+      type: 'counter',
+      tooltip: b.label,
+    });
+  });
+
+  return badges;
 };
 
 export default function StaffServices() {
@@ -930,7 +1019,7 @@ export default function StaffServices() {
               backgroundColor: '#ffffff',
               borderRadius: '16px',
               width: '100%',
-              maxWidth: '720px',
+              maxWidth: '760px',
               maxHeight: '90vh',
               display: 'flex',
               flexDirection: 'column',
@@ -948,10 +1037,11 @@ export default function StaffServices() {
                 alignItems: 'flex-start',
                 justifyContent: 'space-between',
                 backgroundColor: '#ffffff',
+                gap: '1rem',
               }}
             >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.35rem' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
                   <span
                     style={{
                       fontSize: '0.72rem',
@@ -983,7 +1073,7 @@ export default function StaffServices() {
                   )}
                 </div>
 
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, lineHeight: 1.3 }}>
                   Assign Personnel: {selectedService.name}
                 </h2>
               </div>
@@ -997,14 +1087,26 @@ export default function StaffServices() {
                   border: 'none',
                   color: '#64748b',
                   cursor: savingAssignment ? 'not-allowed' : 'pointer',
-                  padding: '0.25rem',
-                  fontSize: '1.25rem',
+                  padding: '0.35rem',
+                  borderRadius: '8px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  transition: 'background-color 0.15s ease, color 0.15s ease',
+                  flexShrink: 0,
                 }}
+                onMouseEnter={(e) => {
+                  if (!savingAssignment) e.currentTarget.style.backgroundColor = '#f1f5f9';
+                }}
+                onMouseLeave={(e) => {
+                  if (!savingAssignment) e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+                title="Close modal"
               >
-                ✕
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
               </button>
             </div>
 
@@ -1022,11 +1124,11 @@ export default function StaffServices() {
               <div
                 style={{
                   color: '#1d4ed8',
-                  marginTop: '0.1rem',
+                  marginTop: '0.12rem',
                   flexShrink: 0,
                 }}
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                 </svg>
               </div>
@@ -1075,33 +1177,76 @@ export default function StaffServices() {
                 justifyContent: 'space-between',
                 gap: '1rem',
                 flexWrap: 'wrap',
-                backgroundColor: '#fafafa',
+                backgroundColor: '#f8fafc',
               }}
             >
               {/* Filter search */}
-              <div style={{ position: 'relative', flex: '1 1 240px' }}>
+              <div style={{ position: 'relative', flex: '1 1 260px' }}>
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#94a3b8"
+                  strokeWidth="2.5"
+                  style={{
+                    position: 'absolute',
+                    left: '0.85rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
                 <input
                   type="text"
-                  placeholder="Filter eligible personnel by name or position..."
+                  placeholder="Filter eligible personnel by name, ID, or position..."
                   value={personnelSearch}
                   onChange={(e) => setPersonnelSearch(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '0.45rem 0.75rem',
-                    borderRadius: '6px',
+                    padding: '0.5rem 2rem 0.5rem 2.4rem',
+                    borderRadius: '8px',
                     border: '1px solid #cbd5e1',
                     fontSize: '0.84rem',
                     backgroundColor: '#ffffff',
                     outline: 'none',
+                    transition: 'border-color 0.15s ease',
                   }}
                 />
+                {personnelSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setPersonnelSearch('')}
+                    style={{
+                      position: 'absolute',
+                      right: '0.65rem',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      padding: '0.2rem',
+                      fontSize: '0.85rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    title="Clear search"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
 
               {/* Selection Counter & Quick Buttons */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <span
                   style={{
-                    fontSize: '0.8rem',
+                    fontSize: '0.82rem',
                     fontWeight: 700,
                     color: selectedPersonnelIds.size > 0 ? 'var(--dole-blue)' : '#64748b',
                     marginRight: '0.25rem',
@@ -1115,14 +1260,15 @@ export default function StaffServices() {
                   onClick={handleSelectAllEligible}
                   disabled={loadingPersonnel || filteredPersonnel.length === 0}
                   style={{
-                    padding: '0.35rem 0.65rem',
+                    padding: '0.4rem 0.75rem',
                     borderRadius: '6px',
                     border: '1px solid #cbd5e1',
                     backgroundColor: '#ffffff',
                     color: '#334155',
                     fontSize: '0.78rem',
                     fontWeight: 600,
-                    cursor: 'pointer',
+                    cursor: loadingPersonnel || filteredPersonnel.length === 0 ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
                   }}
                 >
                   Select All
@@ -1133,14 +1279,15 @@ export default function StaffServices() {
                   onClick={handleDeselectAllEligible}
                   disabled={loadingPersonnel || selectedPersonnelIds.size === 0}
                   style={{
-                    padding: '0.35rem 0.65rem',
+                    padding: '0.4rem 0.75rem',
                     borderRadius: '6px',
                     border: '1px solid #cbd5e1',
                     backgroundColor: '#ffffff',
                     color: '#334155',
                     fontSize: '0.78rem',
                     fontWeight: 600,
-                    cursor: 'pointer',
+                    cursor: loadingPersonnel || selectedPersonnelIds.size === 0 ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
                   }}
                 >
                   Clear All
@@ -1149,7 +1296,15 @@ export default function StaffServices() {
             </div>
 
             {/* Modal Body: Personnel List */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.5rem', maxHeight: '420px' }}>
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                padding: '1rem 1.5rem',
+                maxHeight: '440px',
+              }}
+            >
               {loadingPersonnel ? (
                 <div style={{ padding: '3rem 1rem', textAlign: 'center', color: '#64748b' }}>
                   <div
@@ -1185,9 +1340,10 @@ export default function StaffServices() {
                   </p>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {filteredPersonnel.map(person => {
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  {filteredPersonnel.map((person) => {
                     const isChecked = selectedPersonnelIds.has(person.id);
+                    const badges = formatPersonnelBadges(person.division_names);
 
                     return (
                       <div
@@ -1196,42 +1352,51 @@ export default function StaffServices() {
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '0.85rem',
-                          padding: '0.75rem 1rem',
-                          borderRadius: '10px',
+                          gap: '0.9rem',
+                          padding: '0.85rem 1.1rem',
+                          borderRadius: '12px',
                           border: isChecked ? '1.5px solid var(--dole-blue)' : '1px solid #e2e8f0',
-                          backgroundColor: isChecked ? 'rgba(3, 5, 186, 0.03)' : '#ffffff',
+                          backgroundColor: isChecked ? '#f8faff' : '#ffffff',
                           cursor: 'pointer',
                           transition: 'all 0.15s ease',
+                          boxShadow: isChecked
+                            ? '0 2px 8px -2px rgba(3, 5, 186, 0.12)'
+                            : '0 1px 2px rgba(0, 0, 0, 0.02)',
                         }}
                       >
                         {/* Checkbox */}
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {}} // Controlled by outer div onClick
-                          style={{
-                            width: '18px',
-                            height: '18px',
-                            cursor: 'pointer',
-                            accentColor: 'var(--dole-blue)',
-                          }}
-                        />
+                        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => togglePersonnelSelection(person.id)}
+                            style={{
+                              width: '18px',
+                              height: '18px',
+                              cursor: 'pointer',
+                              accentColor: 'var(--dole-blue)',
+                              margin: 0,
+                            }}
+                          />
+                        </div>
 
                         {/* Avatar */}
                         <div
                           style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '50%',
-                            backgroundColor: isChecked ? 'var(--dole-blue)' : '#e2e8f0',
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '10px',
+                            backgroundColor: isChecked ? 'var(--dole-blue)' : '#f1f5f9',
                             color: isChecked ? '#ffffff' : '#334155',
+                            border: isChecked ? 'none' : '1px solid #e2e8f0',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             fontWeight: 800,
-                            fontSize: '0.8rem',
+                            fontSize: '0.82rem',
                             flexShrink: 0,
+                            letterSpacing: '0.03em',
                             transition: 'all 0.15s ease',
                           }}
                         >
@@ -1240,64 +1405,158 @@ export default function StaffServices() {
                         </div>
 
                         {/* Info */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                            <span
+                              style={{
+                                fontWeight: 700,
+                                color: isChecked ? 'var(--dole-blue)' : 'var(--text-primary)',
+                                fontSize: '0.92rem',
+                                letterSpacing: '-0.01em',
+                                lineHeight: 1.25,
+                              }}
+                            >
                               {person.full_name}
                             </span>
+
                             <span
                               style={{
                                 fontSize: '0.72rem',
                                 color: '#64748b',
                                 backgroundColor: '#f1f5f9',
-                                padding: '0.1rem 0.4rem',
+                                border: '1px solid #e2e8f0',
+                                padding: '0.1rem 0.45rem',
                                 borderRadius: '4px',
                                 fontWeight: 600,
+                                fontFamily: 'monospace',
                               }}
                             >
                               {person.employee_id}
                             </span>
+
+                            {person.is_assigned && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700,
+                                  padding: '0.1rem 0.45rem',
+                                  borderRadius: '999px',
+                                  backgroundColor: '#ecfdf5',
+                                  color: '#059669',
+                                  border: '1px solid #a7f3d0',
+                                }}
+                              >
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                                Assigned
+                              </span>
+                            )}
                           </div>
 
-                          <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.15rem' }}>
-                            {person.position || 'DOLE Officer'} &bull; {person.office_name || 'Regional Office'}
+                          <div
+                            style={{
+                              fontSize: '0.78rem',
+                              color: '#64748b',
+                              lineHeight: 1.35,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                            title={`${person.position || 'DOLE Officer'} • ${person.office_name || 'Regional Office'}`}
+                          >
+                            {person.position || 'DOLE Officer'}
+                            <span style={{ color: '#cbd5e1', margin: '0 0.35rem' }}>•</span>
+                            {person.office_name || 'Regional Office'}
                           </div>
                         </div>
 
-                        {/* Division Badge & Currently Assigned Flag */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
-                          {(person.division_names || []).map(d => (
-                            <span
-                              key={d}
-                              style={{
-                                fontSize: '0.7rem',
-                                fontWeight: 700,
-                                padding: '0.15rem 0.45rem',
-                                borderRadius: '4px',
-                                backgroundColor: getDivisionStyle(d).bg,
-                                color: getDivisionStyle(d).color,
-                                border: `1px solid ${getDivisionStyle(d).border}`,
-                              }}
-                            >
-                              {d}
-                            </span>
-                          ))}
-
-                          {person.is_assigned && (
-                            <span
-                              style={{
-                                fontSize: '0.7rem',
-                                fontWeight: 700,
-                                padding: '0.15rem 0.45rem',
-                                borderRadius: '4px',
-                                backgroundColor: '#ecfdf5',
-                                color: '#059669',
-                                border: '1px solid #a7f3d0',
-                              }}
-                            >
-                              Assigned
-                            </span>
-                          )}
+                        {/* Badges Column */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'flex-end',
+                            gap: '0.35rem',
+                            flexWrap: 'wrap',
+                            flexShrink: 0,
+                            maxWidth: '220px',
+                          }}
+                        >
+                          {badges.map((badge) => {
+                            if (badge.type === 'org') {
+                              const style = getDivisionStyle(badge.label);
+                              return (
+                                <span
+                                  key={badge.key}
+                                  title={badge.tooltip}
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    padding: '0.18rem 0.5rem',
+                                    borderRadius: '6px',
+                                    backgroundColor: style.bg,
+                                    color: style.color,
+                                    border: `1px solid ${style.border}`,
+                                    letterSpacing: '0.02em',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {badge.label}
+                                </span>
+                              );
+                            }
+                            if (badge.type === 'window') {
+                              return (
+                                <span
+                                  key={badge.key}
+                                  title={badge.tooltip}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 600,
+                                    padding: '0.18rem 0.5rem',
+                                    borderRadius: '6px',
+                                    backgroundColor: '#f1f5f9',
+                                    color: '#334155',
+                                    border: '1px solid #cbd5e1',
+                                    whiteSpace: 'nowrap',
+                                    cursor: 'help',
+                                  }}
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ color: '#64748b' }}>
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                                    <line x1="12" y1="3" x2="12" y2="21"></line>
+                                  </svg>
+                                  {badge.label}
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                key={badge.key}
+                                title={badge.tooltip}
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                  padding: '0.18rem 0.5rem',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#f8fafc',
+                                  color: '#475569',
+                                  border: '1px solid #cbd5e1',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {badge.label}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -1315,14 +1574,28 @@ export default function StaffServices() {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 backgroundColor: '#ffffff',
+                gap: '1rem',
+                flexWrap: 'wrap',
               }}
             >
               <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
                 {selectedPersonnelIds.size === 0 ? (
-                  <span style={{ color: '#d97706' }}>No personnel selected (will clear assignments)</span>
+                  <span style={{ color: '#d97706', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    No personnel selected (will clear assignments)
+                  </span>
                 ) : (
-                  <span>
-                    <strong>{selectedPersonnelIds.size}</strong> officer{selectedPersonnelIds.size > 1 ? 's' : ''} will be assigned to this service
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span>
+                      <strong style={{ color: 'var(--text-primary)' }}>{selectedPersonnelIds.size}</strong> officer{selectedPersonnelIds.size > 1 ? 's' : ''} will be assigned to this service
+                    </span>
                   </span>
                 )}
               </div>
@@ -1341,6 +1614,13 @@ export default function StaffServices() {
                     fontSize: '0.85rem',
                     fontWeight: 600,
                     cursor: savingAssignment ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!savingAssignment) e.currentTarget.style.backgroundColor = '#f8fafc';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!savingAssignment) e.currentTarget.style.backgroundColor = '#ffffff';
                   }}
                 >
                   Cancel
@@ -1363,6 +1643,8 @@ export default function StaffServices() {
                     alignItems: 'center',
                     gap: '0.5rem',
                     boxShadow: '0 2px 4px rgba(3, 5, 186, 0.2)',
+                    transition: 'all 0.15s ease',
+                    opacity: savingAssignment ? 0.75 : 1,
                   }}
                 >
                   {savingAssignment ? (

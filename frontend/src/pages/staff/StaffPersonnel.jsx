@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Navbar from '../../components/Navbar';
 import { staffApi } from '../../api/staff';
 import Pagination, { paginateArray } from '../../components/Pagination';
+import { formatPersonnelBadges } from './StaffServices';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -1028,17 +1029,18 @@ export default function StaffPersonnel() {
                         {/* Assigned Divisions */}
                         <td style={{ padding: '0.85rem 1rem' }}>
                           {p.division_names && p.division_names.length > 0 ? (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                              {p.division_names.map((divName) => {
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
+                              {formatPersonnelBadges(p.division_names).map((badge) => {
                                 const targetDiv = TARGET_DIVISIONS.find(
-                                  (t) => t.key.toLowerCase() === divName.toLowerCase() || t.alias.toLowerCase() === divName.toLowerCase()
+                                  (t) => t.key.toLowerCase() === badge.label.toLowerCase() || t.alias.toLowerCase() === badge.label.toLowerCase()
                                 );
-                                const color = targetDiv?.color || '#374151';
-                                const bg = targetDiv?.bg || '#f3f4f6';
-                                const border = targetDiv?.border || '#e5e7eb';
+                                const color = targetDiv?.color || (badge.type === 'window' ? '#334155' : '#1d4ed8');
+                                const bg = targetDiv?.bg || (badge.type === 'window' ? '#f1f5f9' : '#eff6ff');
+                                const border = targetDiv?.border || (badge.type === 'window' ? '#cbd5e1' : '#bfdbfe');
                                 return (
                                   <span
-                                    key={divName}
+                                    key={badge.key}
+                                    title={badge.tooltip}
                                     style={{
                                       fontSize: '0.75rem',
                                       fontWeight: 700,
@@ -1047,9 +1049,10 @@ export default function StaffPersonnel() {
                                       color: color,
                                       backgroundColor: bg,
                                       border: `1px solid ${border}`,
+                                      cursor: badge.type === 'window' ? 'help' : 'default',
                                     }}
                                   >
-                                    {divName}
+                                    {badge.label}
                                   </span>
                                 );
                               })}
