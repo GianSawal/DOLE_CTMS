@@ -92,7 +92,7 @@ ALLOWED_TRANSITIONS = {
     _S.STATUS_WAITING: {_S.STATUS_SERVING, _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
     _S.STATUS_SERVING: {_S.STATUS_DONE, _S.STATUS_PENDING, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
                         _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
-    _S.STATUS_TRANSFERRED: {_S.STATUS_SERVING, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
+    _S.STATUS_TRANSFERRED: {_S.STATUS_SERVING, _S.STATUS_PENDING, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
                             _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
     _S.STATUS_PENDING: {_S.STATUS_SERVING, _S.STATUS_DONE, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
                         _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
@@ -212,7 +212,7 @@ def call_transaction(tx, user):
     Calls a specific ticket to `user`'s window:
     - waiting: claims it from the shared queue (window required)
     - serving (own): re-announces it (recall)
-    - pending (own): resumes it (window required)
+    - pending (own): resumes it (window required unless the client was reassigned)
     - transferred (own): starts it, at the recipient's window if they have one;
       reassigned clients are served off the TV board
     """
@@ -221,7 +221,12 @@ def call_transaction(tx, user):
     with transaction.atomic():
         tx = CtmsTransaction.objects.select_for_update().select_related('assigned_to', 'counter').get(pk=tx.pk)
         window = _lock_user_window(user, tx.office, required=False)
-        if not window and tx.status in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_PENDING):
+        # Reassigned clients may be served without a window (also after being paused);
+        # the shared queue and the caller's own paused clients need one.
+        reassigned = tx.assignment_history.filter(event=CtmsAssignmentHistory.EVENT_TRANSFERRED).exists()
+        needs_window = tx.status == CtmsTransaction.STATUS_WAITING or (
+            tx.status == CtmsTransaction.STATUS_PENDING and not reassigned)
+        if not window and needs_window:
             raise ValueError("Take a window on the Windows page before calling clients.")
 
         if tx.status == CtmsTransaction.STATUS_WAITING:

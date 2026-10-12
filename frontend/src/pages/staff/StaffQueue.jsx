@@ -337,7 +337,10 @@ export default function StaffQueue() {
                               Start
                             </button>
                           ) : (
-                            <button className="btn btn-primary btn-sm" disabled={!canCall} title={callBlockedReason || undefined} onClick={() => handleCall(tx)}>
+                            <button className="btn btn-primary btn-sm"
+                              disabled={tx.was_transferred ? (busy || !!myCurrent) : !canCall}
+                              title={(tx.was_transferred ? (myCurrent ? `Finish Queue ${myCurrent.queue_no} first.` : '') : callBlockedReason) || undefined}
+                              onClick={() => handleCall(tx)}>
                               Resume
                             </button>
                           )}

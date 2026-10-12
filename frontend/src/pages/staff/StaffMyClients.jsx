@@ -96,7 +96,7 @@ export default function StaffMyClients() {
       });
     }
     return res;
-  }, myWindow && tx.status === 'pending' ? `Queue ${tx.queue_no} called to your window.` : `You are now serving Queue ${tx.queue_no}.`);
+  }, myWindow && tx.status === 'pending' && !tx.was_transferred ? `Queue ${tx.queue_no} called to your window.` : `You are now serving Queue ${tx.queue_no}.`);
 
   const submitPending = async (e) => {
     e.preventDefault();
@@ -119,8 +119,8 @@ export default function StaffMyClients() {
 
   const renderActions = (tx) => {
     const busy = busyId === tx.id;
-    // Transferred clients can be started without a window; resuming a paused client needs one.
-    const needsWindow = !myWindow && tx.status === 'pending';
+    // Reassigned clients can be started or resumed without a window; your own paused clients need one.
+    const needsWindow = !myWindow && tx.status === 'pending' && !tx.was_transferred;
     const startLabel = tx.status === 'transferred' ? 'Start' : 'Resume';
     return (
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -134,6 +134,9 @@ export default function StaffMyClients() {
           <button className="btn btn-primary btn-sm" disabled={busy || needsWindow} title={needsWindow ? 'Take a window first' : undefined} onClick={() => startOrResume(tx)}>
             {startLabel}
           </button>
+        )}
+        {tx.status === 'transferred' && (
+          <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => { setPendingReason(''); setPendingTx(tx); }}>Pending</button>
         )}
         {tx.status === 'pending' && (
           <button className="btn btn-success btn-sm" disabled={busy} onClick={() => act(tx, 'done', `Queue ${tx.queue_no} completed.`)}>Done</button>

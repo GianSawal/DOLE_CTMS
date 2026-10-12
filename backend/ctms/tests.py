@@ -1018,6 +1018,21 @@ class Stage4MyClientsAndTransferTestCase(CsmTablesTestCase):
         res = self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/call/')
         self.assertEqual(res.data['counter_name'], 'Window 2')
 
+    def test_transferred_client_can_be_paused_and_resumed_without_window(self):
+        tx = self._served_by_ana()
+        CtmsCounter.objects.filter(assigned_user=self.ben).update(assigned_user=None)
+        self._transfer(tx, self.ana, self.ben)
+
+        res = self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/pending/', {'reason': 'Waiting for documents'}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['status'], 'pending')
+        self.assertEqual([r['id'] for r in self._tab(self.ben, 'pending')['results']], [tx.id])
+        self.assertEqual(self._tab(self.ben, 'ongoing')['results'], [])
+
+        res = self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/call/')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['status'], 'serving')
+
     def test_waiting_ticket_cannot_be_transferred(self):
         tx = create_transaction(self.bataan, self.service)
         res = self._transfer(tx, self.ana, self.ben)
