@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import StaffLayout from './components/StaffLayout';
 
 // Public pages
 import CheckIn from './pages/public/CheckIn';
@@ -39,7 +40,7 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/staff/change-password" replace />;
   }
 
-  return children;
+  return <StaffLayout>{children}</StaffLayout>;
 }
 
 function PermissionRoute({ permission, children }) {
@@ -66,7 +67,7 @@ function PermissionRoute({ permission, children }) {
     return <Navigate to="/staff/queue" replace />;
   }
 
-  return children;
+  return <StaffLayout>{children}</StaffLayout>;
 }
 
 function ChangePasswordRoute({ children }) {

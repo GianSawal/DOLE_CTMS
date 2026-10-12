@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
-import Navbar from '../../components/Navbar';
+import { RefreshCw, Lock } from 'lucide-react';
+import { PageHeader } from '../../components/ui';
 
 export default function StaffReports() {
   const { user } = useAuth();
@@ -43,23 +44,14 @@ export default function StaffReports() {
   }, [officeFilter, dateFrom, dateTo]);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <Navbar />
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
 
       <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <div>
-            <h1 style={{ fontSize: '1.5rem', color: 'var(--text-primary)', margin: 0 }}>
-              Queue & Survey Performance Reports
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Monitor transaction throughput, wait times, and CSM survey compliance.
-            </p>
-          </div>
+        <PageHeader title="Queue & Survey Performance Reports" subtitle="Monitor transaction throughput, wait times, and CSM survey compliance.">
           <button onClick={fetchReports} className="btn btn-outline btn-sm">
-            🔄 Refresh Metrics
+            <RefreshCw size={14} aria-hidden="true" /> Refresh
           </button>
-        </div>
+        </PageHeader>
 
         {/* Filters */}
         <div className="card" style={{ marginBottom: '1.5rem', padding: '1.25rem' }}>
@@ -79,7 +71,7 @@ export default function StaffReports() {
                   color: 'var(--dole-blue)',
                   fontSize: '0.9rem',
                 }}>
-                  🔒 {user.oversight_offices[0].name}
+                  <Lock size={14} aria-hidden="true" style={{ marginRight: '0.35rem' }} />{user.oversight_offices[0].name}
                 </div>
               ) : (
                 <select

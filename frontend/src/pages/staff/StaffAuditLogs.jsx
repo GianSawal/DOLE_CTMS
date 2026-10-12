@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import Navbar from '../../components/Navbar';
 import Modal from '../../components/Modal';
 import { staffApi } from '../../api/staff';
+import { Search } from 'lucide-react';
 
 const CATEGORIES = [
-  { key: 'all', label: 'All Logs', icon: '📋' },
-  { key: 'queue', label: 'Queue & Dispatch', icon: '⏱️' },
-  { key: 'user', label: 'User Accounts', icon: '👤' },
-  { key: 'personnel', label: 'Personnel Directory', icon: '📇' },
-  { key: 'auth', label: 'Auth & Access', icon: '🔒' },
-  { key: 'config', label: 'Configuration', icon: '⚙️' },
+  { key: 'all', label: 'All Logs', icon: null },
+  { key: 'queue', label: 'Queue & Dispatch', icon: null },
+  { key: 'user', label: 'User Accounts', icon: null },
+    { key: 'auth', label: 'Auth & Access', icon: null },
+  { key: 'config', label: 'Configuration', icon: null },
 ];
 
 export default function StaffAuditLogs() {
@@ -183,51 +182,15 @@ export default function StaffAuditLogs() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <Navbar />
 
       <main style={{ maxWidth: '1440px', margin: '0 auto', padding: '1.5rem 1rem 3rem' }}>
-        {/* Header Console Banner */}
-        <div style={{
-          backgroundColor: '#ffffff',
-          borderRadius: '12px',
-          border: '1px solid #e2e8f0',
-          padding: '1.25rem 1.5rem',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-          marginBottom: '1.5rem',
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '1rem',
-        }}>
+        <div className="page-header">
           <div>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              fontSize: '0.72rem',
-              fontWeight: 800,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              color: 'var(--dole-blue)',
-              backgroundColor: 'rgba(3, 5, 186, 0.06)',
-              padding: '0.2rem 0.6rem',
-              borderRadius: '9999px',
-              marginBottom: '0.35rem',
-            }}>
-              <span>🛡️ Security &amp; Compliance Audit</span>
-            </div>
-            <h1 style={{
-              fontSize: '1.45rem',
-              fontWeight: 800,
-              color: '#0f172a',
-              margin: '0 0 0.25rem',
-              letterSpacing: '-0.02em',
-            }}>
-              System Audit Trail &amp; Access Logs
+            <h1 className="page-title">
+              Audit Log
             </h1>
-            <p style={{ fontSize: '0.875rem', color: '#64748b', margin: 0 }}>
-              Chronological log of administrative changes, queue calls, user activities, and security events.
+            <p className="page-subtitle">
+              Every queue, window, account, and configuration action, with who did it and from where.
             </p>
           </div>
 
@@ -324,7 +287,6 @@ export default function StaffAuditLogs() {
                   boxShadow: isActive ? '0 1px 2px rgba(3, 5, 186, 0.1)' : 'none',
                 }}
               >
-                <span>{cat.icon}</span>
                 <span>{cat.label}</span>
                 <span style={{
                   fontSize: '0.75rem',
@@ -380,7 +342,7 @@ export default function StaffAuditLogs() {
                   }}
                 />
                 <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }}>
-                  🔍
+                  <Search size={15} aria-hidden="true" />
                 </span>
                 {search && (
                   <button
@@ -571,7 +533,7 @@ export default function StaffAuditLogs() {
                 ) : logs.length === 0 ? (
                   <tr>
                     <td colSpan="8" style={{ padding: '3.5rem 1rem', textAlign: 'center', color: '#94a3b8' }}>
-                      <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🔍</div>
+                      <Search size={28} aria-hidden="true" style={{ marginBottom: '0.5rem' }} />
                       <div style={{ fontWeight: 700, fontSize: '1rem', color: '#475569', marginBottom: '0.25rem' }}>No Audit Logs Found</div>
                       <div style={{ fontSize: '0.85rem' }}>No system events match your selected filters.</div>
                     </td>
@@ -926,7 +888,7 @@ export default function StaffAuditLogs() {
                     cursor: 'pointer',
                   }}
                 >
-                  {copied ? '✓ Copied!' : 'Copy JSON'}
+                  {copied ? 'Copied' : 'Copy JSON'}
                 </button>
               </div>
 

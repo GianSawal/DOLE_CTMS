@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { staffApi } from '../../api/staff';
-import Navbar from '../../components/Navbar';
+import { PageHeader, Notice } from '../../components/ui';
 
 export default function StaffServices() {
   const [services, setServices] = useState([]);
@@ -51,16 +51,13 @@ export default function StaffServices() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-ground)' }}>
-      <Navbar />
+    <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-ground)' }}>
 
       <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
-        <div style={{ marginBottom: '1.25rem' }}>
-          <h1 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--text-primary)' }}>Services</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '0.25rem 0 0' }}>
-            Tag each service with its division. Divisions are for classification and reports only; any window can serve any service.
-          </p>
-        </div>
+        <PageHeader
+          title="Services"
+          subtitle="Tag each service with its division. Divisions are for classification and reports only; any window can serve any service."
+        />
 
         {summary && (
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
@@ -83,24 +80,7 @@ export default function StaffServices() {
           </select>
         </div>
 
-        {notice && (
-          <div role="status" style={{
-            marginBottom: '1rem',
-            padding: '0.75rem 1rem',
-            borderRadius: 'var(--radius-md)',
-            fontSize: '0.9rem',
-            fontWeight: 600,
-            display: 'flex',
-            justifyContent: 'space-between',
-            gap: '1rem',
-            backgroundColor: notice.type === 'error' ? 'var(--dole-red-light)' : 'var(--dole-green-light)',
-            color: notice.type === 'error' ? 'var(--dole-red-dark)' : '#047857',
-            border: `1px solid ${notice.type === 'error' ? '#fecaca' : '#a7f3d0'}`,
-          }}>
-            <span>{notice.text}</span>
-            <button onClick={() => setNotice(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700 }} aria-label="Dismiss">✕</button>
-          </div>
-        )}
+        <Notice notice={notice} onDismiss={() => setNotice(null)} />
 
         <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.92rem', minWidth: '560px' }}>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
-import Navbar from '../../components/Navbar';
+import { Lock, Printer } from 'lucide-react';
+import { PageHeader } from '../../components/ui';
 
 export default function StaffQr() {
   const { user } = useAuth();
@@ -49,8 +50,8 @@ export default function StaffQr() {
       setEditMessage(updated.disabled_message || '');
       setActionType('success');
       setActionMessage(targetState
-        ? '✅ QR Code check-in has been ENABLED. Clients can now register online.'
-        : '⛔ QR Code check-in has been DISABLED. Online registration is now closed for this office.'
+        ? 'Check-in is now open. Clients can register online.'
+        : 'Check-in is now closed. Online registration is unavailable for this office.'
       );
       setTimeout(() => setActionMessage(''), 5000);
     } catch (err) {
@@ -69,7 +70,7 @@ export default function StaffQr() {
       const updated = await staffApi.toggleQrConfig(selectedOfficeId, qrConfig.is_qr_enabled, editMessage);
       setQrConfig(updated);
       setActionType('success');
-      setActionMessage('💾 Advisory closure notice updated successfully.');
+      setActionMessage('Closure notice saved.');
       setTimeout(() => setActionMessage(''), 5000);
     } catch (err) {
       setActionType('error');
@@ -90,8 +91,7 @@ export default function StaffQr() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <Navbar />
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
 
       {/* Scoped Print Styles for A4 Poster */}
       <style>{`
@@ -144,18 +144,9 @@ export default function StaffQr() {
       `}</style>
 
       <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
-        <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <div>
-            <h1 style={{ fontSize: '1.5rem', color: 'var(--text-primary)', margin: 0 }}>
-              Printable Office Check-in QR Codes
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Print and mount this official A4 QR sign at the office entrance or guard desk for client self check-in.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {user?.assigned_offices?.length === 1 ? (
+        <div className="no-print">
+        <PageHeader title="Printable Office Check-in QR Codes" subtitle="Print and mount this official A4 QR sign at the office entrance or guard desk for client self check-in.">
+          {user?.assigned_offices?.length === 1 ? (
               <div style={{
                 minHeight: '44px',
                 display: 'flex',
@@ -168,7 +159,7 @@ export default function StaffQr() {
                 color: 'var(--dole-blue)',
                 fontSize: '0.9rem',
               }}>
-                🔒 {user.assigned_offices[0].name} ({user.assigned_offices[0].code})
+                <Lock size={14} aria-hidden="true" style={{ marginRight: '0.35rem' }} />{user.assigned_offices[0].name} ({user.assigned_offices[0].code})
               </div>
             ) : (
               <select
@@ -182,9 +173,9 @@ export default function StaffQr() {
               </select>
             )}
             <button onClick={handlePrint} className="btn btn-primary" style={{ minHeight: '44px' }}>
-              🖨️ Print Poster
+              <Printer size={15} aria-hidden="true" /> Print Poster
             </button>
-          </div>
+        </PageHeader>
         </div>
 
         {/* Office Hours & QR Code Enable/Disable Status Card (no-print) */}
@@ -253,11 +244,11 @@ export default function StaffQr() {
                 {qrConfig?.updated_at && (
                   <div style={{ fontSize: '0.78rem', color: '#64748b', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                     <span>
-                      🕒 <strong>Last Updated:</strong> {new Date(qrConfig.updated_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
+                      <strong>Last updated:</strong> {new Date(qrConfig.updated_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
                     </span>
                     {qrConfig.disabled_by_username && (
                       <span>
-                        👤 <strong>Updated By:</strong> {qrConfig.disabled_by_username}
+                        <strong>Updated by:</strong> {qrConfig.disabled_by_username}
                       </span>
                     )}
                   </div>
@@ -285,7 +276,7 @@ export default function StaffQr() {
                       boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
                     }}
                   >
-                    {isUpdating ? 'Updating...' : '✅ Enable QR Code (Open Check-in)'}
+                    {isUpdating ? 'Updating...' : 'Open Check-in'}
                   </button>
                 ) : (
                   <button
@@ -306,7 +297,7 @@ export default function StaffQr() {
                       boxShadow: '0 2px 6px rgba(220, 38, 38, 0.25)',
                     }}
                   >
-                    {isUpdating ? 'Updating...' : '⛔ Disable QR Code (Close for Day)'}
+                    {isUpdating ? 'Updating...' : 'Close Check-in'}
                   </button>
                 )}
 
@@ -324,7 +315,7 @@ export default function StaffQr() {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                  📢 Advisory Notice Displayed When Closed:
+                  Notice shown to clients while check-in is closed
                 </label>
                 {hasMessageChanged && (
                   <button
@@ -333,7 +324,7 @@ export default function StaffQr() {
                     className="btn btn-outline btn-sm"
                     style={{ fontSize: '0.78rem', padding: '0.25rem 0.65rem', fontWeight: 700 }}
                   >
-                    💾 Save Advisory Text
+                    Save Notice
                   </button>
                 )}
               </div>

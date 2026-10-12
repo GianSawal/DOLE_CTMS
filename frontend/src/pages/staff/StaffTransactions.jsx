@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
-import Navbar from '../../components/Navbar';
 import Modal from '../../components/Modal';
 import PrintSlip from '../../components/PrintSlip';
 import Pagination, { paginateArray } from '../../components/Pagination';
+import { RefreshCw, Lock } from 'lucide-react';
+import { PageHeader } from '../../components/ui';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -189,23 +190,14 @@ export default function StaffTransactions() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <Navbar />
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
 
       <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <div>
-            <h1 style={{ fontSize: '1.5rem', color: 'var(--text-primary)', margin: 0 }}>
-              Transaction History
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Search and filter client visits, view queue status, division assignments, and verify CSM survey completion.
-            </p>
-          </div>
+        <PageHeader title="Transaction History" subtitle="Search and filter client visits, view queue status, division assignments, and verify CSM survey completion.">
           <button onClick={() => fetchTransactions(searchQuery)} className="btn btn-outline btn-sm">
-            🔄 Refresh
+            <RefreshCw size={14} aria-hidden="true" /> Refresh
           </button>
-        </div>
+        </PageHeader>
 
         {/* Filters Card */}
         <div className="card" style={{ marginBottom: '1.5rem', padding: '1.25rem' }}>
@@ -225,7 +217,7 @@ export default function StaffTransactions() {
                   color: 'var(--dole-blue)',
                   fontSize: '0.9rem',
                 }}>
-                  🔒 {user.oversight_offices[0].name}
+                  <Lock size={14} aria-hidden="true" style={{ marginRight: '0.35rem' }} />{user.oversight_offices[0].name}
                 </div>
               ) : (
                 <select
@@ -448,7 +440,7 @@ export default function StaffTransactions() {
                             border: '1px solid #e2e8f0',
                             whiteSpace: 'nowrap',
                           }}>
-                            👤 {tx.assigned_personnel}
+                            {tx.assigned_personnel}
                           </span>
                         ) : (
                           <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontStyle: 'italic' }}>
@@ -460,7 +452,7 @@ export default function StaffTransactions() {
                         <div>{tx.client_name || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Anonymous</span>}</div>
                         {Array.isArray(tx.group_member_names) && tx.group_member_names.length > 0 && (
                           <div style={{ marginTop: '0.25rem', fontSize: '0.73rem', color: '#475569', lineHeight: 1.35 }}>
-                            <span style={{ fontWeight: 600, color: 'var(--dole-blue)' }}>👥 Members ({tx.group_member_names.length}):</span> {tx.group_member_names.join(', ')}
+                            <span style={{ fontWeight: 600, color: 'var(--dole-blue)' }}>Members ({tx.group_member_names.length}):</span> {tx.group_member_names.join(', ')}
                           </div>
                         )}
                       </td>
@@ -469,7 +461,7 @@ export default function StaffTransactions() {
                       </td>
                       <td style={{ padding: '0.75rem 0.5rem' }}>
                         {tx.is_surveyed ? (
-                          <span className="badge badge-done">✓ Surveyed</span>
+                          <span className="badge badge-done">Surveyed</span>
                         ) : tx.status === 'done' ? (
                           <span className="badge badge-waiting">Pending</span>
                         ) : (
@@ -620,13 +612,13 @@ export default function StaffTransactions() {
               border: '1px solid #cbd5e1',
             }}>
               <h3 style={{ fontSize: '0.9rem', fontWeight: 700, margin: '0 0 1rem 0', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span>📅</span> Transaction Lifecycle Dates & Timestamps
+                Transaction Timeline
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
                 {/* Checked In */}
                 <div style={{ padding: '0.75rem', borderRadius: '6px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
-                    📥 Checked In Date & Time
+                    Checked in
                   </div>
                   {viewDetailsTx.checked_in_at ? (
                     <div style={{ marginTop: '0.35rem' }}>
@@ -643,7 +635,7 @@ export default function StaffTransactions() {
                 {/* Started At */}
                 <div style={{ padding: '0.75rem', borderRadius: '6px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0' }}>
                   <div style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: 700, textTransform: 'uppercase' }}>
-                    🚀 Started At (Start of Transaction)
+                    Started
                   </div>
                   {(viewDetailsTx.started_at || viewDetailsTx.called_at) ? (
                     <div style={{ marginTop: '0.35rem' }}>
@@ -664,7 +656,7 @@ export default function StaffTransactions() {
                 {/* Done At */}
                 <div style={{ padding: '0.75rem', borderRadius: '6px', backgroundColor: viewDetailsTx.done_at ? '#eff6ff' : '#f8fafc', border: viewDetailsTx.done_at ? '1px solid #bfdbfe' : '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '0.72rem', color: viewDetailsTx.done_at ? '#1e40af' : '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
-                    🏁 Done At (Transaction Completed)
+                    Completed
                   </div>
                   {viewDetailsTx.done_at ? (
                     <div style={{ marginTop: '0.35rem' }}>
@@ -737,7 +729,7 @@ export default function StaffTransactions() {
                 Close
               </button>
               <button onClick={() => { setSelectedTx(viewDetailsTx); setViewDetailsTx(null); }} className="btn btn-primary btn-sm">
-                🖨️ View / Print Slip
+                View / Print Slip
               </button>
             </div>
           </div>

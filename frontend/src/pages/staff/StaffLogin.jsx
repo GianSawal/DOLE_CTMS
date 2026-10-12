@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import AuthLayout from '../../components/AuthLayout';
+import { Notice } from '../../components/ui';
 
 export default function StaffLogin() {
   const { login } = useAuth();
@@ -8,6 +11,7 @@ export default function StaffLogin() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -16,7 +20,7 @@ export default function StaffLogin() {
     try {
       setLoading(true);
       setError('');
-      await login(username, password);
+      await login(username.trim(), password);
       navigate('/staff/queue');
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
@@ -26,117 +30,60 @@ export default function StaffLogin() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      backgroundColor: 'var(--bg-ground)',
-    }}>
-      <div className="dole-tricolor-bar" />
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1.5rem',
-      }}>
-        <div className="card" style={{
-          width: '100%',
-          maxWidth: '440px',
-          padding: '2.5rem 2.25rem',
-          boxShadow: 'var(--shadow-lg)',
-          borderTop: '5px solid var(--dole-blue)',
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-            <img
-              src="/dolelogo.png"
-              alt="DOLE Official Seal"
-              className="dole-logo-img"
-              style={{ width: '84px', height: '84px', margin: '0 auto 1rem', display: 'block' }}
+    <AuthLayout>
+      <div style={{ marginBottom: '1.75rem' }}>
+        <img src="/dolelogo.png" alt="" style={{ width: '48px', height: '48px', marginBottom: '1rem' }} />
+        <h1 className="page-title">Sign in</h1>
+        <p className="page-subtitle">Use your DOLE staff account.</p>
+      </div>
+
+      <Notice notice={error ? { type: 'error', text: error } : null} />
+
+      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '1.1rem' }}>
+        <div>
+          <label htmlFor="staff-username">Username</label>
+          <input
+            id="staff-username"
+            type="text"
+            required
+            autoFocus
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="staff-password">Password</label>
+          <div style={{ position: 'relative' }}>
+            <input
+              id="staff-password"
+              type={showPassword ? 'text' : 'password'}
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ paddingRight: '2.75rem' }}
             />
-            <div style={{
-              fontSize: '0.75rem',
-              fontWeight: 800,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              color: 'var(--dole-blue)',
-            }}>
-              Republic of the Philippines
-            </div>
-            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-              Department of Labor and Employment
-            </div>
-            <h1 style={{ fontSize: '1.45rem', color: 'var(--text-primary)', marginTop: '0.5rem', marginBottom: '0.25rem' }}>
-              CTMS Staff Portal
-            </h1>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
-              Queue & Transaction Management System
-            </p>
-          </div>
-
-          {error && (
-            <div style={{
-              backgroundColor: 'var(--dole-red-light)',
-              border: '1px solid #ffccd0',
-              color: 'var(--dole-red)',
-              borderRadius: 'var(--radius-md)',
-              padding: '0.75rem 1rem',
-              fontSize: '0.875rem',
-              marginBottom: '1.25rem',
-            }}>
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label htmlFor="staff-username">DOLE Staff Username</label>
-              <input
-                id="staff-username"
-                type="text"
-                required
-                autoFocus
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. staff or admin"
-              />
-            </div>
-
-            <div style={{ marginBottom: '1.75rem' }}>
-              <label htmlFor="staff-password">Password</label>
-              <input
-                id="staff-password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-              />
-            </div>
-
             <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary btn-lg w-full"
+              type="button"
+              onClick={() => setShowPassword(v => !v)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', minHeight: '32px', width: '32px', padding: 0, background: 'transparent', color: 'var(--ui-muted)' }}
             >
-              {loading ? 'Authenticating...' : 'Sign In to Queue System'}
+              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
             </button>
-          </form>
-
-          <div style={{
-            marginTop: '1.75rem',
-            paddingTop: '1.25rem',
-            borderTop: 'var(--border-hairline)',
-            textAlign: 'center',
-            fontSize: '0.78rem',
-            color: 'var(--text-muted)',
-            lineHeight: 1.4,
-          }}>
-            Shared database authentication with DOLE CSM.<br />
-            Sign in with your assigned field office credentials.
           </div>
         </div>
-      </div>
-    </div>
+
+        <button type="submit" disabled={loading} className="btn btn-primary btn-lg w-full" style={{ marginTop: '0.35rem' }}>
+          {loading ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
+
+      <p style={{ marginTop: '1.75rem', fontSize: '0.8rem', color: 'var(--ui-muted)', textAlign: 'center' }}>
+        Forgot your password? Ask your office administrator to reset it.
+      </p>
+    </AuthLayout>
   );
 }

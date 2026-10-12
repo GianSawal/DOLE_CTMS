@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
-import Navbar from '../../components/Navbar';
 import Modal from '../../components/Modal';
+import { PageHeader, Notice } from '../../components/ui';
 
 const POLL_MS = 5000;
 
@@ -161,19 +161,11 @@ export default function StaffWindows() {
   const myWindowHere = myWindow && String(myWindow.office) === String(selectedOffice);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <Navbar />
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
 
       <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
-          <div>
-            <h1 style={{ fontSize: '1.5rem', color: 'var(--text-primary)', margin: 0 }}>Service Windows</h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '0.25rem 0 0' }}>
-              Take a window before calling clients. Every window in an office serves the same shared queue.
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {offices.length > 1 && (
+        <PageHeader title="Service Windows" subtitle="Take a window before calling clients. Every window in an office serves the same shared queue.">
+          {offices.length > 1 && (
               <select
                 value={selectedOffice}
                 onChange={handleOfficeChange}
@@ -189,8 +181,7 @@ export default function StaffWindows() {
             <button onClick={openCreate} className="btn btn-primary" disabled={!selectedOffice} style={{ minHeight: '44px' }}>
               + Add Window
             </button>
-          </div>
-        </div>
+        </PageHeader>
 
         {/* Where am I working? */}
         <div className="card" style={{
@@ -224,24 +215,7 @@ export default function StaffWindows() {
           )}
         </div>
 
-        {notice && (
-          <div role="status" style={{
-            marginBottom: '1.25rem',
-            padding: '0.75rem 1rem',
-            borderRadius: 'var(--radius-md)',
-            fontSize: '0.9rem',
-            fontWeight: 600,
-            display: 'flex',
-            justifyContent: 'space-between',
-            gap: '1rem',
-            backgroundColor: notice.type === 'error' ? 'var(--dole-red-light)' : 'var(--dole-green-light)',
-            color: notice.type === 'error' ? 'var(--dole-red-dark)' : '#047857',
-            border: `1px solid ${notice.type === 'error' ? '#fecaca' : '#a7f3d0'}`,
-          }}>
-            <span>{notice.text}</span>
-            <button onClick={() => setNotice(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700 }} aria-label="Dismiss">✕</button>
-          </div>
-        )}
+        <Notice notice={notice} onDismiss={() => setNotice(null)} />
 
         {loading ? (
           <div className="staff-empty-card" style={{ color: 'var(--text-muted)' }}>Loading windows…</div>
@@ -312,7 +286,7 @@ export default function StaffWindows() {
                     {state === 'occupied' && (
                       <button className="btn btn-outline w-full" disabled={busy} onClick={() => askRelease(w)}>Release Personnel</button>
                     )}
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={busy} onClick={() => openRename(w)}>Rename</button>
                       <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={busy} onClick={() => askToggleActive(w)}>
                         {w.is_active ? 'Deactivate' : 'Activate'}
