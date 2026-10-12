@@ -510,230 +510,63 @@ class PublicDisplayBoardView(APIView):
 # =====================================================================
 
 class StaffQueueView(APIView):
+    """
+    The office's shared queue. Every staff member of the office sees the same
+    waiting line regardless of service division; calling requires a window.
+    """
     permission_classes = [IsStaffUser]
 
     def get(self, request):
         office_id = request.query_params.get('office')
-        counter_id = request.query_params.get('counter')
 
         allowed_offices = get_staff_offices(request.user)
         if not allowed_offices.exists():
             return Response({"detail": "Forbidden: No office assigned to your staff account."}, status=status.HTTP_403_FORBIDDEN)
 
         if office_id:
-            try:
-                office = allowed_offices.get(pk=office_id)
-            except CsmOffice.DoesNotExist:
+            office = allowed_offices.filter(pk=office_id).first()
+            if not office:
                 return Response({"detail": "Forbidden: You are not authorized to access this office queue."}, status=status.HTTP_403_FORBIDDEN)
         else:
             office = allowed_offices.first()
 
         today = timezone.localdate()
-        allowed_divisions = get_staff_divisions(request.user)
-        allowed_div_names = list(allowed_divisions.values_list('name', flat=True))
-        allowed_div_norms = {n.strip().upper().replace(' ', '') for n in allowed_div_names if n}
+        related = ('office', 'service', 'service__division', 'counter', 'assigned_to', 'assigned_to__dole_personnel')
 
-        all_divisions = CsmDivision.objects.all().order_by('id')
+        waiting_qs = CtmsTransaction.objects.filter(
+            office=office, status=CtmsTransaction.STATUS_WAITING, queue_date=today
+        ).select_related(*related).order_by('-is_priority', 'checked_in_at', 'id')
 
-        # Windows are created and managed per office on the Windows page.
-        counters_qs = CtmsCounter.objects.filter(
+        # Everyone being served in the office right now (pending tickets resumed today included)
+        serving_qs = CtmsTransaction.objects.filter(
+            office=office, status=CtmsTransaction.STATUS_SERVING,
+        ).filter(
+            models.Q(queue_date=today) | models.Q(called_at__date=today)
+        ).select_related(*related).order_by('counter__sort_order', 'counter__name', '-called_at')
+
+        # Paused / transferred tickets belong to their handler; unowned legacy ones stay visible to all.
+        mine_or_unowned = models.Q(assigned_to=request.user) | models.Q(assigned_to__isnull=True)
+        pending_qs = CtmsTransaction.objects.filter(
+            office=office, status__in=[CtmsTransaction.STATUS_PENDING, CtmsTransaction.STATUS_TRANSFERRED],
+        ).filter(mine_or_unowned).select_related(*related).order_by('-is_priority', 'checked_in_at')
+
+        windows_qs = CtmsCounter.objects.filter(
             office=office, is_active=True, archived_at__isnull=True
         ).order_by('sort_order', 'name', 'id')
 
-        # Determine universal division access (Window 1-10, Front Desk, or superuser)
-        is_universal = request.user.is_superuser or has_universal_division_access(request.user, allowed_divisions)
-        divisions_data = all_divisions.exclude(name__iexact='ALL') if is_universal else allowed_divisions
-
-        # Waiting list: priority first, then FIFO
-        waiting_qs = CtmsTransaction.objects.filter(
-            office=office,
-            status=CtmsTransaction.STATUS_WAITING,
-            queue_date=today
-        ).select_related('office', 'service', 'service__division')
-
-        # Serving list: all serving in this office or counter (including pending tickets from previous days resumed today)
-        serving_qs = CtmsTransaction.objects.filter(
-            office=office,
-            status=CtmsTransaction.STATUS_SERVING,
-        ).filter(
-            models.Q(queue_date=today) | models.Q(called_at__date=today)
-        ).select_related('office', 'service', 'service__division', 'counter', 'served_by').order_by('-called_at')
-
-        # Pending list: multi-day or hold services that cannot be finished in one day (persists across dates)
-        pending_qs = CtmsTransaction.objects.filter(
-            office=office,
-            status=CtmsTransaction.STATUS_PENDING
-        ).select_related('office', 'service', 'service__division', 'counter', 'served_by')
-
-        # If not superuser and not universal, restrict waiting, serving, and pending queues to the user's assigned divisions
-        if not is_universal:
-            waiting_qs = waiting_qs.filter(service__division__in=allowed_divisions)
-            serving_qs = serving_qs.filter(service__division__in=allowed_divisions)
-            pending_qs = pending_qs.filter(service__division__in=allowed_divisions)
-
-        if counter_id:
-            counter = counters_qs.filter(pk=counter_id).first()
-            if counter:
-                serving_qs = serving_qs.filter(counter=counter)
-                division = CsmDivision.objects.filter(name__iexact=counter.name.strip()).first()
-                if division and not services.is_universal_division_name(counter.name):
-                    waiting_qs = waiting_qs.filter(service__division=division)
-                    pending_qs = pending_qs.filter(
-                        models.Q(service__division=division) | models.Q(counter=counter)
-                    )
-                else:
-                    pending_qs = pending_qs.filter(counter=counter)
-
-        waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
-        pending_qs = pending_qs.order_by('-is_priority', '-called_at', 'checked_in_at')
-
-        total_division_waiting = waiting_qs.count()
-
-        # Check if user is linked to a DolePersonnel record
-        linked_personnel = getattr(request.user, 'dole_personnel', None)
-        p_name = linked_personnel.full_name.strip() if linked_personnel else None
-        p_id = linked_personnel.employee_id.strip() if linked_personnel else None
-
-        # Filter mode: personnel users default to only their assigned clients
-        # Supports query param assigned_to_me: '1'/'true' (force only my clients), '0'/'false' (view all in division)
-        assigned_to_me_param = request.query_params.get('assigned_to_me')
-        filter_my_assigned_only = False
-        if linked_personnel and not request.user.is_superuser:
-            filter_my_assigned_only = (assigned_to_me_param != '0' and str(assigned_to_me_param).lower() != 'false')
-        elif assigned_to_me_param in ('1', 'true'):
-            filter_my_assigned_only = True
-
-        if filter_my_assigned_only and (p_name or p_id):
-            personnel_q = models.Q()
-            if p_name:
-                personnel_q |= models.Q(assigned_personnel__iexact=p_name)
-            if p_id:
-                personnel_q |= models.Q(assigned_personnel__iexact=p_id)
-            waiting_qs = waiting_qs.filter(personnel_q)
-            serving_qs = serving_qs.filter(personnel_q | models.Q(served_by=request.user))
-            pending_qs = pending_qs.filter(personnel_q | models.Q(served_by=request.user))
-
-        # Retrieve all currently active assignments in this office across all counters
-        active_assignments = list(
-            CtmsTransaction.objects.filter(
-                office=office,
-                status__in=[
-                    CtmsTransaction.STATUS_WAITING,
-                    CtmsTransaction.STATUS_SERVING,
-                    CtmsTransaction.STATUS_PENDING,
-                ],
-            )
-            .exclude(assigned_personnel__isnull=True)
-            .exclude(assigned_personnel='')
-            .values('id', 'queue_no', 'transaction_no', 'status', 'assigned_personnel')
-        )
+        my_window = services.user_window(request.user, office)
+        my_current = serving_qs.filter(assigned_to=request.user).first()
 
         return Response({
             "office": CsmOfficeSerializer(office).data,
             "waiting": StaffTransactionSerializer(waiting_qs, many=True).data,
             "serving": StaffTransactionSerializer(serving_qs, many=True).data,
             "pending": StaffTransactionSerializer(pending_qs, many=True).data,
-            "active_assignments": active_assignments,
-            "counters": CtmsCounterSerializer(counters_qs, many=True).data,
-            "divisions": CsmDivisionSerializer(divisions_data, many=True).data,
-            "is_personnel_filtered": filter_my_assigned_only,
-            "linked_personnel": linked_personnel.full_name if linked_personnel else None,
-            "total_division_waiting": total_division_waiting,
-            "my_window_id": CtmsCounter.objects.filter(assigned_user=request.user, office=office).values_list('id', flat=True).first(),
+            "counters": CtmsCounterSerializer(windows_qs, many=True).data,
+            "my_window": {"id": my_window.id, "name": my_window.name} if my_window else None,
+            "my_window_id": my_window.id if my_window else None,
+            "my_current": StaffTransactionSerializer(my_current).data if my_current else None,
         })
-
-
-def validate_personnel_division_assignment(tx, personnel_name_or_id):
-    """
-    Enforces office and division restrictions:
-    1. A personnel can only be assigned to queue transactions within their assigned office.
-       Personnel from other offices must not be assignable to queues outside their assigned office.
-    2. A personnel can only be assigned to services belonging to their assigned division.
-    """
-    if not tx or not personnel_name_or_id:
-        return True, None
-
-    # 1. Office Restriction Enforcement
-    if tx.office:
-        valid_office, office_err = services.validate_personnel_office_assignment(tx.office, personnel_name_or_id)
-        if not valid_office:
-            return False, office_err
-
-    # 2. Division Restriction Enforcement
-    if not tx.service or not tx.service.division:
-        return True, None
-
-    svc_div = tx.service.division.name.strip().upper().replace(' ', '')
-    if svc_div == 'ALL':
-        return True, None
-
-    personnel = services.find_personnel_by_name_or_id(personnel_name_or_id, office=tx.office)
-    if personnel:
-        p_divs = [d.name.strip().upper().replace(' ', '') for d in personnel.divisions.all()]
-        has_universal_p = any(
-            d in ('ALL', 'FRONTDESK') or (d.startswith('WINDOW') and d.replace('WINDOW', '').isdigit())
-            for d in p_divs
-        )
-        if not has_universal_p and p_divs and svc_div not in p_divs and 'ALL' not in p_divs:
-            div_names = ', '.join([d.name for d in personnel.divisions.all()])
-            return False, f"Cannot assign {personnel.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {tx.service.name} ({tx.service.division.name})."
-
-    return True, None
-
-
-def validate_personnel_availability(office, personnel_name_or_id, current_tx_id=None, check_serving_only=False):
-    """
-    Validates that an officer is not currently assigned to another active client.
-    When check_serving_only=True (used during calling or recalling tickets):
-      Only checks if the officer is currently SERVING another transaction at a counter.
-      An officer can have multiple clients waiting in line for them.
-    When check_serving_only=False (used during manual waiting queue reassignment):
-      Checks if the officer has active waiting/serving transactions so other available
-      officers in the division can be prioritized.
-    """
-    if not personnel_name_or_id or not str(personnel_name_or_id).strip():
-        return True, None, None
-
-    clean_str = str(personnel_name_or_id).strip().lower()
-
-    if check_serving_only:
-        statuses_to_check = [CtmsTransaction.STATUS_SERVING]
-    else:
-        statuses_to_check = [
-            CtmsTransaction.STATUS_WAITING,
-            CtmsTransaction.STATUS_SERVING,
-            CtmsTransaction.STATUS_PENDING,
-        ]
-
-    # Active transactions in the office
-    active_qs = CtmsTransaction.objects.filter(
-        office=office,
-        status__in=statuses_to_check,
-    ).exclude(assigned_personnel__isnull=True).exclude(assigned_personnel='')
-
-    if current_tx_id:
-        active_qs = active_qs.exclude(pk=current_tx_id)
-
-    # Collect known aliases for personnel
-    candidate_names = {clean_str}
-    personnel = DolePersonnel.objects.filter(
-        models.Q(employee_id__iexact=clean_str) | models.Q(first_name__iexact=clean_str)
-    ).first()
-    if personnel:
-        candidate_names.add(personnel.full_name.strip().lower())
-        if personnel.employee_id:
-            candidate_names.add(personnel.employee_id.strip().lower())
-
-    for active_tx in active_qs:
-        assigned_clean = (active_tx.assigned_personnel or '').strip().lower()
-        if assigned_clean in candidate_names:
-            status_text = active_tx.get_status_display()
-            if check_serving_only:
-                return False, f"Officer '{active_tx.assigned_personnel}' is currently serving Queue #{active_tx.queue_no} and cannot call another client until their current transaction is completed.", active_tx
-            else:
-                return False, f"Officer '{active_tx.assigned_personnel}' is currently assigned to Queue #{active_tx.queue_no} ({status_text}) and cannot be assigned to another client until their current transaction is completed.", active_tx
-
-    return True, None, None
 
 
 class StaffCreateWalkinView(APIView):
@@ -747,13 +580,6 @@ class StaffCreateWalkinView(APIView):
         allowed_offices = get_staff_offices(request.user)
         if not allowed_offices.filter(pk=data['office'].pk).exists():
             return Response({"detail": "Forbidden: You are not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
-
-        if not request.user.is_superuser and not has_universal_division_access(request.user):
-            allowed_divs = get_staff_divisions(request.user)
-            if data['service'].division and not allowed_divs.filter(pk=data['service'].division_id).exists():
-                return Response({
-                    "detail": f"Forbidden: You are not authorized to create walk-in tickets for services under {data['service'].division.name}."
-                }, status=status.HTTP_403_FORBIDDEN)
 
         try:
             tx = services.create_transaction(
@@ -790,99 +616,45 @@ class StaffCreateWalkinView(APIView):
 
 
 class StaffCallNextView(APIView):
+    """Calls the next client in the office's shared queue to the caller's window."""
     permission_classes = [IsStaffUser]
 
     def post(self, request):
         office_id = request.data.get('office')
-        counter_id = request.data.get('counter')
-
         if not office_id:
             return Response({"detail": "Office is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        allowed_offices = get_staff_offices(request.user)
-        try:
-            office = allowed_offices.get(pk=office_id)
-        except CsmOffice.DoesNotExist:
+        office = get_staff_offices(request.user).filter(pk=office_id).first()
+        if not office:
             return Response({"detail": "Forbidden: You are not authorized to call clients for this office."}, status=status.HTTP_403_FORBIDDEN)
 
-        allowed_divs = get_staff_divisions(request.user)
-        allowed_div_names = list(allowed_divs.values_list('name', flat=True))
-
-        if counter_id:
-            counter = get_object_or_404(CtmsCounter, pk=counter_id, office=office, is_active=True)
-            if not request.user.is_superuser and not has_universal_division_access(request.user, allowed_divs) and counter.name not in allowed_div_names:
-                return Response({"detail": "Forbidden: You are not authorized to call clients for this counter / division."}, status=status.HTTP_403_FORBIDDEN)
-        else:
-            counter = None
-
-        personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
-        if personnel and str(personnel).strip():
-            clean_str = str(personnel).strip()
-            valid_off, off_err = services.validate_personnel_office_assignment(office, clean_str)
-            if not valid_off:
-                return Response({"detail": off_err}, status=status.HTTP_400_BAD_REQUEST)
-
-        if personnel and str(personnel).strip() and counter:
-            div = CsmDivision.objects.filter(name=counter.name).first()
-            if div and not services.is_universal_division_name(counter.name):
-                clean_str = str(personnel).strip()
-                emp = CtmsEmployee.objects.filter(
-                    models.Q(employee_id__iexact=clean_str) |
-                    models.Q(user__username__iexact=clean_str)
-                ).first()
-                if not emp:
-                    for candidate in CtmsEmployee.objects.all().prefetch_related('divisions'):
-                        c_full = candidate.full_name.strip().lower()
-                        c_simple = f"{candidate.first_name} {candidate.last_name}".strip().lower()
-                        if clean_str.lower() in (c_full, c_simple) or c_full in clean_str.lower():
-                            emp = candidate
-                            break
-                if emp:
-                    emp_divs = [d.name.strip().upper().replace(' ', '') for d in emp.divisions.all()]
-                    c_div = div.name.strip().upper().replace(' ', '')
-                    has_universal_emp = any(
-                        d in ('ALL', 'FRONTDESK') or (d.startswith('WINDOW') and d.replace('WINDOW', '').isdigit())
-                        for d in emp_divs
-                    )
-                    if not has_universal_emp and emp_divs and c_div not in emp_divs and 'ALL' not in emp_divs:
-                        div_names = ', '.join([d.name for d in emp.divisions.all()])
-                        return Response({
-                            "detail": f"Cannot assign {emp.full_name}: Personnel is assigned to division {div_names} and cannot be assigned to {div.name}."
-                        }, status=status.HTTP_400_BAD_REQUEST)
-
-        if personnel and str(personnel).strip():
-            avail, avail_err, _ = validate_personnel_availability(office, str(personnel).strip(), check_serving_only=True)
-            if not avail:
-                return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            tx = services.call_next_transaction(office=office, counter=counter, personnel=personnel)
-            if not tx:
-                return Response({"detail": "No waiting clients in the queue."}, status=status.HTTP_204_NO_CONTENT)
-
-            log_audit_event(
-                action='CALL_NEXT',
-                category=CtmsAuditLog.CATEGORY_QUEUE,
-                actor=request.user,
-                request=request,
-                target_type='Transaction',
-                target_id=tx.id,
-                target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
-                office=tx.office,
-                division_name=tx.service.division.name if tx.service and tx.service.division else '',
-                description=f"Called next client Queue #{tx.queue_no} to {tx.counter.name if tx.counter else 'counter'} (Officer: {tx.assigned_personnel})",
-                details={
-                    'queue_no': tx.queue_no,
-                    'transaction_no': tx.transaction_no,
-                    'counter': tx.counter.name if tx.counter else '',
-                    'assigned_personnel': tx.assigned_personnel,
-                    'service': tx.service.name if tx.service else '',
-                }
-            )
-
-            return Response(StaffTransactionSerializer(tx).data)
+            tx = services.call_next_transaction(office, request.user)
         except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        if not tx:
+            return Response({"detail": "No waiting clients in the queue."}, status=status.HTTP_204_NO_CONTENT)
+
+        log_audit_event(
+            action='CALL_NEXT',
+            category=CtmsAuditLog.CATEGORY_QUEUE,
+            actor=request.user,
+            request=request,
+            target_type='Transaction',
+            target_id=tx.id,
+            target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
+            office=tx.office,
+            division_name=tx.service.division.name if tx.service and tx.service.division else '',
+            description=f"Called next client Queue #{tx.queue_no} to {tx.counter.name} (Officer: {tx.assigned_personnel})",
+            details={
+                'queue_no': tx.queue_no,
+                'transaction_no': tx.transaction_no,
+                'counter': tx.counter.name,
+                'assigned_personnel': tx.assigned_personnel,
+                'service': tx.service.name if tx.service else '',
+            }
+        )
+        return Response(StaffTransactionSerializer(tx).data)
 
 
 class StaffTransactionActionView(APIView):
@@ -894,86 +666,26 @@ class StaffTransactionActionView(APIView):
         if not allowed_offices.filter(pk=tx.office_id).exists():
             return Response({"detail": "Forbidden: Not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
 
-        if not request.user.is_superuser and not has_universal_division_access(request.user):
-            allowed_divs = get_staff_divisions(request.user)
-            if tx.service and tx.service.division and not allowed_divs.filter(pk=tx.service.division_id).exists():
-                return Response({"detail": "Forbidden: You are not authorized to access transactions for this division."}, status=status.HTTP_403_FORBIDDEN)
-
         try:
-            if action == 'assign':
-                personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
-                if not personnel or not str(personnel).strip():
-                    return Response({"detail": "Personnel name cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
-                clean_personnel = str(personnel).strip()
-                valid, err_msg = validate_personnel_division_assignment(tx, clean_personnel)
-                if not valid:
-                    return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
-
-                avail, avail_err, _ = validate_personnel_availability(tx.office, clean_personnel, current_tx_id=tx.pk)
-                if not avail:
-                    return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
-
-                old_personnel = tx.assigned_personnel
-                tx = services.assign_personnel_to_transaction(tx, clean_personnel)
-
-                log_audit_event(
-                    action='REASSIGN_PERSONNEL' if old_personnel else 'ASSIGN_PERSONNEL',
-                    category=CtmsAuditLog.CATEGORY_QUEUE,
-                    actor=request.user,
-                    request=request,
-                    target_type='Transaction',
-                    target_id=tx.id,
-                    target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
-                    office=tx.office,
-                    division_name=tx.service.division.name if tx.service and tx.service.division else '',
-                    description=(
-                        f"Reassigned Queue #{tx.queue_no} to '{clean_personnel}' (previously: '{old_personnel}')"
-                        if old_personnel
-                        else f"Assigned Queue #{tx.queue_no} to '{clean_personnel}'"
-                    )
-                )
-
-            elif action == 'call':
-                counter_id = request.data.get('counter')
-                personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
-                if personnel and str(personnel).strip():
-                    valid, err_msg = validate_personnel_division_assignment(tx, str(personnel).strip())
-                    if not valid:
-                        return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
-                    avail, avail_err, _ = validate_personnel_availability(tx.office, str(personnel).strip(), current_tx_id=tx.pk, check_serving_only=True)
-                    if not avail:
-                        return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
-                counter = None
-                if counter_id:
-                    counter = CtmsCounter.objects.filter(pk=counter_id, office=tx.office, is_active=True).first()
-                tx = services.call_specific_transaction(tx, counter, personnel=personnel)
-
-            elif action == 'recall':
-                if not tx.counter:
-                    return Response({"detail": "Transaction is not assigned to a counter."}, status=status.HTTP_400_BAD_REQUEST)
-                personnel = request.data.get('personnel') or request.data.get('assigned_personnel')
-                if personnel and str(personnel).strip():
-                    valid, err_msg = validate_personnel_division_assignment(tx, str(personnel).strip())
-                    if not valid:
-                        return Response({"detail": err_msg}, status=status.HTTP_400_BAD_REQUEST)
-                    avail, avail_err, _ = validate_personnel_availability(tx.office, str(personnel).strip(), current_tx_id=tx.pk, check_serving_only=True)
-                    if not avail:
-                        return Response({"detail": avail_err}, status=status.HTTP_400_BAD_REQUEST)
-                tx = services.call_specific_transaction(tx, tx.counter, personnel=personnel)
+            if action in ('call', 'recall'):
+                tx = services.call_transaction(tx, request.user)
 
             elif action == 'done':
                 tx = services.mark_done(tx, request.user)
 
             elif action == 'undo-done':
-                tx = services.undo_done(tx)
+                tx = services.undo_done(tx, actor=request.user)
 
             elif action == 'no-show':
-                tx = services.mark_no_show(tx)
+                tx = services.mark_no_show(tx, actor=request.user)
 
             elif action == 'cancel':
-                tx = services.cancel_transaction(tx)
+                tx = services.cancel_transaction(tx, actor=request.user)
 
             elif action == 'delete':
+                if tx.status != CtmsTransaction.STATUS_WAITING:
+                    return Response({"detail": "Only waiting tickets can be deleted. Cancel or complete it instead."},
+                                    status=status.HTTP_409_CONFLICT)
                 q_no = tx.queue_no
                 t_no = tx.transaction_no
                 s_name = tx.service.name if tx.service else ''
@@ -1007,60 +719,16 @@ class StaffTransactionActionView(APIView):
                 })
 
             elif action == 'pending':
-                tx = services.mark_pending(tx)
+                tx = services.mark_pending(tx, actor=request.user, reason=str(request.data.get('reason', '')))
 
             elif action == 'requeue':
-                tx = services.requeue_transaction(tx)
-
-            elif action == 'notify':
-                if not tx.assigned_personnel or not str(tx.assigned_personnel).strip():
-                    return Response({
-                        "detail": f"Cannot notify: No officer is currently assigned to Queue #{tx.queue_no}."
-                    }, status=status.HTTP_400_BAD_REQUEST)
-
-                success, msg = services.notify_assigned_personnel(
-                    tx,
-                    is_reassignment=False,
-                    previous_officer=None,
-                    is_manual_reminder=True,
-                    caller_user=request.user
-                )
-
-                if not success:
-                    return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
-
-                log_audit_event(
-                    action='NOTIFY_PERSONNEL',
-                    category=CtmsAuditLog.CATEGORY_QUEUE,
-                    actor=request.user,
-                    request=request,
-                    target_type='Transaction',
-                    target_id=tx.id,
-                    target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
-                    office=tx.office,
-                    division_name=tx.service.division.name if tx.service and tx.service.division else '',
-                    description=f"Sent notification reminder to assigned officer '{tx.assigned_personnel}' for Queue #{tx.queue_no}",
-                    details={
-                        'queue_no': tx.queue_no,
-                        'transaction_no': tx.transaction_no,
-                        'assigned_personnel': tx.assigned_personnel,
-                        'service': tx.service.name if tx.service else '',
-                    }
-                )
-
-                return Response({
-                    "detail": msg or f"Notification sent to {tx.assigned_personnel} successfully.",
-                    "notified": True,
-                    "queue_no": tx.queue_no,
-                    "officer": tx.assigned_personnel,
-                })
+                tx = services.requeue_transaction(tx, actor=request.user)
 
             else:
                 return Response({"detail": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
 
             # Record audit log for queue actions
             action_map = {
-                'assign': ('ASSIGN_OFFICER', f"Assigned officer '{tx.assigned_personnel}' to Queue #{tx.queue_no}"),
                 'call': ('CALL_CLIENT', f"Called Queue #{tx.queue_no} to {tx.counter.name if tx.counter else 'counter'} (Officer: {tx.assigned_personnel})"),
                 'recall': ('RECALL_CLIENT', f"Recalled Queue #{tx.queue_no} to {tx.counter.name if tx.counter else 'counter'}"),
                 'done': ('COMPLETE_SERVICE', f"Marked Queue #{tx.queue_no} as Done / Completed (Survey unlocked)"),
@@ -1095,6 +763,8 @@ class StaffTransactionActionView(APIView):
 
             return Response(StaffTransactionSerializer(tx).data)
 
+        except PermissionError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
 

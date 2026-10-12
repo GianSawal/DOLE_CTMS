@@ -7,28 +7,18 @@ export const staffApi = {
   }),
   getMe: () => apiRequest('/staff/auth/me/'),
 
-  getQueue: (officeId, counterId, assignedToMe = null) => {
+  getQueue: (officeId) => {
     const params = new URLSearchParams();
     if (officeId) params.append('office', officeId);
-    if (counterId) params.append('counter', counterId);
-    if (assignedToMe !== null && assignedToMe !== undefined) params.append('assigned_to_me', assignedToMe);
     return apiRequest(`/staff/queue/?${params.toString()}`);
   },
 
   getDivisions: () => apiRequest('/staff/divisions/'),
 
-  callNext: (officeId, counterId, personnel = null) => apiRequest('/staff/call-next/', {
+  // Calls the next client in the office's shared queue to the caller's window
+  callNext: (officeId) => apiRequest('/staff/call-next/', {
     method: 'POST',
-    body: JSON.stringify({ office: officeId, counter: counterId, personnel }),
-  }),
-
-  assignPersonnel: (id, personnel) => apiRequest(`/staff/transactions/${id}/assign/`, {
-    method: 'POST',
-    body: JSON.stringify({ personnel }),
-  }),
-
-  notifyPersonnel: (id) => apiRequest(`/staff/transactions/${id}/notify/`, {
-    method: 'POST',
+    body: JSON.stringify({ office: officeId }),
   }),
 
   createWalkin: (data) => apiRequest('/staff/transactions/walkin/', {

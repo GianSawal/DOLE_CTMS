@@ -596,7 +596,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
     counter_name = serializers.ReadOnlyField(source='counter.name')
     served_by_username = serializers.ReadOnlyField(source='served_by.username')
     is_surveyed = serializers.ReadOnlyField()
-    default_officer = serializers.SerializerMethodField()
+    assigned_to_name = serializers.SerializerMethodField()
     started_at = serializers.SerializerMethodField()
     service_duration_seconds = serializers.ReadOnlyField()
     service_duration_display = serializers.SerializerMethodField()
@@ -620,7 +620,9 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'counter',
             'counter_name',
             'assigned_personnel',
-            'default_officer',
+            'assigned_to',
+            'assigned_to_name',
+            'served_by_name',
             'source',
             'checked_in_at',
             'called_at',
@@ -654,11 +656,8 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
         else:
             return f"{s}s"
 
-    def get_default_officer(self, obj):
-        if not obj or not obj.service:
-            return None
-        from .services import get_default_officer_for_service
-        return get_default_officer_for_service(obj.service, office=obj.office)
+    def get_assigned_to_name(self, obj):
+        return personnel_display_name(obj.assigned_to) if obj.assigned_to_id else None
 
 
 class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):

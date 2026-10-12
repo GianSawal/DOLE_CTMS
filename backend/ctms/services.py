@@ -323,10 +323,10 @@ def get_default_officer_for_service(service, office=None):
     return None
 
 
-def create_transaction(office, service, client_name=None, is_priority=False, source='qr', group_member_names=None, assigned_personnel=None):
+def create_transaction(office, service, client_name=None, is_priority=False, source='qr', group_member_names=None):
     """
-    Creates a new queue transaction atomically.
-    Automatically assigns a default personnel member based on personnel associated with the specific service.
+    Creates a new queue transaction atomically. Tickets enter the office's shared
+    waiting queue unassigned; whoever calls the ticket from a window takes it.
     Generates queue_seq restartable daily per office, transaction_no, queue_no,
     ticket_token, survey_token, and claim_code.
     """
@@ -361,28 +361,14 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
 
         next_seq = max_seq + 1
         tx_no = f"{office.code.strip().upper()}-{yymmdd}-{next_seq:04d}"
-        
+
         # Priority flag formatting
         if is_priority:
             queue_no = f"P-{next_seq:03d}"
         else:
             queue_no = f"{next_seq:03d}"
 
-        # Ensure unique tokens
-        ticket_token = generate_token(16)
-        survey_token = generate_token(16)
-        claim_code = generate_claim_code(4)
-
-        # Automatically assign default personnel member based on the service selected
-        if not assigned_personnel:
-            assigned_personnel = get_default_officer_for_service(service, office=office)
-        else:
-            # If explicitly provided, validate eligibility for this office
-            is_valid, _ = validate_personnel_office_assignment(office, str(assigned_personnel).strip())
-            if not is_valid:
-                assigned_personnel = get_default_officer_for_service(service, office=office)
-
-        tx = CtmsTransaction.objects.create(
+        return CtmsTransaction.objects.create(
             transaction_no=tx_no,
             office=office,
             service=service,
@@ -394,247 +380,195 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
             group_member_names=cleaned_member_names,
             status=CtmsTransaction.STATUS_WAITING,
             source=source,
-            assigned_personnel=assigned_personnel,
-            assigned_to=resolve_personnel_user(assigned_personnel, office=office) if assigned_personnel else None,
             checked_in_at=now,
-            ticket_token=ticket_token,
-            survey_token=survey_token,
-            claim_code=claim_code,
+            ticket_token=generate_token(16),
+            survey_token=generate_token(16),
+            claim_code=generate_claim_code(4),
         )
 
-        if tx.assigned_personnel:
-            notify_assigned_personnel(tx, is_reassignment=False)
 
-        return tx
+# =====================================================================
+# Shared office queue: status rules, ownership, and history
+# =====================================================================
 
-
-def notify_assigned_personnel(tx, is_reassignment=False, previous_officer=None, is_manual_reminder=False, caller_user=None):
-    """
-    Creates real-time notifications for the personnel member linked to the assigned officer.
-    Alerts them with queue number, requested service, and assignment time.
-    Returns (True, message) on success or (False, error_message) on failure.
-    """
-    if not tx or not tx.assigned_personnel:
-        return False, "No personnel assigned to this transaction."
-
-    clean = str(tx.assigned_personnel).strip().lower()
-
-    personnel = find_personnel_by_name_or_id(tx.assigned_personnel, office=tx.office)
-    if not personnel:
-        qs = DolePersonnel.objects.filter(is_active=True).select_related('user')
-        if tx.office:
-            qs = qs.filter(office=tx.office)
-        for p in qs:
-            if p.employee_id.strip().lower() == clean or p.full_name.strip().lower() == clean:
-                personnel = p
-                break
-
-    recipient_user = None
-    if personnel and personnel.user:
-        recipient_user = personnel.user
-    else:
-        # Check by username or full name match on User model
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        user_match = User.objects.filter(
-            models.Q(username__iexact=clean) |
-            (models.Q(dole_personnel=personnel) if personnel else models.Q())
-        ).first()
-        if not user_match:
-            parts = clean.split()
-            if len(parts) >= 2:
-                user_match = User.objects.filter(first_name__iexact=parts[0], last_name__iexact=parts[-1]).first()
-        if user_match:
-            recipient_user = user_match
-
-    if not recipient_user:
-        return False, f"Officer '{tx.assigned_personnel}' does not have a linked user account to receive online notifications."
-
-    service_name = tx.service.name if tx.service else 'Service'
-
-    if is_manual_reminder:
-        action_type = 'REMINDER'
-        caller_name = (
-            f"{caller_user.get_full_name() or caller_user.username}"
-            if caller_user and caller_user.is_authenticated
-            else "Queue Dispatcher"
-        )
-        title = f"Queue Reminder: Queue #{tx.queue_no}"
-        message = (
-            f"Reminder from {caller_name}: Client Queue #{tx.queue_no} ({service_name}) is waiting in your queue."
-        )
-    elif is_reassignment:
-        action_type = 'REASSIGNMENT'
-        title = f"Client Reassigned: Queue #{tx.queue_no}"
-        message = (
-            f"Queue #{tx.queue_no} ({service_name}) was reassigned to you (previously {previous_officer})."
-            if previous_officer
-            else f"Queue #{tx.queue_no} ({service_name}) was reassigned to you."
-        )
-    else:
-        action_type = 'ASSIGNMENT'
-        title = f"New Client Assigned: Queue #{tx.queue_no}"
-        message = f"Queue #{tx.queue_no} ({service_name}) was added to your queue."
-
-    try:
-        from .models import CtmsNotification
-        CtmsNotification.objects.create(
-            recipient=recipient_user,
-            transaction=tx,
-            notification_type=action_type,
-            title=title,
-            message=message,
-            queue_no=tx.queue_no,
-            service_name=service_name,
-            assigned_at=timezone.now(),
-        )
-        return True, f"Notification sent to {tx.assigned_personnel} successfully."
-    except Exception as e:
-        print(f"Warning: Failed to create assignment notification: {e}")
-        return False, f"Failed to send notification: {str(e)}"
+_S = CtmsTransaction
+ALLOWED_TRANSITIONS = {
+    _S.STATUS_WAITING: {_S.STATUS_SERVING, _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
+    _S.STATUS_SERVING: {_S.STATUS_DONE, _S.STATUS_PENDING, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
+                        _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
+    _S.STATUS_TRANSFERRED: {_S.STATUS_SERVING, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
+                            _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
+    _S.STATUS_PENDING: {_S.STATUS_SERVING, _S.STATUS_DONE, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
+                        _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
+    _S.STATUS_DONE: {_S.STATUS_SERVING},
+    _S.STATUS_NO_SHOW: set(),
+    _S.STATUS_CANCELLED: set(),
+}
+_STATUS_LABELS = dict(CtmsTransaction.STATUS_CHOICES)
 
 
-def assign_personnel_to_transaction(tx, personnel):
-    """Staff assigns a designated officer / personnel to a transaction."""
-    clean_personnel = (personnel or "").strip()
-    if clean_personnel and tx.office:
-        valid_off, err_off = validate_personnel_office_assignment(tx.office, clean_personnel)
-        if not valid_off:
-            raise ValueError(err_off)
-
-    old_officer = tx.assigned_personnel
-    tx.assigned_personnel = clean_personnel
-    tx.assigned_to = resolve_personnel_user(clean_personnel, office=tx.office) if clean_personnel else None
-    tx.save(update_fields=['assigned_personnel', 'assigned_to'])
-    if tx.assigned_personnel:
-        is_reassign = bool(old_officer and old_officer.strip().lower() != tx.assigned_personnel.lower())
-        notify_assigned_personnel(tx, is_reassignment=is_reassign, previous_officer=old_officer)
-    return tx
-
-
-def call_next_transaction(office, counter, personnel=None):
-    """
-    Finds the next waiting client: priority clients first, then FIFO by checked_in_at.
-    If counter corresponds to a division, only clients for that division are selected.
-    Uses select_for_update(skip_locked=True) to prevent concurrency race conditions.
-    """
-    with transaction.atomic():
-        waiting_qs = CtmsTransaction.objects.select_for_update(skip_locked=True).filter(
-            office=office,
-            status=CtmsTransaction.STATUS_WAITING
+def ensure_transition(tx, to_status):
+    if to_status not in ALLOWED_TRANSITIONS.get(tx.status, set()):
+        raise ValueError(
+            f"Queue #{tx.queue_no} cannot change from {_STATUS_LABELS.get(tx.status, tx.status)} "
+            f"to {_STATUS_LABELS.get(to_status, to_status)}."
         )
 
-        if counter:
-            division = CsmDivision.objects.filter(name=counter.name).first()
-            if division and not is_universal_division_name(counter.name):
-                waiting_qs = waiting_qs.filter(service__division=division)
 
-        waiting_qs = waiting_qs.order_by('-is_priority', 'checked_in_at')
-
-        tx = waiting_qs.first()
-        if not tx:
-            return None
-
-        if personnel:
-            clean_p = str(personnel).strip()
-            if clean_p and office:
-                valid_off, err_off = validate_personnel_office_assignment(office, clean_p)
-                if not valid_off:
-                    raise ValueError(err_off)
-            tx.assigned_personnel = clean_p
-
-        if not tx.assigned_personnel:
-            raise ValueError(f"Cannot call queue #{tx.queue_no}: A personnel must be assigned before calling.")
-
-        assigned_counter = counter
-        # If counter was not specified, automatically match to transaction's division counter
-        if not assigned_counter and tx.service and tx.service.division:
-            assigned_counter = CtmsCounter.objects.filter(
-                office=office,
-                name__iexact=tx.service.division.name.strip(),
-                is_active=True
-            ).first()
-        if not assigned_counter:
-            assigned_counter = CtmsCounter.objects.filter(office=office, is_active=True).first()
-
-        now = timezone.now()
-        tx.status = CtmsTransaction.STATUS_SERVING
-        tx.counter = assigned_counter
-        tx.called_at = now
-        if not tx.started_at:
-            tx.started_at = now
-        tx.assigned_to = resolve_personnel_user(tx.assigned_personnel, office=tx.office)
-        tx.save(update_fields=['status', 'counter', 'called_at', 'started_at', 'assigned_personnel', 'assigned_to'])
-        return tx
+def ensure_handler(tx, user):
+    """Only the personnel who owns a transaction may change it (system admins excepted)."""
+    if not user or user.is_superuser:
+        return
+    if tx.assigned_to_id and tx.assigned_to_id != user.id:
+        owner = personnel_display_name(tx.assigned_to)
+        raise PermissionError(f"Queue #{tx.queue_no} is handled by {owner}. Only they can update it.")
 
 
-def call_specific_transaction(tx, counter=None, personnel=None):
-    """Staff calls, recalls, or resumes a specific transaction."""
-    if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
-        raise ValueError(f"Cannot call a transaction with status '{tx.status}'.")
+def record_event(tx, event, actor=None, from_status='', from_user=None, from_counter=None, reason=''):
+    """Appends an immutable assignment-history row describing a change already applied to `tx`."""
+    from .models import CtmsAssignmentHistory
+    return CtmsAssignmentHistory.objects.create(
+        transaction=tx,
+        event=event,
+        from_status=from_status or '',
+        to_status=tx.status,
+        from_user=from_user,
+        from_user_name=personnel_display_name(from_user),
+        to_user=tx.assigned_to,
+        to_user_name=personnel_display_name(tx.assigned_to),
+        from_counter=from_counter,
+        from_counter_name=from_counter.name if from_counter else '',
+        to_counter=tx.counter,
+        to_counter_name=tx.counter.name if tx.counter_id else '',
+        actor=actor if actor and actor.is_authenticated else None,
+        actor_name=personnel_display_name(actor) if actor and actor.is_authenticated else 'System',
+        reason=(reason or '')[:255],
+    )
 
-    if personnel:
-        clean_p = str(personnel).strip()
-        if clean_p and tx.office:
-            valid_off, err_off = validate_personnel_office_assignment(tx.office, clean_p)
-            if not valid_off:
-                raise ValueError(err_off)
-        tx.assigned_personnel = clean_p
 
-    if not tx.assigned_personnel:
-        raise ValueError(f"Cannot call queue #{tx.queue_no}: A personnel must be assigned before calling.")
+def _snapshot(tx):
+    return {'from_status': tx.status, 'from_user': tx.assigned_to, 'from_counter': tx.counter}
 
-    assigned_counter = counter
-    # Route to ticket's division counter if counter was omitted,
-    # or if counter belongs to a different division while a matching division counter exists
-    if tx.service and tx.service.division:
-        div_counter = CtmsCounter.objects.filter(
-            office=tx.office,
-            name__iexact=tx.service.division.name.strip(),
-            is_active=True
-        ).first()
-        if div_counter:
-            if not assigned_counter:
-                assigned_counter = div_counter
-            elif (
-                assigned_counter.name != div_counter.name
-                and CsmDivision.objects.filter(name__iexact=assigned_counter.name).exists()
-                and not is_universal_division_name(assigned_counter.name)
-            ):
-                # The passed counter belongs to another division (e.g. IMSD instead of TSSD 1)
-                assigned_counter = div_counter
 
-    if not assigned_counter:
-        assigned_counter = CtmsCounter.objects.filter(office=tx.office, is_active=True).first()
+def user_window(user, office):
+    """The active window `user` occupies in `office`, or None."""
+    return CtmsCounter.objects.filter(
+        assigned_user=user, office=office, is_active=True, archived_at__isnull=True
+    ).first()
 
+
+def _lock_user_window(user, office):
+    window = CtmsCounter.objects.select_for_update().filter(
+        assigned_user=user, office=office, is_active=True, archived_at__isnull=True
+    ).first()
+    if not window:
+        raise ValueError("Take a window on the Windows page before calling clients.")
+    return window
+
+
+def _ensure_not_serving_another(user, office, exclude_pk=None):
+    qs = CtmsTransaction.objects.filter(assigned_to=user, office=office, status=CtmsTransaction.STATUS_SERVING)
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+    busy = qs.first()
+    if busy:
+        raise ValueError(
+            f"You are still serving Queue #{busy.queue_no}. Mark it Done, Pending, or return it to the queue first."
+        )
+
+
+def _start_service(tx, user, window, event):
+    snap = _snapshot(tx)
     now = timezone.now()
     tx.status = CtmsTransaction.STATUS_SERVING
-    tx.counter = assigned_counter
+    tx.counter = window
+    tx.assigned_to = user
+    tx.assigned_personnel = personnel_display_name(user)[:200]
     tx.called_at = now
     if not tx.started_at:
         tx.started_at = now
-    tx.assigned_to = resolve_personnel_user(tx.assigned_personnel, office=tx.office)
-    tx.save(update_fields=['status', 'counter', 'called_at', 'started_at', 'assigned_personnel', 'assigned_to'])
+    tx.save(update_fields=['status', 'counter', 'assigned_to', 'assigned_personnel', 'called_at', 'started_at'])
+    record_event(tx, event, actor=user, **snap)
     return tx
 
 
-def mark_pending(tx):
-    """Staff moves a serving or waiting transaction to the Pending line (e.g. multi-day services)."""
-    if tx.status not in (CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_WAITING):
-        raise ValueError(f"Cannot mark transaction with status '{tx.status}' as Pending.")
+def call_next_transaction(office, user):
+    """
+    Claims the next waiting ticket in the office's shared queue for `user` at their window:
+    priority first, then first-come-first-served, regardless of the service's division.
+    skip_locked keeps two windows from claiming the same ticket.
+    """
+    with transaction.atomic():
+        window = _lock_user_window(user, office)
+        _ensure_not_serving_another(user, office)
+        tx = (CtmsTransaction.objects.select_for_update(skip_locked=True)
+              .filter(office=office, status=CtmsTransaction.STATUS_WAITING, queue_date=timezone.localdate())
+              .order_by('-is_priority', 'checked_in_at', 'id')
+              .first())
+        if not tx:
+            return None
+        from .models import CtmsAssignmentHistory
+        return _start_service(tx, user, window, CtmsAssignmentHistory.EVENT_CALLED)
 
-    tx.status = CtmsTransaction.STATUS_PENDING
-    tx.save(update_fields=['status'])
+
+def call_transaction(tx, user):
+    """
+    Calls a specific ticket to `user`'s window:
+    - waiting: claims it from the shared queue
+    - serving (own): re-announces it (recall)
+    - pending / transferred (own): resumes / starts it
+    """
+    from .models import CtmsAssignmentHistory
+
+    with transaction.atomic():
+        tx = CtmsTransaction.objects.select_for_update().select_related('assigned_to', 'counter').get(pk=tx.pk)
+        window = _lock_user_window(user, tx.office)
+
+        if tx.status == CtmsTransaction.STATUS_WAITING:
+            _ensure_not_serving_another(user, tx.office)
+            return _start_service(tx, user, window, CtmsAssignmentHistory.EVENT_CALLED)
+
+        if tx.assigned_to_id and tx.assigned_to_id != user.id:
+            where = f" at {tx.counter.name}" if tx.counter_id and tx.status == CtmsTransaction.STATUS_SERVING else ""
+            raise ValueError(f"Queue #{tx.queue_no} is already with {personnel_display_name(tx.assigned_to)}{where}.")
+
+        if tx.status == CtmsTransaction.STATUS_SERVING:
+            tx.called_at = timezone.now()
+            tx.counter = window
+            tx.assigned_to = user
+            tx.assigned_personnel = personnel_display_name(user)[:200]
+            tx.save(update_fields=['called_at', 'counter', 'assigned_to', 'assigned_personnel'])
+            return tx
+
+        if tx.status in (CtmsTransaction.STATUS_PENDING, CtmsTransaction.STATUS_TRANSFERRED):
+            _ensure_not_serving_another(user, tx.office, exclude_pk=tx.pk)
+            return _start_service(tx, user, window, CtmsAssignmentHistory.EVENT_RESUMED)
+
+        raise ValueError(f"Cannot call a transaction with status '{tx.status}'.")
+
+
+def _apply(tx, to_status, event, actor, fields, reason=''):
+    """Validates and saves a status change, then records it in the assignment history."""
+    ensure_transition(tx, to_status)
+    snap = _snapshot(tx)
+    tx.status = to_status
+    tx.save(update_fields=['status'] + list(fields))
+    record_event(tx, event, actor=actor, reason=reason, **snap)
     return tx
+
+
+def mark_pending(tx, actor=None, reason=''):
+    """Pauses a transaction (e.g. waiting for requirements). It stays with its handler."""
+    from .models import CtmsAssignmentHistory
+    ensure_handler(tx, actor)
+    return _apply(tx, CtmsTransaction.STATUS_PENDING, CtmsAssignmentHistory.EVENT_PENDING, actor, [], reason)
 
 
 def mark_done(tx, staff_user):
-    """Staff marks a serving or pending transaction as Done."""
-    if tx.status not in (CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
-        raise ValueError(f"Cannot mark transaction '{tx.status}' as Done. Must be serving or pending.")
-
+    """Completes a transaction and unlocks the CSM survey."""
+    from .models import CtmsAssignmentHistory
+    ensure_handler(tx, staff_user)
     now = timezone.now()
-    tx.status = CtmsTransaction.STATUS_DONE
     tx.done_at = now
     if not tx.started_at:
         tx.started_at = tx.called_at or now
@@ -645,57 +579,47 @@ def mark_done(tx, staff_user):
     else:
         handler_name = (tx.assigned_personnel or '').strip() or personnel_display_name(staff_user)
     tx.served_by_name = handler_name[:200]
-    tx.save(update_fields=['status', 'done_at', 'started_at', 'served_by', 'served_by_name'])
-    return tx
+    return _apply(tx, CtmsTransaction.STATUS_DONE, CtmsAssignmentHistory.EVENT_COMPLETED, staff_user,
+                  ['done_at', 'started_at', 'served_by', 'served_by_name'])
 
 
-def undo_done(tx):
-    """Staff reverts Done back to Serving. Refused if already surveyed."""
+def undo_done(tx, actor=None):
+    """Reverts Done back to Serving. Refused if already surveyed."""
+    from .models import CtmsAssignmentHistory
     if tx.status != CtmsTransaction.STATUS_DONE:
         raise ValueError(f"Cannot undo Done for transaction with status '{tx.status}'.")
-
     if tx.is_surveyed:
         raise ValueError("Cannot undo Done: CSM survey response has already been submitted.")
-
-    tx.status = CtmsTransaction.STATUS_SERVING
+    ensure_handler(tx, actor)
     tx.done_at = None
-    tx.save(update_fields=['status', 'done_at'])
-    return tx
+    return _apply(tx, CtmsTransaction.STATUS_SERVING, CtmsAssignmentHistory.EVENT_REOPENED, actor, ['done_at'])
 
 
-def mark_no_show(tx):
-    """Staff marks transaction as No-Show."""
-    if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
-        raise ValueError(f"Cannot mark transaction with status '{tx.status}' as no-show.")
-
-    tx.status = CtmsTransaction.STATUS_NO_SHOW
+def mark_no_show(tx, actor=None):
+    from .models import CtmsAssignmentHistory
+    ensure_handler(tx, actor)
     tx.closed_at = timezone.now()
-    tx.save(update_fields=['status', 'closed_at'])
-    return tx
+    return _apply(tx, CtmsTransaction.STATUS_NO_SHOW, CtmsAssignmentHistory.EVENT_NO_SHOW, actor, ['closed_at'])
 
 
-def cancel_transaction(tx):
-    """Staff or client cancels transaction."""
-    if tx.status not in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
-        raise ValueError(f"Cannot cancel transaction with status '{tx.status}'.")
-
-    tx.status = CtmsTransaction.STATUS_CANCELLED
+def cancel_transaction(tx, actor=None):
+    from .models import CtmsAssignmentHistory
+    ensure_handler(tx, actor)
     tx.closed_at = timezone.now()
-    tx.save(update_fields=['status', 'closed_at'])
-    return tx
+    return _apply(tx, CtmsTransaction.STATUS_CANCELLED, CtmsAssignmentHistory.EVENT_CANCELLED, actor, ['closed_at'])
 
 
-def requeue_transaction(tx):
-    """Return serving or pending transaction back to waiting queue."""
-    if tx.status not in (CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_PENDING):
-        raise ValueError(f"Cannot requeue transaction with status '{tx.status}'.")
-
-    tx.status = CtmsTransaction.STATUS_WAITING
+def requeue_transaction(tx, actor=None):
+    """Returns a transaction to the office's shared waiting queue, unassigned."""
+    from .models import CtmsAssignmentHistory
+    ensure_handler(tx, actor)
     tx.counter = None
+    tx.assigned_to = None
+    tx.assigned_personnel = None
     tx.started_at = None
     tx.called_at = None
-    tx.save(update_fields=['status', 'counter', 'started_at', 'called_at'])
-    return tx
+    return _apply(tx, CtmsTransaction.STATUS_WAITING, CtmsAssignmentHistory.EVENT_REQUEUED, actor,
+                  ['counter', 'assigned_to', 'assigned_personnel', 'started_at', 'called_at'])
 
 
 # =====================================================================
