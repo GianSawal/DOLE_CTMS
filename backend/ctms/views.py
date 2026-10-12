@@ -335,18 +335,35 @@ class PublicDisplayBoardView(APIView):
             .select_related('assigned_user', 'assigned_user__dole_personnel')
             .order_by('sort_order', 'name', 'id')
         )
+        # A window can hold more than one client (e.g. a transferred client served there by a
+        # colleague without a window): the latest call is featured, the rest listed under it.
         serving_by_window = {}
         for tx in (CtmsTransaction.objects
                    .filter(counter__in=windows, status=CtmsTransaction.STATUS_SERVING)
                    .select_related('service', 'assigned_to', 'assigned_to__dole_personnel')
-                   .order_by('called_at')):
-            serving_by_window[tx.counter_id] = tx  # latest call per window wins
+                   .order_by('-called_at')):
+            serving_by_window.setdefault(tx.counter_id, []).append(tx)
 
         window_cards = []
         serving = []
         for w in windows:
-            tx = serving_by_window.get(w.id)
+            at_window = serving_by_window.get(w.id, [])
+            tx = at_window[0] if at_window else None
             current = None
+            also = []
+            for other in at_window:
+                other_personnel = services.personnel_display_name(other.assigned_to) if other.assigned_to_id else (other.assigned_personnel or "")
+                serving.append({
+                    "id": other.id,
+                    "counter": w.name,
+                    "queue_no": other.queue_no,
+                    "called_at": other.called_at.isoformat() if other.called_at else None,
+                    "service_name": other.service.name if other.service_id else "",
+                    "assigned_personnel": other_personnel,
+                    "is_priority": other.is_priority,
+                })
+                if other is not tx:
+                    also.append({"queue_no": other.queue_no, "is_priority": other.is_priority, "personnel": other_personnel})
             if tx:
                 service_name = tx.service.name if tx.service_id else ""
                 personnel = services.personnel_display_name(tx.assigned_to) if tx.assigned_to_id else (tx.assigned_personnel or "")
@@ -359,24 +376,16 @@ class PublicDisplayBoardView(APIView):
                     "personnel": personnel,
                     "called_at": tx.called_at.isoformat() if tx.called_at else None,
                 }
-                serving.append({
-                    "id": tx.id,
-                    "counter": w.name,
-                    "queue_no": tx.queue_no,
-                    "called_at": current["called_at"],
-                    "service_name": service_name,
-                    "assigned_personnel": personnel,
-                    "is_priority": tx.is_priority,
-                })
             window_cards.append({
                 "id": w.id,
                 "kind": "window",
                 "name": w.name,
                 "personnel_name": services.personnel_display_name(w.assigned_user) if w.assigned_user_id else "",
                 "current": current,
+                "also_serving": also,
             })
 
-        # Clients served without a window (e.g. a transfer recipient who has no window)
+        # Clients served with no window at all (no window to return to after a transfer)
         # get a card named after the personnel, so the client knows whom to approach.
         windowless = (CtmsTransaction.objects
                       .filter(office=office, status=CtmsTransaction.STATUS_SERVING, counter__isnull=True)
@@ -392,6 +401,7 @@ class PublicDisplayBoardView(APIView):
                 "kind": "personnel",
                 "name": personnel or "Personnel",
                 "personnel_name": personnel,
+                "also_serving": [],
                 "current": {
                     "id": tx.id,
                     "queue_no": tx.queue_no,

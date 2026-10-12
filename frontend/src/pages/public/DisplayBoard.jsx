@@ -1106,6 +1106,22 @@ export default function DisplayBoard() {
                         }}>
                           {cur.service_name}
                         </div>
+                        {w.also_serving?.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'baseline' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: themeStyles.counterLabel }}>
+                              {lang === 'fil' ? 'Pinagsisilbihan din:' : 'Also serving:'}
+                            </span>
+                            {w.also_serving.map(o => (
+                              <span key={o.queue_no} className="mono" style={{
+                                fontSize: '1.15rem',
+                                fontWeight: 800,
+                                color: o.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
+                              }} title={o.personnel}>
+                                {o.queue_no}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </>
                     ) : (
                       <>

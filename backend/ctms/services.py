@@ -466,6 +466,18 @@ def _lock_user_window(user, office, required=True):
     return window
 
 
+def _transfer_origin_window(tx):
+    """The active window the client was last transferred away from, if any."""
+    from .models import CtmsAssignmentHistory
+    event = (CtmsAssignmentHistory.objects
+             .filter(transaction=tx, event=CtmsAssignmentHistory.EVENT_TRANSFERRED, from_counter__isnull=False)
+             .select_related('from_counter').order_by('-created_at', '-id').first())
+    window = event.from_counter if event else None
+    if window and window.office_id == tx.office_id and window.is_active and window.archived_at is None:
+        return window
+    return None
+
+
 def _ensure_not_serving_another(user, office, exclude_pk=None):
     qs = CtmsTransaction.objects.filter(assigned_to=user, office=office, status=CtmsTransaction.STATUS_SERVING)
     if exclude_pk:
@@ -517,8 +529,8 @@ def call_transaction(tx, user):
     - waiting: claims it from the shared queue (window required)
     - serving (own): re-announces it (recall)
     - pending (own): resumes it (window required)
-    - transferred (own): starts it; a recipient without a window may still serve
-      the client, who is then not shown on the TV board
+    - transferred (own): starts it at the recipient's window; a recipient without a
+      window serves the client at the window it was transferred from
     """
     from .models import CtmsAssignmentHistory
 
@@ -546,6 +558,8 @@ def call_transaction(tx, user):
 
         if tx.status in (CtmsTransaction.STATUS_PENDING, CtmsTransaction.STATUS_TRANSFERRED):
             _ensure_not_serving_another(user, tx.office, exclude_pk=tx.pk)
+            if not window and tx.status == CtmsTransaction.STATUS_TRANSFERRED:
+                window = _transfer_origin_window(tx)
             return _start_service(tx, user, window, CtmsAssignmentHistory.EVENT_RESUMED)
 
         raise ValueError(f"Cannot call a transaction with status '{tx.status}'.")
