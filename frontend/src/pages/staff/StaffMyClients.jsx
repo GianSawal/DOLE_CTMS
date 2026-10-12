@@ -84,17 +84,19 @@ export default function StaffMyClients() {
 
   const startOrResume = (tx) => run(tx, async () => {
     const res = await staffApi.transactionAction(tx.id, 'call');
-    // Clients started without a window are announced with the personnel's name.
-    broadcastQueueCall({
-      officeId: res.office,
-      txId: res.id,
-      queueNo: res.queue_no,
-      counter: res.counter_name || res.assigned_to_name || '',
-      personnel: res.assigned_to_name || '',
-      action: 'call',
-    });
+    // Reassigned clients are handled off the TV board, so they are not announced.
+    if (!res.was_transferred && res.counter_name) {
+      broadcastQueueCall({
+        officeId: res.office,
+        txId: res.id,
+        queueNo: res.queue_no,
+        counter: res.counter_name,
+        personnel: res.assigned_to_name || '',
+        action: 'call',
+      });
+    }
     return res;
-  }, myWindow ? `Queue ${tx.queue_no} called to your window.` : `You are now serving Queue ${tx.queue_no}.`);
+  }, myWindow && tx.status === 'pending' ? `Queue ${tx.queue_no} called to your window.` : `You are now serving Queue ${tx.queue_no}.`);
 
   const submitPending = async (e) => {
     e.preventDefault();

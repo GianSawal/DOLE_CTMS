@@ -1001,8 +1001,8 @@ class Stage4MyClientsAndTransferTestCase(CsmTablesTestCase):
         res = self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/call/')
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data['status'], 'serving')
-        # Served at the window the client was transferred from
-        self.assertEqual(res.data['counter_name'], 'Window 1')
+        self.assertIsNone(res.data['counter'])
+        self.assertTrue(res.data['was_transferred'])
         self.assertEqual(res.data['assigned_to'], self.ben.id)
         self.assertEqual(self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/done/').status_code, 200)
 
@@ -1077,65 +1077,33 @@ class Stage5DisplayBoardTestCase(CsmTablesTestCase):
         CtmsStaffOffice.objects.create(user=ben, office=self.bataan)
         return ben
 
-    def test_transferred_client_shows_in_the_window_it_came_from(self):
+    def test_reassigned_client_leaves_the_tv(self):
         from .services import transfer_transaction
         ben = self._ben_without_window()
-        tx = call_transaction(create_transaction(self.bataan, self.service, client_name="Confidential Name"), self.ana)
+        tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
         transfer_transaction(tx, self.ana, ben)
+        self.assertEqual(self._board()['windows'][0]['clients'], [])
+
         call_transaction(tx, ben)  # Ben has no window
-
         board = self._board()
+        self.assertTrue(all(c['clients'] == [] for c in board['windows']))
+        self.assertIsNone(board['latest_called_queue_no'])
         self.assertEqual(len(board['windows']), 4)
-        self.assertEqual(board['windows'][0]['current']['queue_no'], tx.queue_no)
-        self.assertEqual(board['windows'][0]['current']['personnel'], "Ben Cruz")
-        self.assertEqual(board['latest_called_counter'], "Window 1")
 
-        # Ana calls her next client at the same window: both are shown on Window 1
+        # Window 1 is free for Ana's next client, which shows normally
         nxt = call_transaction(create_transaction(self.bataan, self.service), self.ana)
         card = self._board()['windows'][0]
-        self.assertEqual(card['current']['queue_no'], nxt.queue_no)
-        self.assertEqual([o['queue_no'] for o in card['also_serving']], [tx.queue_no])
-        self.assertNotIn("Confidential Name", str(self._board()))
+        self.assertEqual([c['queue_no'] for c in card['clients']], [nxt.queue_no])
 
-    def test_windowless_ticket_without_counter_is_shown_in_origin_window(self):
-        # Tickets saved without a window (before serving-at-origin existed) still join that window's card
+    def test_reassigned_client_served_at_recipient_window_stays_off_tv(self):
         from .services import transfer_transaction
         ben = self._ben_without_window()
+        CtmsCounter.objects.filter(pk=self.windows[1].pk).update(assigned_user=ben)
         tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
         transfer_transaction(tx, self.ana, ben)
-        call_transaction(tx, ben)
-        CtmsTransaction.objects.filter(pk=tx.pk).update(counter=None)
-
-        board = self._board()
-        self.assertEqual(len(board['windows']), 4)
-        self.assertEqual(board['windows'][0]['current']['queue_no'], tx.queue_no)
-        self.assertFalse(any(c['kind'] == 'personnel' for c in board['windows']))
-
-    def test_reassigned_client_stays_on_window_until_started(self):
-        from .services import transfer_transaction
-        ben = self._ben_without_window()
-        tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
-        transfer_transaction(tx, self.ana, ben)
-        nxt = call_transaction(create_transaction(self.bataan, self.service), self.ana)
-
-        card = self._board()['windows'][0]
-        rows = [(c['queue_no'], c['reassigned'], c['personnel']) for c in card['clients']]
-        # Being served first, then the reassigned client waiting for Ben
-        self.assertEqual(rows, [(nxt.queue_no, False, "Ana Reyes"), (tx.queue_no, True, "Ben Cruz")])
-        self.assertEqual(self._board()['latest_called_queue_no'], nxt.queue_no)
-
-    def test_personnel_card_when_origin_window_is_gone(self):
-        from .services import transfer_transaction, archive_window
-        ben = self._ben_without_window()
-        tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
-        transfer_transaction(tx, self.ana, ben)
-        archive_window(self.windows[0])
-        call_transaction(tx, ben)
-
-        cards = self._board()['windows']
-        self.assertEqual(cards[-1]['kind'], 'personnel')
-        self.assertEqual(cards[-1]['name'], "Ben Cruz")
-        self.assertEqual(cards[-1]['current']['queue_no'], tx.queue_no)
+        started = call_transaction(tx, ben)
+        self.assertEqual(started.counter, self.windows[1])
+        self.assertEqual(self._board()['windows'][1]['clients'], [])
 
     def test_next_in_line_is_priority_then_fifo(self):
         create_transaction(self.bataan, self.service)

@@ -334,6 +334,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
     served_by_username = serializers.ReadOnlyField(source='served_by.username')
     is_surveyed = serializers.ReadOnlyField()
     assigned_to_name = serializers.SerializerMethodField()
+    was_transferred = serializers.SerializerMethodField()
     started_at = serializers.SerializerMethodField()
     service_duration_seconds = serializers.ReadOnlyField()
     service_duration_display = serializers.SerializerMethodField()
@@ -360,6 +361,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'assigned_to',
             'assigned_to_name',
             'served_by_name',
+            'was_transferred',
             'source',
             'checked_in_at',
             'called_at',
@@ -392,6 +394,11 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             return f"{m}m {s}s"
         else:
             return f"{s}s"
+
+    def get_was_transferred(self, obj):
+        """Reassigned clients are handled off the TV board (no announcements)."""
+        from .models import CtmsAssignmentHistory
+        return obj.assignment_history.filter(event=CtmsAssignmentHistory.EVENT_TRANSFERRED).exists()
 
     def get_assigned_to_name(self, obj):
         return personnel_display_name(obj.assigned_to) if obj.assigned_to_id else None

@@ -147,14 +147,11 @@ Rules live in `ctms/permissions.py` and are enforced on every endpoint; the side
 * **Pending:** clients you paused; they stay yours.
 * **Done:** your latest 200 completed transactions with CSM status.
 * **View:** ticket details and full handling history.
-* **Reassign:** to active staff of the same office. The client leaves your lists and window immediately, the recipient is notified, and you can no longer change it. The recipient presses **Start**:
-  * at their own window if they have one;
-  * otherwise at the **window the client was transferred from** (shown and announced there on the TV);
-  * with a "Proceed to <name>" TV card only if that window no longer exists.
+* **Reassign:** to active staff of the same office. The client leaves your lists and window immediately, the recipient is notified, and you can no longer change it. The client then appears only in the recipient's **My Clients**; the recipient presses **Start** (at their window if they have one, otherwise without a window). **Reassigned clients are never shown or announced on the TV.**
 
 ### 4.6 TV Display Board (`/display/office/:officeId`)
 * **One card per active window** of the office, in Windows-page order; cards resize to fit. No hardcoded windows or divisions.
-* Each card: window name, queue number being served (or Idle / "<name> · Available"), personnel name, service. The latest call is highlighted; extra clients at the same window are listed as **Also serving**.
+* Each card: window name, queue number being served (or Idle / "<name> · Available"), personnel name, service. The latest call is highlighted; several clients at one window are listed as equal rows. Reassigned clients are not shown.
 * Next in line (priority first), ARTA / Citizen's Charter video, chime + voice announcement (English/Filipino), light/dark mode.
 * **Privacy (RA 10173):** queue numbers only, never client names.
 

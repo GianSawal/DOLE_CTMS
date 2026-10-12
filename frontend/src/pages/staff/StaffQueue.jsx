@@ -113,7 +113,8 @@ export default function StaffQueue() {
   };
 
   const announce = (tx, action) => {
-    if (!tx) return;
+    // Reassigned clients are handled off the TV board
+    if (!tx || tx.was_transferred) return;
     broadcastQueueCall({
       officeId: selectedOffice,
       txId: tx.id,
@@ -154,7 +155,7 @@ export default function StaffQueue() {
     return res;
   }, res => (action === 'recall'
     ? `Queue ${res.queue_no} announced again.`
-    : res.counter_name ? `Queue ${res.queue_no} called to ${res.counter_name}.` : `You are now serving Queue ${res.queue_no}.`));
+    : res.counter_name && !res.was_transferred ? `Queue ${res.queue_no} called to ${res.counter_name}.` : `You are now serving Queue ${res.queue_no}.`));
 
   const act = (tx, action, successText, payload) =>
     run(() => staffApi.transactionAction(tx.id, action, payload), successText);
@@ -286,7 +287,9 @@ export default function StaffQueue() {
                         onClick={() => act(myCurrent, 'done', `Queue ${myCurrent.queue_no} completed. The client can now answer the CSM survey.`)}>
                         Done
                       </button>
-                      <button className="btn btn-outline" disabled={busy} onClick={() => handleCall(myCurrent, 'recall')}>Recall on TV</button>
+                      {!myCurrent.was_transferred && (
+                        <button className="btn btn-outline" disabled={busy} onClick={() => handleCall(myCurrent, 'recall')}>Recall on TV</button>
+                      )}
                       <button className="btn btn-outline" disabled={busy} onClick={() => { setPendingReason(''); setPendingTx(myCurrent); }}>Pending</button>
                       <button className="btn btn-outline" disabled={busy} onClick={() => setReassignTx(myCurrent)}>Reassign</button>
                       <button className="btn btn-outline" disabled={busy}
