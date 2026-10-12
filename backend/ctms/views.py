@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import secrets
 import urllib.request
 import urllib.parse
 import mimetypes
@@ -160,6 +161,8 @@ class PublicOfficeDetailView(APIView):
             "services": CsmServiceSerializer(services_qs, many=True).data,
             "is_qr_enabled": is_qr_enabled,
             "disabled_message": disabled_message,
+            # Only whether a code is needed; the code itself is never sent here.
+            "requires_office_code": bool(qr_config and qr_config.requires_office_code),
         })
 
 
@@ -180,6 +183,14 @@ class PublicCheckinView(APIView):
         if qr_config and not qr_config.is_qr_enabled:
             msg = qr_config.disabled_message or "Online registration is currently closed beyond office hours."
             return Response({"detail": msg, "message": msg, "code": "QR_DISABLED"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Guard: the printed QR poster never changes, so a photo of it works anywhere. When
+        # enabled, require today's code shown on the TV / whiteboard inside the office.
+        if qr_config and qr_config.requires_office_code:
+            entered = str(data.get('office_code') or '').strip()
+            if entered != services.get_or_rotate_office_code(qr_config):
+                msg = "Incorrect check-in code. Please enter the 4-digit code shown on the screen or board at the office."
+                return Response({"detail": msg, "message": msg, "code": "OFFICE_CODE_INVALID"}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             tx = services.create_transaction(
@@ -352,6 +363,15 @@ class PublicDisplayBoardView(APIView):
 
         latest = max(serving, key=lambda s: s["called_at"] or "", default=None)
 
+        # Today's check-in code, only for the office's own TV (opened with its secret key):
+        # this endpoint is public, so anyone else gets no code.
+        check_in_code = None
+        key = request.GET.get('key') or ''
+        qr_config = CtmsOfficeQrConfig.objects.filter(office=office).first()
+        if (key and qr_config and qr_config.requires_office_code and qr_config.display_key
+                and secrets.compare_digest(key, qr_config.display_key)):
+            check_in_code = services.get_or_rotate_office_code(qr_config)
+
         return Response({
             "office": CsmOfficeSerializer(office).data,
             "windows": window_cards,
@@ -365,6 +385,7 @@ class PublicDisplayBoardView(APIView):
             "latest_called_queue_no": latest["queue_no"] if latest else None,
             "latest_called_counter": latest["counter"] if latest else None,
             "latest_called_personnel": latest["assigned_personnel"] if latest else None,
+            "check_in_code": check_in_code,
             "updated_at": timezone.now().isoformat(),
         })
 
@@ -917,6 +938,26 @@ class StaffQrCodeView(APIView):
         return HttpResponse(buffer.getvalue(), content_type="image/png")
 
 
+def qr_config_payload(office, config):
+    payload = {
+        "office_id": office.id,
+        "office_name": office.name,
+        "is_qr_enabled": config.is_qr_enabled,
+        "disabled_message": config.disabled_message,
+        "disabled_at": config.disabled_at.isoformat() if config.disabled_at else None,
+        "disabled_by_username": config.disabled_by.username if config.disabled_by else None,
+        "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+        "requires_office_code": config.requires_office_code,
+        "office_code": None,
+        "office_code_date": None,
+        "display_key": services.get_display_key(config),
+    }
+    if config.requires_office_code:
+        payload["office_code"] = services.get_or_rotate_office_code(config)
+        payload["office_code_date"] = config.office_code_date.isoformat()
+    return payload
+
+
 class StaffQrConfigView(APIView):
     permission_classes = [IsStaffUser]
 
@@ -932,15 +973,7 @@ class StaffQrConfigView(APIView):
         office = get_object_or_404(CsmOffice, pk=office_id)
         config, _ = CtmsOfficeQrConfig.objects.get_or_create(office=office)
 
-        return Response({
-            "office_id": office.id,
-            "office_name": office.name,
-            "is_qr_enabled": config.is_qr_enabled,
-            "disabled_message": config.disabled_message,
-            "disabled_at": config.disabled_at.isoformat() if config.disabled_at else None,
-            "disabled_by_username": config.disabled_by.username if config.disabled_by else None,
-            "updated_at": config.updated_at.isoformat() if config.updated_at else None,
-        })
+        return Response(qr_config_payload(office, config))
 
     def post(self, request):
         office_id = request.data.get('office_id') or request.data.get('office')
@@ -997,15 +1030,72 @@ class StaffQrConfigView(APIView):
         )
 
         return Response({
-            "office_id": office.id,
-            "office_name": office.name,
-            "is_qr_enabled": config.is_qr_enabled,
-            "disabled_message": config.disabled_message,
-            "disabled_at": config.disabled_at.isoformat() if config.disabled_at else None,
-            "disabled_by_username": config.disabled_by.username if config.disabled_by else None,
-            "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+            **qr_config_payload(office, config),
             "detail": f"QR registration has been {'enabled' if is_qr_enabled else 'disabled'} for {office.name}.",
         })
+
+
+def _truthy(value):
+    return value in (True, 'true', 'True', '1', 1)
+
+
+class StaffOfficeCodeView(APIView):
+    """
+    Daily in-office check-in code settings for one office:
+      - requires_office_code: turns the requirement on or off
+      - regenerate: replaces today's code now (e.g. it was shared outside the office)
+      - regenerate_display_key: issues a new TV link (old TV links stop showing the code)
+    """
+    permission_classes = [IsStaffUser]
+
+    def post(self, request):
+        office_id = request.data.get('office_id') or request.data.get('office')
+        if not office_id:
+            return Response({"detail": "Office ID required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed_offices = get_staff_offices(request.user)
+        if not allowed_offices.filter(pk=office_id).exists() and not request.user.is_superuser:
+            return Response({"detail": "Forbidden: You are not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
+
+        office = get_object_or_404(CsmOffice, pk=office_id)
+        config, _ = CtmsOfficeQrConfig.objects.get_or_create(office=office)
+
+        changes = []
+        if 'requires_office_code' in request.data:
+            required = _truthy(request.data.get('requires_office_code'))
+            if required != config.requires_office_code:
+                config.requires_office_code = required
+                config.save(update_fields=['requires_office_code', 'updated_at'])
+                changes.append("ENABLE_OFFICE_CODE" if required else "DISABLE_OFFICE_CODE")
+        if _truthy(request.data.get('regenerate')):
+            services.get_or_rotate_office_code(config, force=True)
+            changes.append("REGENERATE_OFFICE_CODE")
+        if _truthy(request.data.get('regenerate_display_key')):
+            services.get_display_key(config, force=True)
+            changes.append("REGENERATE_DISPLAY_KEY")
+
+        descriptions = {
+            "ENABLE_OFFICE_CODE": f"Required the daily check-in code for {office.name}",
+            "DISABLE_OFFICE_CODE": f"Stopped requiring the daily check-in code for {office.name}",
+            "REGENERATE_OFFICE_CODE": f"Generated a new daily check-in code for {office.name}",
+            "REGENERATE_DISPLAY_KEY": f"Issued a new TV display link for {office.name}",
+        }
+        for action_name in changes:
+            # The code itself is never written to the audit log.
+            log_audit_event(
+                action=action_name,
+                category=CtmsAuditLog.CATEGORY_CONFIG,
+                actor=request.user,
+                request=request,
+                target_type="CtmsOfficeQrConfig",
+                target_id=str(config.id),
+                target_repr=f"QR Config for {office.name}",
+                office=office,
+                description=descriptions[action_name],
+                details={"office_id": office.id, "office_name": office.name},
+            )
+
+        return Response(qr_config_payload(office, config))
 
 
 class StaffDisplayVideoView(APIView):

@@ -7,7 +7,10 @@ export const publicApi = {
     body: JSON.stringify(data),
   }),
   getTicket: (ticketToken) => apiRequest(`/public/tickets/${ticketToken}/`),
-  getDisplayBoard: (officeId) => apiRequest(`/public/display/${officeId}/`),
+  // `key` is the office's secret TV key; only with it does the board include the check-in code.
+  getDisplayBoard: (officeId, key) => apiRequest(
+    `/public/display/${officeId}/${key ? `?key=${encodeURIComponent(key)}` : ''}`
+  ),
   uploadDisplayVideo: (officeId, file) => {
     const formData = new FormData();
     formData.append('video_file', file);

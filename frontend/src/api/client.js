@@ -69,7 +69,11 @@ export async function apiRequest(endpoint, options = {}) {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: response.statusText }));
     const errorMsg = errorData.detail || (typeof errorData === 'object' ? Object.values(errorData).flat().join(', ') : 'Request failed');
-    throw new Error(errorMsg);
+    const error = new Error(errorMsg);
+    // Callers branch on the server's error `code` (e.g. QR_DISABLED, OFFICE_CODE_INVALID)
+    error.status = response.status;
+    error.data = errorData;
+    throw error;
   }
 
   return response.json();

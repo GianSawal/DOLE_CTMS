@@ -266,6 +266,10 @@ class CheckinRequestSerializer(serializers.Serializer):
         required=False, default=None, allow_null=True,
         help_text="List of individual member names for group registrations"
     )
+    office_code = serializers.CharField(
+        max_length=10, required=False, allow_blank=True, default='',
+        help_text="Daily in-office code; required when the office enables it"
+    )
 
 
 class TicketPublicSerializer(serializers.ModelSerializer):

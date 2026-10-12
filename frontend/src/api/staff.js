@@ -51,6 +51,12 @@ export const staffApi = {
 
   getQrConfig: (officeId) => apiRequest(`/staff/qr-config/?office=${officeId}`),
 
+  // changes: { requires_office_code?, regenerate?, regenerate_display_key? }
+  updateOfficeCode: (officeId, changes) => apiRequest('/staff/qr-config/office-code/', {
+    method: 'POST',
+    body: JSON.stringify({ office_id: officeId, ...changes }),
+  }),
+
   toggleQrConfig: (officeId, isQrEnabled, disabledMessage) => apiRequest('/staff/qr-config/toggle/', {
     method: 'POST',
     body: JSON.stringify({

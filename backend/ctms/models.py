@@ -13,6 +13,13 @@ def generate_claim_code(length=4):
 def generate_token(nbytes=16):
     return secrets.token_urlsafe(nbytes)
 
+def generate_office_code(length=4):
+    """
+    Daily in-room check-in code (digits only, easy to read off a whiteboard or TV
+    and type on a phone). See CtmsOfficeQrConfig.office_code.
+    """
+    return ''.join(secrets.choice('0123456789') for _ in range(length))
+
 
 # The only service divisions. Divisions classify services for search and reports;
 # they never decide who can see or call a client.
@@ -330,6 +337,20 @@ class CtmsOfficeQrConfig(models.Model):
         related_name='disabled_qr_offices'
     )
     updated_at = models.DateTimeField(auto_now=True)
+
+    # In-room check-in code: the printed QR poster is static and can be photographed and
+    # reused off-site, so this proves the client is actually at the office. It is shown
+    # on the TV display or written on a whiteboard and typed into the check-in form, never
+    # printed or encoded in the QR itself. Rotates once per local day.
+    requires_office_code = models.BooleanField(
+        default=False,
+        help_text="Require clients to enter the daily in-office code before they can check in"
+    )
+    office_code = models.CharField(max_length=4, blank=True, default='')
+    office_code_date = models.DateField(null=True, blank=True, help_text="Local date office_code was generated for")
+    # The TV board API is public, so the code is only included when the TV page is opened
+    # with this office's secret display key (the link staff copy from the Check-in QR page).
+    display_key = models.CharField(max_length=32, blank=True, default='')
 
     class Meta:
         db_table = 'ctms_office_qr_config'

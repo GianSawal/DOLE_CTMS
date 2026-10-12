@@ -5,8 +5,34 @@ from .models import (
     CtmsCounter,
     CtmsTransaction,
     generate_claim_code,
+    generate_office_code,
     generate_token,
 )
+
+
+def get_or_rotate_office_code(config, force=False):
+    """
+    Returns the office's in-room check-in code for today, generating a fresh one if the
+    stored code is missing, dated for a different day, or `force` is set (staff pressed
+    "New code"). The printed QR poster never changes; this code is what rotates.
+    """
+    today = timezone.localdate()
+    if force or config.office_code_date != today or not config.office_code:
+        code = generate_office_code(4)
+        while code == config.office_code:
+            code = generate_office_code(4)
+        config.office_code = code
+        config.office_code_date = today
+        config.save(update_fields=['office_code', 'office_code_date'])
+    return config.office_code
+
+
+def get_display_key(config, force=False):
+    """Secret key for the office's TV display link; created on first use."""
+    if force or not config.display_key:
+        config.display_key = generate_token(16)[:32]
+        config.save(update_fields=['display_key'])
+    return config.display_key
 
 
 def personnel_display_name(user):

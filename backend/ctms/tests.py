@@ -1,3 +1,5 @@
+from datetime import timedelta
+from django.core.cache import cache
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -83,6 +85,7 @@ class CsmTablesTestCase(TestCase):
 
 class CtmsCoreTestCase(CsmTablesTestCase):
     def setUp(self):
+        cache.clear()  # public check-in throttle counts must not leak between tests
         self.client = APIClient()
         self.office = CsmOffice.objects.create(name="DOLE Pampanga Field Office", code="CRK", is_active=True)
         self.service = CsmService.objects.create(name="SEnA Assistance", is_active=True, sort_order=1)
@@ -516,6 +519,92 @@ class CtmsCoreTestCase(CsmTablesTestCase):
             'is_qr_enabled': False,
         }, format='json')
         self.assertEqual(res_unauthorized.status_code, 403)
+
+    def test_daily_office_code_blocks_off_site_checkin(self):
+        def checkin(code=None):
+            body = {'office': self.office.id, 'service': self.service.id, 'client_name': 'Citizen'}
+            if code is not None:
+                body['office_code'] = code
+            return self.client.post('/api/public/checkin/', body, format='json')
+
+        # Off by default: no code needed, none generated
+        self.client.force_authenticate(user=self.staff_user)
+        cfg = self.client.get(f'/api/staff/qr-config/?office={self.office.id}').data
+        self.assertFalse(cfg['requires_office_code'])
+        self.assertIsNone(cfg['office_code'])
+        display_key = cfg['display_key']
+        self.assertTrue(display_key)
+
+        # Staff turns it on and sees today's 4-digit code
+        res_on = self.client.post('/api/staff/qr-config/office-code/', {
+            'office_id': self.office.id, 'requires_office_code': True}, format='json')
+        self.assertEqual(res_on.status_code, 200)
+        self.assertTrue(res_on.data['requires_office_code'])
+        code = res_on.data['office_code']
+        self.assertRegex(code, r'^\d{4}$')
+        self.assertEqual(res_on.data['office_code_date'], timezone.localdate().isoformat())
+        self.assertTrue(CtmsAuditLog.objects.filter(action='ENABLE_OFFICE_CODE').exists())
+        self.assertNotIn(code, str(CtmsAuditLog.objects.filter(action='ENABLE_OFFICE_CODE').values()))
+
+        # Public office page says a code is needed but never reveals it
+        self.client.force_authenticate(user=None)
+        pub = self.client.get(f'/api/public/offices/{self.office.id}/').data
+        self.assertTrue(pub['requires_office_code'])
+        self.assertNotIn(code, str(pub))
+
+        # Missing or wrong code is refused; the right code works
+        self.assertEqual(checkin().data['code'], 'OFFICE_CODE_INVALID')
+        wrong = '0000' if code != '0000' else '1111'
+        self.assertEqual(checkin(wrong).status_code, 403)
+        self.assertEqual(checkin(f' {code} ').status_code, 201)
+
+        # TV board shows the code only with the office's secret display key
+        board = self.client.get(f'/api/public/display/{self.office.id}/').data
+        self.assertIsNone(board['check_in_code'])
+        board = self.client.get(f'/api/public/display/{self.office.id}/?key=wrong').data
+        self.assertIsNone(board['check_in_code'])
+        board = self.client.get(f'/api/public/display/{self.office.id}/?key={display_key}').data
+        self.assertEqual(board['check_in_code'], code)
+
+        # Yesterday's code stops working: a new one is generated for today
+        CtmsOfficeQrConfig.objects.filter(office=self.office).update(
+            office_code_date=timezone.localdate() - timedelta(days=1))
+        self.assertEqual(checkin(code).status_code, 403)
+        new_code = CtmsOfficeQrConfig.objects.get(office=self.office).office_code
+        self.assertNotEqual(new_code, code)
+        self.assertEqual(checkin(new_code).status_code, 201)
+
+        # "New code" replaces today's code immediately
+        self.client.force_authenticate(user=self.staff_user)
+        res_regen = self.client.post('/api/staff/qr-config/office-code/', {
+            'office_id': self.office.id, 'regenerate': True}, format='json')
+        self.assertNotEqual(res_regen.data['office_code'], new_code)
+        self.client.force_authenticate(user=None)
+        self.assertEqual(checkin(new_code).status_code, 403)
+        self.assertEqual(checkin(res_regen.data['office_code']).status_code, 201)
+
+        # A new TV link retires the old one
+        self.client.force_authenticate(user=self.staff_user)
+        res_key = self.client.post('/api/staff/qr-config/office-code/', {
+            'office_id': self.office.id, 'regenerate_display_key': True}, format='json')
+        self.assertNotEqual(res_key.data['display_key'], display_key)
+        self.client.force_authenticate(user=None)
+        board = self.client.get(f'/api/public/display/{self.office.id}/?key={display_key}').data
+        self.assertIsNone(board['check_in_code'])
+
+        # Staff from another office cannot change it
+        outsider = User.objects.create_user(username="outsider", password="password123", is_staff=True)
+        self.client.force_authenticate(user=outsider)
+        res_forbidden = self.client.post('/api/staff/qr-config/office-code/', {
+            'office_id': self.office.id, 'requires_office_code': False}, format='json')
+        self.assertEqual(res_forbidden.status_code, 403)
+
+        # Turning it off restores code-free check-in; walk-ins never need it
+        self.client.force_authenticate(user=self.staff_user)
+        self.client.post('/api/staff/qr-config/office-code/', {
+            'office_id': self.office.id, 'requires_office_code': False}, format='json')
+        self.client.force_authenticate(user=None)
+        self.assertEqual(checkin().status_code, 201)
 
     def test_position_management_api(self):
         """Test listing, adding, and deleting positions by admin."""

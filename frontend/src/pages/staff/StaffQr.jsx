@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
-import { Lock, Printer } from 'lucide-react';
+import { Lock, Printer, KeyRound, RefreshCw, Copy, Tv } from 'lucide-react';
 import { PageHeader } from '../../components/ui';
 
 export default function StaffQr() {
@@ -39,6 +39,54 @@ export default function StaffQr() {
     }
     loadConfig();
   }, [selectedOfficeId]);
+
+  // The check-in code changes at midnight; refresh it if this page stays open.
+  useEffect(() => {
+    if (!selectedOfficeId || !qrConfig?.requires_office_code) return undefined;
+    const timer = setInterval(async () => {
+      try {
+        const data = await staffApi.getQrConfig(selectedOfficeId);
+        setQrConfig(prev => ({ ...prev, ...data, disabled_message: prev?.disabled_message ?? data.disabled_message }));
+      } catch {
+        // Keep showing the last known code; the next tick retries.
+      }
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [selectedOfficeId, qrConfig?.requires_office_code]);
+
+  const [codeMessage, setCodeMessage] = useState('');
+  const [codeMessageType, setCodeMessageType] = useState('success');
+
+  const showCodeMessage = (type, text) => {
+    setCodeMessageType(type);
+    setCodeMessage(text);
+    if (type === 'success') setTimeout(() => setCodeMessage(''), 5000);
+  };
+
+  const handleOfficeCodeChange = async (changes, successText) => {
+    if (!selectedOfficeId) return;
+    try {
+      setIsUpdating(true);
+      setCodeMessage('');
+      const updated = await staffApi.updateOfficeCode(selectedOfficeId, changes);
+      // Keep any unsaved closure notice the user is typing
+      setQrConfig(prev => ({ ...updated, disabled_message: prev?.disabled_message ?? updated.disabled_message }));
+      showCodeMessage('success', successText);
+    } catch (err) {
+      showCodeMessage('error', err.message || 'Failed to update the check-in code.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleCopyTvLink = async () => {
+    try {
+      await navigator.clipboard.writeText(tvDisplayUrl);
+      showCodeMessage('success', 'TV link copied. Open it on the office TV.');
+    } catch {
+      showCodeMessage('error', 'Could not copy automatically. Select the link and copy it.');
+    }
+  };
 
   const handleToggle = async (targetState) => {
     if (!selectedOfficeId) return;
@@ -84,6 +132,12 @@ export default function StaffQr() {
   const currentOffice = user?.assigned_offices?.find(o => String(o.id) === selectedOfficeId);
   const checkinUrl = selectedOfficeId ? `${window.location.origin}/checkin/office/${selectedOfficeId}` : '';
   const displayUrl = selectedOfficeId ? `${window.location.origin}/display/office/${selectedOfficeId}` : '';
+  // The TV link carries the office's secret key so only the office TV shows the check-in code.
+  const tvDisplayUrl = displayUrl && qrConfig?.display_key ? `${displayUrl}?key=${encodeURIComponent(qrConfig.display_key)}` : displayUrl;
+  const requiresCode = !!qrConfig?.requires_office_code;
+  const codeDateLabel = qrConfig?.office_code_date
+    ? new Date(`${qrConfig.office_code_date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+    : '';
   const qrImageUrl = selectedOfficeId ? staffApi.getQrCodeUrl(selectedOfficeId) : '';
 
   const handlePrint = () => {
@@ -367,6 +421,151 @@ export default function StaffQr() {
           </div>
         )}
 
+        {/* Daily Check-in Code (no-print) */}
+        {selectedOfficeId && qrConfig && (
+          <section className="card no-print" aria-labelledby="office-code-title" style={{
+            marginBottom: '1.5rem',
+            padding: '1.35rem 1.5rem',
+            border: `2px solid ${requiresCode ? 'rgba(3, 5, 186, 0.35)' : 'var(--border-color)'}`,
+            borderRadius: '12px',
+            boxShadow: 'var(--shadow-sm)',
+            backgroundColor: '#ffffff',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.25rem' }}>
+              <div style={{ flex: '1 1 340px' }}>
+                <h3 id="office-code-title" style={{ fontSize: '1.1rem', fontWeight: 800, margin: '0 0 0.35rem', display: 'flex', alignItems: 'center', gap: '0.45rem', color: 'var(--text-primary)' }}>
+                  <KeyRound size={18} aria-hidden="true" style={{ color: 'var(--dole-blue)' }} />
+                  Daily Check-in Code
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    padding: '0.15rem 0.6rem',
+                    borderRadius: '9999px',
+                    backgroundColor: requiresCode ? '#dbeafe' : '#f1f5f9',
+                    color: requiresCode ? '#1e3a8a' : '#475569',
+                    border: `1px solid ${requiresCode ? '#93c5fd' : '#cbd5e1'}`,
+                  }}>
+                    {requiresCode ? 'REQUIRED' : 'OFF'}
+                  </span>
+                </h3>
+                <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                  {requiresCode
+                    ? 'Clients must type this code when they check in, so a photo of the poster can\'t be used to register from home. Show it on the office TV or write it on a board next to the poster. A new code is made automatically every day.'
+                    : 'Stops clients from registering from home with a photo of the poster. When on, the check-in form asks for a 4-digit code that is only shown inside the office (on the TV or a board). The poster does not need to be reprinted.'}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '0.5rem', minWidth: '240px' }}>
+                <button
+                  onClick={() => handleOfficeCodeChange(
+                    { requires_office_code: !requiresCode },
+                    requiresCode
+                      ? 'Check-in code turned off. Clients can check in without a code.'
+                      : 'Check-in code turned on. Show today\'s code on the TV or a board.'
+                  )}
+                  disabled={isUpdating}
+                  className={requiresCode ? 'btn btn-outline' : 'btn btn-primary'}
+                  style={{ minHeight: '46px', fontWeight: 800 }}
+                >
+                  {isUpdating ? 'Updating...' : requiresCode ? 'Turn Off Check-in Code' : 'Require Check-in Code'}
+                </button>
+                <span style={{ fontSize: '0.74rem', color: '#64748b', textAlign: 'center' }}>
+                  Walk-ins registered by staff never need a code
+                </span>
+              </div>
+            </div>
+
+            {requiresCode && qrConfig.office_code && (
+              <div style={{
+                marginTop: '1.25rem',
+                paddingTop: '1.1rem',
+                borderTop: '1px dashed var(--border-color)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '1.25rem',
+                alignItems: 'center',
+              }}>
+                <div style={{
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(3, 5, 186, 0.05)',
+                  border: '2px solid rgba(3, 5, 186, 0.25)',
+                  textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#475569' }}>
+                    Today's code
+                  </div>
+                  <div
+                    aria-label={`Today's code ${qrConfig.office_code.split('').join(' ')}`}
+                    style={{ fontSize: '2.75rem', fontWeight: 900, letterSpacing: '0.2em', lineHeight: 1.1, color: 'var(--dole-blue)', fontVariantNumeric: 'tabular-nums', paddingLeft: '0.2em' }}
+                  >
+                    {qrConfig.office_code}
+                  </div>
+                  {codeDateLabel && (
+                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Valid {codeDateLabel}</div>
+                  )}
+                </div>
+
+                <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Make a new code now? Today\'s current code stops working immediately. Update the board if you wrote the code on one; the TV updates by itself.')) {
+                          handleOfficeCodeChange({ regenerate: true }, 'New code made. The old code no longer works.');
+                        }
+                      }}
+                      disabled={isUpdating}
+                      className="btn btn-outline btn-sm"
+                    >
+                      <RefreshCw size={14} aria-hidden="true" /> New Code Now
+                    </button>
+                    <button onClick={handleCopyTvLink} className="btn btn-outline btn-sm">
+                      <Copy size={14} aria-hidden="true" /> Copy TV Link
+                    </button>
+                    <a href={tvDisplayUrl} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">
+                      <Tv size={14} aria-hidden="true" /> Open TV Display
+                    </a>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', lineHeight: 1.5 }}>
+                    <strong>For the TV to show the code</strong>, open it with this office's TV link (above). The ordinary display link without the key never shows the code, so it can't be seen from outside.
+                    {' '}Use <strong>New Code Now</strong> if the code was shared outside the office.
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    TV link shared by mistake?{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('Issue a new TV link? The current TV link stops showing the code; open the new link on the office TV.')) {
+                          handleOfficeCodeChange({ regenerate_display_key: true }, 'New TV link issued. Open it on the office TV.');
+                        }
+                      }}
+                      disabled={isUpdating}
+                      style={{ border: 'none', background: 'none', padding: 0, color: 'var(--dole-blue)', textDecoration: 'underline', cursor: 'pointer', fontSize: 'inherit', fontWeight: 600 }}
+                    >
+                      Issue a new TV link
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {codeMessage && (
+              <div role="status" style={{
+                marginTop: '0.85rem',
+                padding: '0.55rem 0.85rem',
+                borderRadius: '6px',
+                fontSize: '0.83rem',
+                backgroundColor: codeMessageType === 'error' ? '#fee2e2' : '#dcfce7',
+                color: codeMessageType === 'error' ? '#991b1b' : '#166534',
+                border: `1px solid ${codeMessageType === 'error' ? '#f87171' : '#86efac'}`,
+                fontWeight: 700,
+              }}>
+                {codeMessage}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* Warning Banner When QR Registration Is Currently Closed */}
         {qrConfig?.is_qr_enabled === false && (
           <div className="no-print" style={{
@@ -514,7 +713,9 @@ export default function StaffQr() {
             }}>
               <div style={{ fontSize: '1.15rem', marginBottom: '0.15rem' }}>✍️</div>
               <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0f172a' }}>2. Enter Info</div>
-              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Select your service</div>
+              <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                {requiresCode ? 'Service + code on the TV' : 'Select your service'}
+              </div>
             </div>
             <div style={{
               backgroundColor: '#f8fafc',
@@ -561,7 +762,7 @@ export default function StaffQr() {
             ↗ Open Client Check-in Page
           </a>
           <a
-            href={displayUrl}
+            href={tvDisplayUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-outline btn-sm"

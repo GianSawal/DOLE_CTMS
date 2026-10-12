@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { publicApi } from '../../api/public';
 import { translations } from '../../locales/translations';
 import {
@@ -35,6 +35,9 @@ function windowGridSizing(count) {
 
 export default function DisplayBoard() {
   const { officeId } = useParams();
+  // Secret key from the TV link on the Check-in QR page; unlocks today's check-in code.
+  const [searchParams] = useSearchParams();
+  const displayKey = searchParams.get('key') || '';
   const [lang, setLang] = useState('en');
   const t = translations[lang];
   const langRef = useRef(lang);
@@ -624,7 +627,7 @@ export default function DisplayBoard() {
 
     async function fetchDisplay() {
       try {
-        const data = await publicApi.getDisplayBoard(officeId);
+        const data = await publicApi.getDisplayBoard(officeId, displayKey);
         if (!isMounted) return;
 
         // Only a call newer than anything already announced triggers the chime.
@@ -749,7 +752,7 @@ export default function DisplayBoard() {
       }
       window.removeEventListener('storage', handleStorage);
     };
-  }, [officeId, soundEnabled]);
+  }, [officeId, displayKey, soundEnabled]);
 
   const toggleFullScreen = () => {
     if (!document.fullscreenElement) {
@@ -895,6 +898,43 @@ export default function DisplayBoard() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {/* Today's check-in code: clients type it into the check-in form to prove they're here */}
+          {displayData?.check_in_code && (
+            <div
+              aria-label={`Check-in code ${displayData.check_in_code.split('').join(' ')}`}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                padding: '0.4rem 1.25rem',
+                marginRight: '0.75rem',
+                borderRadius: '12px',
+                border: isLight ? '2px solid #1e3a8a' : '2px solid var(--dole-gold)',
+                backgroundColor: isLight ? '#ffffff' : 'rgba(255, 198, 3, 0.08)',
+              }}
+            >
+              <span style={{
+                fontSize: '0.85rem',
+                fontWeight: 800,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: themeStyles.subTitleColor,
+              }}>
+                Check-in Code
+              </span>
+              <span style={{
+                fontSize: '2.6rem',
+                fontWeight: 900,
+                lineHeight: 1.05,
+                letterSpacing: '0.18em',
+                fontVariantNumeric: 'tabular-nums',
+                color: themeStyles.queueNoColor,
+              }}>
+                {displayData.check_in_code}
+              </span>
+            </div>
+          )}
+
           {/* Light / Dark Mode Toggle Button */}
           <button
             onClick={toggleTheme}

@@ -25,6 +25,8 @@ export default function CheckIn() {
   const [groupSize, setGroupSize] = useState('2');
   const [memberNames, setMemberNames] = useState(['', '']);
   const [isPriority, setIsPriority] = useState(false);
+  const [officeCode, setOfficeCode] = useState('');
+  const [officeCodeError, setOfficeCodeError] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsAgreedCheckbox, setTermsAgreedCheckbox] = useState(false);
 
@@ -70,21 +72,36 @@ export default function CheckIn() {
       finalClientName = isAnonymous ? 'Anonymous' : (clientName.trim() || null);
     }
 
+    if (officeData?.requires_office_code && officeCode.length !== 4) {
+      setOfficeCodeError(true);
+      setError(t.office_code_required);
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError('');
+      setOfficeCodeError(false);
       const res = await publicApi.checkin({
         office: Number(officeId),
         service: Number(serviceId),
         client_name: finalClientName,
         is_priority: isPriority,
         group_member_names: groupMemberNamesList,
+        office_code: officeCode,
       });
 
       // Redirect to client live ticket
       navigate(`/t/${res.ticket_token}`);
     } catch (err) {
-      if (err.data?.code === 'QR_DISABLED' || err.status === 403) {
+      if (err.data?.code === 'OFFICE_CODE_INVALID') {
+        // Keep the form filled in so the client only has to fix the code
+        setOfficeCodeError(true);
+        setOfficeCode('');
+        setError(t.office_code_invalid);
+        return;
+      }
+      if (err.data?.code === 'QR_DISABLED') {
         setOfficeData(prev => prev ? ({
           ...prev,
           is_qr_enabled: false,
@@ -830,6 +847,41 @@ export default function CheckIn() {
                   </div>
                 </label>
               </div>
+
+              {officeData?.requires_office_code && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label htmlFor="office-code">{t.office_code_label} *</label>
+                  <input
+                    id="office-code"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]{4}"
+                    maxLength={4}
+                    required
+                    value={officeCode}
+                    onChange={(e) => {
+                      setOfficeCode(e.target.value.replace(/\D/g, '').slice(0, 4));
+                      setOfficeCodeError(false);
+                    }}
+                    placeholder="0000"
+                    aria-invalid={officeCodeError}
+                    aria-describedby="office-code-help"
+                    style={{
+                      fontSize: '1.6rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.5em',
+                      textAlign: 'center',
+                      fontVariantNumeric: 'tabular-nums',
+                      maxWidth: '220px',
+                      borderColor: officeCodeError ? 'var(--dole-red)' : undefined,
+                    }}
+                  />
+                  <p id="office-code-help" style={{ fontSize: '0.8rem', color: officeCodeError ? 'var(--dole-red)' : 'var(--text-muted)', marginTop: '0.35rem' }}>
+                    {t.office_code_help}
+                  </p>
+                </div>
+              )}
 
               <button
                 type="submit"
