@@ -627,41 +627,31 @@ export default function DisplayBoard() {
         const data = await publicApi.getDisplayBoard(officeId);
         if (!isMounted) return;
 
-        const currentLatestCall = data.latest_called_at || (data.serving?.[0]?.called_at) || null;
+        // Only a call newer than anything already announced triggers the chime.
+        // When a client is marked Done or removed, the board falls back to an older
+        // client; that must not be announced again.
+        const callTime = (s) => (s?.called_at ? Date.parse(s.called_at) : 0);
+        const serving = data.serving || [];
+        const newestCall = serving.reduce((max, s) => Math.max(max, callTime(s)), 0);
 
         if (isInitialLoadRef.current) {
-          // Record baseline timestamp on initial mount without chiming
-          lastCalledRef.current = currentLatestCall;
-          prevServingRef.current = data.serving || [];
+          lastCalledRef.current = newestCall;
           isInitialLoadRef.current = false;
         } else {
-          // Detect call, recall, or call-next:
-          // 1. latest_called_at changed (new timestamp from call, recall, or call next)
-          const callTimestampChanged = Boolean(
-            currentLatestCall &&
-            currentLatestCall !== lastCalledRef.current
-          );
-
-          // 2. New queue number appeared in serving (e.g. from empty queue or status change)
-          const prevNumbers = (prevServingRef.current || []).map(s => s.queue_no);
-          const hasNewQueueNumber = data.serving?.some(s => !prevNumbers.includes(s.queue_no));
-
-          if (callTimestampChanged || hasNewQueueNumber) {
-            lastCalledRef.current = currentLatestCall;
-            if (soundEnabled) {
-              const qNo = data.latest_called_queue_no || data.serving?.[0]?.queue_no;
-              const cnt = data.latest_called_counter || data.serving?.[0]?.counter;
-              const psn = data.latest_called_personnel || data.serving?.[0]?.assigned_personnel;
-              announceNowServing({
-                queueNo: qNo,
-                counter: cnt,
-                personnel: psn,
-                lang: langRef.current,
-              });
-            }
+          const fresh = serving
+            .filter(s => callTime(s) > (lastCalledRef.current || 0))
+            .sort((x, y) => callTime(y) - callTime(x))[0];
+          if (fresh && soundEnabled) {
+            announceNowServing({
+              queueNo: fresh.queue_no,
+              counter: fresh.counter,
+              personnel: fresh.assigned_personnel,
+              lang: langRef.current,
+            });
           }
-          prevServingRef.current = data.serving || [];
+          lastCalledRef.current = Math.max(lastCalledRef.current || 0, newestCall);
         }
+        prevServingRef.current = serving;
 
         // ARTA video is linked locally — do not use server arta_video_url
         setDisplayData(data);
