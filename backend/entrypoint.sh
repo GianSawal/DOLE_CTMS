@@ -32,10 +32,12 @@ EOF
 echo "==> Running database migrations..."
 python manage.py migrate --noinput
 
-echo "==> Initializing offices, counters and staff assignments..."
-python manage.py seed_ctms_dev || true
-python manage.py init_ctms_counters || true
-python manage.py seed_office_staff || true
+# Development seed data (sample offices, admin/admin123, staff_* accounts, sample tickets).
+# Never run against a live database; enable only for a fresh local/demo install.
+if [ "${CTMS_SEED_DEV_DATA:-False}" = "True" ]; then
+    echo "==> CTMS_SEED_DEV_DATA=True: seeding development data..."
+    python manage.py seed_ctms_dev || true
+fi
 
 echo "==> Collecting static files..."
 python manage.py collectstatic --noinput

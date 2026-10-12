@@ -696,3 +696,140 @@ def requeue_transaction(tx):
     tx.called_at = None
     tx.save(update_fields=['status', 'counter', 'started_at', 'called_at'])
     return tx
+
+
+# =====================================================================
+# Windows (office-scoped service windows, stored in ctms_counter)
+# =====================================================================
+
+WINDOW_BUSY_STATUSES = (CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_TRANSFERRED)
+
+
+def office_windows(office, include_archived=False):
+    qs = CtmsCounter.objects.filter(office=office)
+    if not include_archived:
+        qs = qs.filter(archived_at__isnull=True)
+    return qs.select_related('office', 'assigned_user', 'assigned_user__dole_personnel').order_by('sort_order', 'name', 'id')
+
+
+def _window_has_active_client(window):
+    return CtmsTransaction.objects.filter(counter=window, status__in=WINDOW_BUSY_STATUSES).exists()
+
+
+def create_window(office, name):
+    """Creates a window, or restores an archived one with the same name in this office."""
+    clean = (name or '').strip()
+    if not clean:
+        raise ValueError("Window name is required.")
+    if len(clean) > 50:
+        raise ValueError("Window name must be 50 characters or fewer.")
+
+    with transaction.atomic():
+        existing = CtmsCounter.objects.select_for_update().filter(office=office, name__iexact=clean).first()
+        if existing and existing.archived_at is None:
+            raise ValueError(f"A window named '{existing.name}' already exists in this office.")
+
+        next_order = (CtmsCounter.objects.filter(office=office, archived_at__isnull=True)
+                      .aggregate(m=models.Max('sort_order'))['m'] or 0) + 1
+        if existing:
+            existing.name = clean
+            existing.archived_at = None
+            existing.is_active = True
+            existing.assigned_user = None
+            existing.assigned_at = None
+            existing.sort_order = next_order
+            existing.save()
+            return existing
+        return CtmsCounter.objects.create(office=office, name=clean, is_active=True, sort_order=next_order)
+
+
+def update_window(window, name=None, sort_order=None, is_active=None):
+    with transaction.atomic():
+        window = CtmsCounter.objects.select_for_update().get(pk=window.pk)
+        if window.archived_at:
+            raise ValueError("Archived windows cannot be edited.")
+
+        if name is not None:
+            clean = name.strip()
+            if not clean:
+                raise ValueError("Window name is required.")
+            if len(clean) > 50:
+                raise ValueError("Window name must be 50 characters or fewer.")
+            clash = CtmsCounter.objects.filter(office=window.office, name__iexact=clean).exclude(pk=window.pk).first()
+            if clash:
+                state = "an archived window" if clash.archived_at else "another window"
+                raise ValueError(f"The name '{clean}' is already used by {state} in this office.")
+            window.name = clean
+
+        if sort_order is not None:
+            window.sort_order = max(0, int(sort_order))
+
+        if is_active is not None and bool(is_active) != window.is_active:
+            if not is_active:
+                if _window_has_active_client(window):
+                    raise ValueError("Finish or return the client at this window before deactivating it.")
+                window.assigned_user = None
+                window.assigned_at = None
+            window.is_active = bool(is_active)
+
+        window.save()
+        return window
+
+
+def archive_window(window):
+    """Soft-deletes a window so historical transactions keep pointing at it."""
+    with transaction.atomic():
+        window = CtmsCounter.objects.select_for_update().get(pk=window.pk)
+        if window.archived_at:
+            return window
+        if _window_has_active_client(window):
+            raise ValueError("Finish or return the client at this window before archiving it.")
+        window.assigned_user = None
+        window.assigned_at = None
+        window.is_active = False
+        window.archived_at = timezone.now()
+        window.save()
+        return window
+
+
+def assign_window(window, user):
+    """
+    Puts `user` at `window`. A user may hold one window and a window one user;
+    the unique assigned_user column backs this up against concurrent requests.
+    """
+    from django.db import IntegrityError
+
+    try:
+        with transaction.atomic():
+            window = CtmsCounter.objects.select_for_update().select_related('assigned_user').get(pk=window.pk)
+            if window.archived_at or not window.is_active:
+                raise ValueError(f"{window.name} is not active.")
+            if window.assigned_user_id == user.id:
+                return window
+            if window.assigned_user_id:
+                occupant = personnel_display_name(window.assigned_user)
+                raise ValueError(f"{window.name} is already occupied by {occupant}.")
+
+            current = CtmsCounter.objects.select_for_update().filter(assigned_user=user).first()
+            if current:
+                raise ValueError(f"You are already assigned to {current.name}. Release it before taking another window.")
+
+            window.assigned_user = user
+            window.assigned_at = timezone.now()
+            window.save(update_fields=['assigned_user', 'assigned_at'])
+            return window
+    except IntegrityError:
+        raise ValueError("This window or your account was just assigned elsewhere. Please refresh and try again.")
+
+
+def release_window(window):
+    """Frees the window. Returns the user who was released (or None)."""
+    with transaction.atomic():
+        window = CtmsCounter.objects.select_for_update().select_related('assigned_user').get(pk=window.pk)
+        previous = window.assigned_user
+        if not previous:
+            raise ValueError(f"{window.name} is not occupied.")
+        window.assigned_user = None
+        window.assigned_at = None
+        window.save(update_fields=['assigned_user', 'assigned_at'])
+        return previous

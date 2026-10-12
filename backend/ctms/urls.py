@@ -29,6 +29,7 @@ from .views import (
     StaffPositionViewSet,
     StaffServiceViewSet,
     CtmsCounterViewSet,
+    StaffWindowViewSet,
     CtmsStaffOfficeViewSet,
     StaffUserAccountViewSet,
     StaffAuditLogListView,
@@ -37,6 +38,7 @@ from .views import (
 
 router = DefaultRouter()
 router.register(r'staff/counters', CtmsCounterViewSet, basename='staff-counters')
+router.register(r'staff/windows', StaffWindowViewSet, basename='staff-windows')
 router.register(r'staff/staff-offices', CtmsStaffOfficeViewSet, basename='staff-offices')
 router.register(r'staff/users', StaffUserAccountViewSet, basename='staff-users')
 router.register(r'staff/employees', StaffUserAccountViewSet, basename='staff-employees')

@@ -294,10 +294,9 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         self.assertIn(tx1.id, waiting_ids)
         self.assertNotIn(tx2.id, waiting_ids)
 
-        # Counters list only includes TSSD 1
+        # Counters are the office's own windows, never division-named counters
         counter_names = [c['name'] for c in res.data['counters']]
-        self.assertIn("TSSD 1", counter_names)
-        self.assertNotIn("TSSD 2", counter_names)
+        self.assertEqual(counter_names, ["Window 1", "Window 2"])
 
         # Employee cannot call or act on tx2 from TSSD 2
         cnt_tssd2, _ = CtmsCounter.objects.get_or_create(office=self.office, name="TSSD 2", defaults={'is_active': True})
@@ -1620,3 +1619,96 @@ class Stage1DataFoundationTestCase(CsmTablesTestCase):
         tx.refresh_from_db()
         self.assertEqual(tx.served_by, clicker)
         self.assertEqual(tx.served_by_name, "Juan Cruz")
+
+
+class Stage2WindowsTestCase(CsmTablesTestCase):
+    """Stage 2: office-scoped windows with self-assignment."""
+
+    def setUp(self):
+        self.bataan = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.pampanga = CsmOffice.objects.create(name="Pampanga Field Office", code="PAM", is_active=True)
+        self.service = CsmService.objects.create(name="SEnA Assistance", is_active=True, sort_order=1)
+        self.ana = self._staff("ana", self.bataan)
+        self.ben = self._staff("ben", self.bataan)
+        self.pam_staff = self._staff("pamstaff", self.pampanga)
+        self.client = APIClient()
+
+    def _staff(self, username, office):
+        user = User.objects.create_user(username=username, password="pw", is_staff=True)
+        CtmsStaffOffice.objects.create(user=user, office=office)
+        return user
+
+    def _as(self, user):
+        self.client.force_authenticate(user=user)
+        return self.client
+
+    def _create(self, name, office=None, user=None):
+        return self._as(user or self.ana).post('/api/staff/windows/', {'office': (office or self.bataan).id, 'name': name}, format='json')
+
+    def test_staff_create_windows_for_their_own_office_only(self):
+        self.assertEqual(self._create("Window 1").status_code, 201)
+        self.assertEqual(self._create("Window 1").status_code, 400)  # duplicate
+        self.assertEqual(self._create("Window 1", office=self.pampanga).status_code, 403)
+
+        listed = self._as(self.pam_staff).get('/api/staff/windows/').data['windows']
+        self.assertEqual(listed, [])
+
+    def test_assign_myself_rules(self):
+        w1 = self._create("Window 1").data['id']
+        w2 = self._create("Window 2").data['id']
+
+        self.assertEqual(self._as(self.ana).post(f'/api/staff/windows/{w1}/assign-me/').status_code, 200)
+        # Window already occupied by Ana
+        res = self._as(self.ben).post(f'/api/staff/windows/{w1}/assign-me/')
+        self.assertEqual(res.status_code, 409)
+        # Ana must release Window 1 before taking Window 2
+        res = self._as(self.ana).post(f'/api/staff/windows/{w2}/assign-me/')
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("Release it", res.data['detail'])
+        # Other offices cannot even see the window
+        self.assertEqual(self._as(self.pam_staff).post(f'/api/staff/windows/{w1}/assign-me/').status_code, 404)
+
+        self.assertEqual(self._as(self.ana).post(f'/api/staff/windows/{w1}/release/').status_code, 200)
+        self.assertEqual(self._as(self.ana).post(f'/api/staff/windows/{w2}/assign-me/').status_code, 200)
+        me = self._as(self.ana).get('/api/staff/auth/me/').data
+        self.assertEqual(me['occupied_window']['id'], w2)
+
+    def test_inactive_window_cannot_be_taken_and_deactivation_releases(self):
+        w1 = self._create("Window 1").data['id']
+        self._as(self.ana).post(f'/api/staff/windows/{w1}/assign-me/')
+        res = self._as(self.ben).patch(f'/api/staff/windows/{w1}/', {'is_active': False}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(res.data['assigned_user'])
+        self.assertEqual(self._as(self.ben).post(f'/api/staff/windows/{w1}/assign-me/').status_code, 409)
+
+    def test_archive_keeps_history_and_blocks_busy_windows(self):
+        w1 = self._create("Window 1").data['id']
+        window = CtmsCounter.objects.get(pk=w1)
+        tx = create_transaction(self.bataan, self.service, assigned_personnel="ana")
+        call_specific_transaction(tx, counter=window)
+
+        self.assertEqual(self._as(self.ana).delete(f'/api/staff/windows/{w1}/').status_code, 400)
+        mark_done(tx, self.ana)
+        self.assertEqual(self._as(self.ana).delete(f'/api/staff/windows/{w1}/').status_code, 204)
+
+        window.refresh_from_db()
+        tx.refresh_from_db()
+        self.assertIsNotNone(window.archived_at)
+        self.assertEqual(tx.counter, window)
+        self.assertEqual(self._as(self.ana).get('/api/staff/windows/').data['windows'], [])
+        # Re-creating the same name restores the archived row
+        self.assertEqual(self._create("Window 1").data['id'], w1)
+
+    def test_queue_lists_office_windows_instead_of_division_counters(self):
+        self._create("Window 1")
+        CsmDivision.objects.create(name="TSSD 1")
+        data = self._as(self.ana).get(f'/api/staff/queue/?office={self.bataan.id}').data
+        self.assertEqual([c['name'] for c in data['counters']], ["Window 1"])
+        self.assertFalse(CtmsCounter.objects.filter(office=self.bataan, name="TSSD 1").exists())
+
+    def test_window_card_shows_current_client(self):
+        w1 = self._create("Window 1").data['id']
+        tx = create_transaction(self.bataan, self.service, assigned_personnel="ana")
+        call_specific_transaction(tx, counter=CtmsCounter.objects.get(pk=w1))
+        card = self._as(self.ana).get('/api/staff/windows/').data['windows'][0]
+        self.assertEqual(card['current_client']['queue_no'], tx.queue_no)

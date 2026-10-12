@@ -62,6 +62,16 @@ export default function Navbar() {
             <span>Queue</span>
           </NavLink>
 
+          <NavLink to="/staff/windows" style={navLinkStyle} id="nav-windows">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <rect x="3" y="3" width="7" height="9" rx="1"></rect>
+              <rect x="14" y="3" width="7" height="9" rx="1"></rect>
+              <line x1="3" y1="17" x2="21" y2="17"></line>
+              <line x1="3" y1="21" x2="21" y2="21"></line>
+            </svg>
+            <span>Windows</span>
+          </NavLink>
+
           <NavLink to="/staff/transactions" style={navLinkStyle}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>

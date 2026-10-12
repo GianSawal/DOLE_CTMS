@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
-from ctms.models import CsmOffice, CtmsStaffOffice, CtmsCounter
+from ctms.models import CsmOffice, CtmsStaffOffice
 
 User = get_user_model()
 
@@ -60,11 +60,6 @@ class Command(BaseCommand):
             # Strict RBAC: Staff account can ONLY access their own assigned office
             CtmsStaffOffice.objects.filter(user=user).exclude(office=office).delete()
             CtmsStaffOffice.objects.get_or_create(user=user, office=office)
-
-            # Ensure default counters exist for this office
-            counter_names = ["Window 1", "Window 2", "Window 3 (Priority)", "Helpdesk"]
-            for cname in counter_names:
-                CtmsCounter.objects.get_or_create(office=office, name=cname, defaults={'is_active': True})
 
             if created:
                 created_count += 1

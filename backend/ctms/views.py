@@ -47,6 +47,7 @@ from .serializers import (
     CsmServiceSerializer,
     StaffServiceSerializer,
     CtmsCounterSerializer,
+    WindowSerializer,
     CtmsStaffOfficeSerializer,
     CtmsEmployeeSerializer,
     DolePersonnelSerializer,
@@ -146,7 +147,15 @@ class StaffMeView(APIView):
             "assigned_divisions": CsmDivisionSerializer(assigned_divisions, many=True).data,
             "employee_profile": employee_data,
             "linked_personnel": linked_personnel_data,
+            "occupied_window": self._occupied_window(user),
         })
+
+    @staticmethod
+    def _occupied_window(user):
+        window = CtmsCounter.objects.filter(assigned_user=user).select_related('office').first()
+        if not window:
+            return None
+        return {"id": window.id, "name": window.name, "office": window.office_id, "office_name": window.office.name}
 
 
 def get_staff_offices(user):
@@ -524,47 +533,16 @@ class StaffQueueView(APIView):
         allowed_div_names = list(allowed_divisions.values_list('name', flat=True))
         allowed_div_norms = {n.strip().upper().replace(' ', '') for n in allowed_div_names if n}
 
-        # Retrieve divisions directly from csm_division table
         all_divisions = CsmDivision.objects.all().order_by('id')
-        all_division_names = [d.name for d in all_divisions if d.name.strip().upper() != 'ALL']
 
-        if all_division_names:
-            # Ensure an active counter exists for each operational division in csm_division
-            for div_name in all_division_names:
-                cnt, created = CtmsCounter.objects.get_or_create(
-                    office=office,
-                    name=div_name,
-                    defaults={'is_active': True}
-                )
-                if not created and not cnt.is_active:
-                    cnt.is_active = True
-                    cnt.save(update_fields=['is_active'])
-
-            # Deactivate obsolete counters that do not match active divisions (e.g. Window 1, Window 2, ALL)
-            CtmsCounter.objects.filter(office=office).exclude(name__in=all_division_names).update(is_active=False)
-
-        counters_qs = CtmsCounter.objects.filter(office=office, is_active=True).order_by('id')
+        # Windows are created and managed per office on the Windows page.
+        counters_qs = CtmsCounter.objects.filter(
+            office=office, is_active=True, archived_at__isnull=True
+        ).order_by('sort_order', 'name', 'id')
 
         # Determine universal division access (Window 1-10, Front Desk, or superuser)
         is_universal = request.user.is_superuser or has_universal_division_access(request.user, allowed_divisions)
-
-        # If regular staff (non-superuser and non-universal), restrict counters and divisions to only assigned divisions
-        if not is_universal:
-            allowed_counter_ids = [
-                c.id for c in counters_qs
-                if c.name.strip().upper().replace(' ', '') in allowed_div_norms
-            ]
-            counters_qs = counters_qs.filter(id__in=allowed_counter_ids)
-            divisions_data = allowed_divisions
-        else:
-            divisions_data = all_divisions.exclude(name__iexact='ALL')
-            if not request.user.is_superuser and allowed_div_norms:
-                user_counter_ids = [
-                    c.id for c in counters_qs
-                    if c.name.strip().upper().replace(' ', '') in allowed_div_norms
-                ]
-                if user_counter_ids:
-                    counters_qs = counters_qs.filter(id__in=user_counter_ids)
+        divisions_data = all_divisions.exclude(name__iexact='ALL') if is_universal else allowed_divisions
 
         # Waiting list: priority first, then FIFO
         waiting_qs = CtmsTransaction.objects.filter(
@@ -594,11 +572,7 @@ class StaffQueueView(APIView):
             pending_qs = pending_qs.filter(service__division__in=allowed_divisions)
 
         if counter_id:
-            counter = CtmsCounter.objects.filter(pk=counter_id, office=office, is_active=True).first()
-            if counter and not request.user.is_superuser:
-                if counter.name.strip().upper().replace(' ', '') not in allowed_div_norms and not is_universal:
-                    # Stale counter_id from a previous user session in localStorage: fallback to first allowed counter
-                    counter = counters_qs.first()
+            counter = counters_qs.filter(pk=counter_id).first()
             if counter:
                 serving_qs = serving_qs.filter(counter=counter)
                 division = CsmDivision.objects.filter(name__iexact=counter.name.strip()).first()
@@ -665,6 +639,7 @@ class StaffQueueView(APIView):
             "is_personnel_filtered": filter_my_assigned_only,
             "linked_personnel": linked_personnel.full_name if linked_personnel else None,
             "total_division_waiting": total_division_waiting,
+            "my_window_id": CtmsCounter.objects.filter(assigned_user=request.user, office=office).values_list('id', flat=True).first(),
         })
 
 
@@ -1512,6 +1487,127 @@ class CtmsCounterViewSet(viewsets.ModelViewSet):
         if not allowed_offices.filter(pk=office.pk).exists():
             raise exceptions.PermissionDenied("Forbidden: You are not authorized to create counters for this office.")
         serializer.save()
+
+
+class StaffWindowViewSet(viewsets.ViewSet):
+    """
+    Office-scoped service windows. Any staff member of an office may manage that
+    office's windows and take or release a window there.
+    """
+    permission_classes = [IsStaffUser]
+
+    def _allowed_offices(self):
+        return get_staff_offices(self.request.user)
+
+    def _get_window(self, pk):
+        window = CtmsCounter.objects.select_related('office', 'assigned_user').filter(
+            pk=pk, office__in=self._allowed_offices()
+        ).first()
+        if not window:
+            raise Http404("Window not found.")
+        return window
+
+    def _serialize(self, windows, many=True):
+        window_list = list(windows) if many else [windows]
+        current = {}
+        busy = CtmsTransaction.objects.filter(
+            counter__in=window_list, status__in=services.WINDOW_BUSY_STATUSES
+        ).select_related('service').order_by('called_at')
+        for tx in busy:
+            current[tx.counter_id] = tx
+        ser = WindowSerializer(window_list if many else windows, many=many,
+                               context={'request': self.request, 'current_by_window': current})
+        return ser.data
+
+    def _audit(self, action, window, description, details=None):
+        log_audit_event(
+            action=action,
+            category=CtmsAuditLog.CATEGORY_CONFIG,
+            request=self.request,
+            target_type='Window',
+            target_id=window.id,
+            target_repr=f"{window.name} ({window.office.code})",
+            office=window.office,
+            description=description,
+            details=details or {},
+        )
+
+    def list(self, request):
+        offices = self._allowed_offices()
+        office_id = request.query_params.get('office')
+        if office_id:
+            offices = offices.filter(pk=office_id)
+            if not offices.exists():
+                return Response({"detail": "You are not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
+
+        include_archived = request.query_params.get('include_archived') in ('1', 'true')
+        windows = []
+        for office in offices:
+            windows.extend(services.office_windows(office, include_archived=include_archived))
+
+        my_window = CtmsCounter.objects.filter(assigned_user=request.user).select_related('office').first()
+        return Response({
+            "windows": self._serialize(windows),
+            "my_window": {"id": my_window.id, "name": my_window.name, "office": my_window.office_id,
+                          "office_name": my_window.office.name} if my_window else None,
+        })
+
+    def create(self, request):
+        office = self._allowed_offices().filter(pk=request.data.get('office')).first()
+        if not office:
+            return Response({"detail": "Choose an office you are assigned to."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            window = services.create_window(office, request.data.get('name'))
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        self._audit('WINDOW_CREATE', window, f"Created window '{window.name}' at {office.name}.")
+        return Response(self._serialize(window, many=False), status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, pk=None):
+        window = self._get_window(pk)
+        changes = {k: request.data[k] for k in ('name', 'sort_order', 'is_active') if k in request.data}
+        try:
+            window = services.update_window(window, **changes)
+        except (ValueError, TypeError) as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        self._audit('WINDOW_UPDATE', window, f"Updated window '{window.name}'.", details=changes)
+        return Response(self._serialize(window, many=False))
+
+    def destroy(self, request, pk=None):
+        window = self._get_window(pk)
+        try:
+            window = services.archive_window(window)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        self._audit('WINDOW_ARCHIVE', window, f"Archived window '{window.name}'.")
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='assign-me')
+    def assign_me(self, request, pk=None):
+        window = self._get_window(pk)
+        try:
+            window = services.assign_window(window, request.user)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        self._audit('WINDOW_ASSIGN', window,
+                    f"{services.personnel_display_name(request.user)} took {window.name}.")
+        return Response(self._serialize(window, many=False))
+
+    @action(detail=True, methods=['post'], url_path='release')
+    def release(self, request, pk=None):
+        window = self._get_window(pk)
+        try:
+            previous = services.release_window(window)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        window.refresh_from_db()
+        released_name = services.personnel_display_name(previous)
+        if previous.id == request.user.id:
+            desc = f"{released_name} released {window.name}."
+        else:
+            desc = f"{services.personnel_display_name(request.user)} released {released_name} from {window.name}."
+        self._audit('WINDOW_RELEASE', window, desc, details={'released_user_id': previous.id})
+        return Response(self._serialize(window, many=False))
 
 
 class CtmsStaffOfficeViewSet(viewsets.ModelViewSet):

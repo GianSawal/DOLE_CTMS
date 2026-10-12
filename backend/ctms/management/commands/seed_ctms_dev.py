@@ -4,7 +4,6 @@ from django.utils import timezone
 from ctms.models import (
     CsmOffice,
     CsmService,
-    CtmsCounter,
     CtmsStaffOffice,
     CtmsTransaction,
 )
@@ -13,7 +12,7 @@ from ctms.services import create_transaction
 User = get_user_model()
 
 class Command(BaseCommand):
-    help = "Seed initial development data for DOLE CTMS (Offices, Services, Counters, Admin, Sample Queue)"
+    help = "Seed initial development data for DOLE CTMS (Offices, Services, Admin, Sample Queue)"
 
     def handle(self, *args, **options):
         self.stdout.write("Seeding DOLE CTMS development data...")
@@ -60,18 +59,8 @@ class Command(BaseCommand):
             services.append(service)
         self.stdout.write(f"Services ready: {len(services)}")
 
-        # 3. Counters for first office (CRK)
+        # Windows are created per office by staff on the Windows page.
         crk_office = offices[0]
-        counter_names = ["Window 1", "Window 2", "Window 3 (Priority)", "Helpdesk"]
-        counters = []
-        for cname in counter_names:
-            cnt, _ = CtmsCounter.objects.get_or_create(
-                office=crk_office,
-                name=cname,
-                defaults={'is_active': True}
-            )
-            counters.append(cnt)
-        self.stdout.write(f"Counters ready for {crk_office.code}: {len(counters)}")
 
         # 4. Staff Accounts
         admin_user, admin_created = User.objects.get_or_create(

@@ -10,6 +10,7 @@ import DisplayBoard from './pages/public/DisplayBoard';
 // Staff pages
 import StaffLogin from './pages/staff/StaffLogin';
 import StaffQueue from './pages/staff/StaffQueue';
+import StaffWindows from './pages/staff/StaffWindows';
 import StaffTransactions from './pages/staff/StaffTransactions';
 import StaffServices from './pages/staff/StaffServices';
 import StaffReports from './pages/staff/StaffReports';
@@ -106,6 +107,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <StaffQueue />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/staff/windows"
+            element={
+              <ProtectedRoute>
+                <StaffWindows />
               </ProtectedRoute>
             }
           />

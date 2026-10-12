@@ -653,10 +653,9 @@ export default function StaffQueue() {
       return;
     }
 
-    // Determine counter to use:
-    // If next client has a division, find the counter matching that division name
-    let counterToUse = null;
-    if (nextWaitingClient.division_name && queueData.counters?.length > 0) {
+    // Determine counter to use: the caller's own window first, then legacy matching
+    let counterToUse = queueData.my_window_id ? String(queueData.my_window_id) : null;
+    if (!counterToUse && nextWaitingClient.division_name && queueData.counters?.length > 0) {
       const divNorm = nextWaitingClient.division_name.trim().toLowerCase().replace(/\s+/g, '');
       const matched = queueData.counters.find(
         c => c.name.trim().toLowerCase().replace(/\s+/g, '') === divNorm
@@ -674,7 +673,7 @@ export default function StaffQueue() {
     }
 
     if (!counterToUse) {
-      setError('No window counters available for this office. Please set up a counter first.');
+      setError('No windows are set up for this office yet. Create one on the Windows page.');
       return;
     }
 
@@ -708,10 +707,9 @@ export default function StaffQueue() {
       return;
     }
 
-    // Determine counter to use:
-    // If ticket has a division, find the counter matching that division name
-    let counterToUse = null;
-    if (tx.division_name && queueData.counters?.length > 0) {
+    // Determine counter to use: the caller's own window first, then legacy matching
+    let counterToUse = queueData.my_window_id ? String(queueData.my_window_id) : null;
+    if (!counterToUse && tx.division_name && queueData.counters?.length > 0) {
       const divNorm = tx.division_name.trim().toLowerCase().replace(/\s+/g, '');
       const matched = queueData.counters.find(
         c => c.name.trim().toLowerCase().replace(/\s+/g, '') === divNorm
@@ -730,7 +728,7 @@ export default function StaffQueue() {
     }
 
     if (!counterToUse) {
-      setError('No window counters available. Please select or add a counter.');
+      setError('No windows are set up for this office yet. Create one on the Windows page.');
       return;
     }
 

@@ -15,7 +15,7 @@ from .models import (
     CtmsAuditLog,
     CtmsNotification,
 )
-from .services import is_universal_division_name
+from .services import is_universal_division_name, personnel_display_name
 
 User = get_user_model()
 
@@ -123,6 +123,49 @@ class CtmsCounterSerializer(serializers.ModelSerializer):
     class Meta:
         model = CtmsCounter
         fields = ['id', 'office', 'office_name', 'name', 'is_active']
+
+
+class WindowSerializer(serializers.ModelSerializer):
+    """
+    Window card data. Expects context:
+      'current_by_window': {window_id: CtmsTransaction} for clients at each window
+      'request': the DRF request (to flag the caller's own window)
+    """
+    office_name = serializers.ReadOnlyField(source='office.name')
+    assigned_user_name = serializers.SerializerMethodField()
+    is_mine = serializers.SerializerMethodField()
+    is_archived = serializers.SerializerMethodField()
+    current_client = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CtmsCounter
+        fields = [
+            'id', 'office', 'office_name', 'name', 'is_active', 'is_archived', 'archived_at', 'sort_order',
+            'assigned_user', 'assigned_user_name', 'assigned_at', 'is_mine', 'current_client',
+        ]
+
+    def get_assigned_user_name(self, obj):
+        return personnel_display_name(obj.assigned_user) if obj.assigned_user_id else None
+
+    def get_is_mine(self, obj):
+        request = self.context.get('request')
+        return bool(request and obj.assigned_user_id and obj.assigned_user_id == request.user.id)
+
+    def get_is_archived(self, obj):
+        return obj.archived_at is not None
+
+    def get_current_client(self, obj):
+        tx = self.context.get('current_by_window', {}).get(obj.id)
+        if not tx:
+            return None
+        return {
+            'id': tx.id,
+            'queue_no': tx.queue_no,
+            'status': tx.status,
+            'is_priority': tx.is_priority,
+            'service_name': tx.service.name if tx.service_id else '',
+            'called_at': tx.called_at,
+        }
 
 
 class CtmsStaffOfficeSerializer(serializers.ModelSerializer):

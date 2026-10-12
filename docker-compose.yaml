@@ -35,6 +35,8 @@ services:
       - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
       - USE_SQLITE_DEV=${USE_SQLITE_DEV:-False}
+      # Sample data + default accounts; leave False on any real database
+      - CTMS_SEED_DEV_DATA=${CTMS_SEED_DEV_DATA:-False}
       # Database connection (points to 'db' service or external MySQL host)
       - DB_NAME=${DB_NAME:-dole_csm}
       - DB_USER=${DB_USER:-ctms}

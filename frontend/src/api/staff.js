@@ -225,5 +225,29 @@ export const staffApi = {
     method: 'POST',
     body: JSON.stringify({ action: 'mark_read', id }),
   }),
+
+  // Windows (office-scoped service windows)
+  getWindows: (officeId) => {
+    const params = new URLSearchParams();
+    if (officeId) params.append('office', officeId);
+    return apiRequest(`/staff/windows/?${params.toString()}`);
+  },
+  createWindow: (officeId, name) => apiRequest('/staff/windows/', {
+    method: 'POST',
+    body: JSON.stringify({ office: officeId, name }),
+  }),
+  updateWindow: (id, data) => apiRequest(`/staff/windows/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  archiveWindow: (id) => apiRequest(`/staff/windows/${id}/`, {
+    method: 'DELETE',
+  }),
+  assignMeToWindow: (id) => apiRequest(`/staff/windows/${id}/assign-me/`, {
+    method: 'POST',
+  }),
+  releaseWindow: (id) => apiRequest(`/staff/windows/${id}/release/`, {
+    method: 'POST',
+  }),
 };
 
