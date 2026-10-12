@@ -35,7 +35,7 @@ function windowGridSizing(count) {
 
 export default function DisplayBoard() {
   const { officeId } = useParams();
-  // Secret key from the TV link on the Check-in QR page; unlocks today's check-in code.
+  // Secret key from the TV link on the Check-in QR page; unlocks the current check-in code.
   const [searchParams] = useSearchParams();
   const displayKey = searchParams.get('key') || '';
   const [lang, setLang] = useState('en');
@@ -898,7 +898,7 @@ export default function DisplayBoard() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* Today's check-in code: clients type it into the check-in form to prove they're here */}
+          {/* Current check-in code (changes hourly): clients type it into the check-in form to prove they're here */}
           {displayData?.check_in_code && (
             <div
               aria-label={`Check-in code ${displayData.check_in_code.split('').join(' ')}`}

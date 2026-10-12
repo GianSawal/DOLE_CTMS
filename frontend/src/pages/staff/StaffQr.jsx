@@ -135,8 +135,8 @@ export default function StaffQr() {
   // The TV link carries the office's secret key so only the office TV shows the check-in code.
   const tvDisplayUrl = displayUrl && qrConfig?.display_key ? `${displayUrl}?key=${encodeURIComponent(qrConfig.display_key)}` : displayUrl;
   const requiresCode = !!qrConfig?.requires_office_code;
-  const codeDateLabel = qrConfig?.office_code_date
-    ? new Date(`${qrConfig.office_code_date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  const codeChangesAt = qrConfig?.office_code_valid_until
+    ? new Date(qrConfig.office_code_valid_until).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
     : '';
   const qrImageUrl = selectedOfficeId ? staffApi.getQrCodeUrl(selectedOfficeId) : '';
 
@@ -421,7 +421,7 @@ export default function StaffQr() {
           </div>
         )}
 
-        {/* Daily Check-in Code (no-print) */}
+        {/* Hourly Check-in Code (no-print) */}
         {selectedOfficeId && qrConfig && (
           <section className="card no-print" aria-labelledby="office-code-title" style={{
             marginBottom: '1.5rem',
@@ -435,7 +435,7 @@ export default function StaffQr() {
               <div style={{ flex: '1 1 340px' }}>
                 <h3 id="office-code-title" style={{ fontSize: '1.1rem', fontWeight: 800, margin: '0 0 0.35rem', display: 'flex', alignItems: 'center', gap: '0.45rem', color: 'var(--text-primary)' }}>
                   <KeyRound size={18} aria-hidden="true" style={{ color: 'var(--dole-blue)' }} />
-                  Daily Check-in Code
+                  Hourly Check-in Code
                   <span style={{
                     fontSize: '0.72rem',
                     fontWeight: 800,
@@ -450,7 +450,7 @@ export default function StaffQr() {
                 </h3>
                 <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
                   {requiresCode
-                    ? 'Clients must type this code when they check in, so a photo of the poster can\'t be used to register from home. Show it on the office TV or write it on a board next to the poster. A new code is made automatically every day.'
+                    ? 'Clients must type this code when they check in, so a photo of the poster can\'t be used to register from home. Show it on the office TV or write it on a board next to the poster. A new code is made automatically every hour, on the hour; the previous code still works for 10 minutes after it changes.'
                     : 'Stops clients from registering from home with a photo of the poster. When on, the check-in form asks for a 4-digit code that is only shown inside the office (on the TV or a board). The poster does not need to be reprinted.'}
                 </p>
               </div>
@@ -461,7 +461,7 @@ export default function StaffQr() {
                     { requires_office_code: !requiresCode },
                     requiresCode
                       ? 'Check-in code turned off. Clients can check in without a code.'
-                      : 'Check-in code turned on. Show today\'s code on the TV or a board.'
+                      : 'Check-in code turned on. Show the current code on the TV or a board.'
                   )}
                   disabled={isUpdating}
                   className={requiresCode ? 'btn btn-outline' : 'btn btn-primary'}
@@ -493,16 +493,16 @@ export default function StaffQr() {
                   textAlign: 'center',
                 }}>
                   <div style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#475569' }}>
-                    Today's code
+                    Current code
                   </div>
                   <div
-                    aria-label={`Today's code ${qrConfig.office_code.split('').join(' ')}`}
+                    aria-label={`Current code ${qrConfig.office_code.split('').join(' ')}`}
                     style={{ fontSize: '2.75rem', fontWeight: 900, letterSpacing: '0.2em', lineHeight: 1.1, color: 'var(--dole-blue)', fontVariantNumeric: 'tabular-nums', paddingLeft: '0.2em' }}
                   >
                     {qrConfig.office_code}
                   </div>
-                  {codeDateLabel && (
-                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Valid {codeDateLabel}</div>
+                  {codeChangesAt && (
+                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Changes at {codeChangesAt}</div>
                   )}
                 </div>
 
@@ -510,7 +510,7 @@ export default function StaffQr() {
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button
                       onClick={() => {
-                        if (window.confirm('Make a new code now? Today\'s current code stops working immediately. Update the board if you wrote the code on one; the TV updates by itself.')) {
+                        if (window.confirm('Make a new code now? The current code stops working immediately. Update the board if you wrote the code on one; the TV updates by itself.')) {
                           handleOfficeCodeChange({ regenerate: true }, 'New code made. The old code no longer works.');
                         }
                       }}

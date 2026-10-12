@@ -15,7 +15,7 @@ def generate_token(nbytes=16):
 
 def generate_office_code(length=4):
     """
-    Daily in-room check-in code (digits only, easy to read off a whiteboard or TV
+    Hourly in-room check-in code (digits only, easy to read off a whiteboard or TV
     and type on a phone). See CtmsOfficeQrConfig.office_code.
     """
     return ''.join(secrets.choice('0123456789') for _ in range(length))
@@ -341,13 +341,20 @@ class CtmsOfficeQrConfig(models.Model):
     # In-room check-in code: the printed QR poster is static and can be photographed and
     # reused off-site, so this proves the client is actually at the office. It is shown
     # on the TV display or written on a whiteboard and typed into the check-in form, never
-    # printed or encoded in the QR itself. Rotates once per local day.
+    # printed or encoded in the QR itself. Rotates on every clock hour (and on demand).
     requires_office_code = models.BooleanField(
         default=False,
-        help_text="Require clients to enter the daily in-office code before they can check in"
+        help_text="Require clients to enter the hourly in-office code before they can check in"
     )
     office_code = models.CharField(max_length=4, blank=True, default='')
-    office_code_date = models.DateField(null=True, blank=True, help_text="Local date office_code was generated for")
+    office_code_period = models.DateTimeField(
+        null=True, blank=True, help_text="Start of the clock hour office_code was generated for"
+    )
+    # The code from the hour before, still accepted for a few minutes after an hourly change
+    # so a client who read the code just before the hour isn't rejected. Never set by a
+    # manual "New code" (that's for leaked codes, which must stop working at once).
+    previous_office_code = models.CharField(max_length=4, blank=True, default='')
+    previous_office_code_valid_until = models.DateTimeField(null=True, blank=True)
     # The TV board API is public, so the code is only included when the TV page is opened
     # with this office's secret display key (the link staff copy from the Check-in QR page).
     display_key = models.CharField(max_length=32, blank=True, default='')

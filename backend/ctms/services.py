@@ -1,8 +1,11 @@
+from datetime import timedelta
+
 from django.db import models, transaction
 from django.utils import timezone
 from .models import (
     CsmOffice,
     CtmsCounter,
+    CtmsOfficeQrConfig,
     CtmsTransaction,
     generate_claim_code,
     generate_office_code,
@@ -10,21 +13,65 @@ from .models import (
 )
 
 
+OFFICE_CODE_PERIOD = timedelta(hours=1)
+# How long the previous hour's code still works after the hourly change
+OFFICE_CODE_GRACE = timedelta(minutes=10)
+
+
+def current_office_code_period(now=None):
+    """Start of the current local clock hour (codes change at 8:00, 9:00, ...)."""
+    return timezone.localtime(now).replace(minute=0, second=0, microsecond=0)
+
+
 def get_or_rotate_office_code(config, force=False):
     """
-    Returns the office's in-room check-in code for today, generating a fresh one if the
-    stored code is missing, dated for a different day, or `force` is set (staff pressed
-    "New code"). The printed QR poster never changes; this code is what rotates.
+    Returns the office's in-room check-in code for the current hour, generating a fresh
+    one when the stored code is missing, belongs to an earlier hour, or `force` is set
+    (staff pressed "New code"). The printed QR poster never changes; this code rotates.
+    `config` is updated in place.
     """
-    today = timezone.localdate()
-    if force or config.office_code_date != today or not config.office_code:
-        code = generate_office_code(4)
-        while code == config.office_code:
+    now = timezone.now()
+    period = current_office_code_period(now)
+    if not force and config.office_code and config.office_code_period == period:
+        return config.office_code
+
+    # Lock the row so the TV and a check-in hitting the hour change together agree on one code
+    with transaction.atomic():
+        locked = CtmsOfficeQrConfig.objects.select_for_update().get(pk=config.pk)
+        if force or not locked.office_code or locked.office_code_period != period:
+            if not force and locked.office_code and locked.office_code_period == period - OFFICE_CODE_PERIOD:
+                locked.previous_office_code = locked.office_code
+                locked.previous_office_code_valid_until = period + OFFICE_CODE_GRACE
+            else:
+                locked.previous_office_code = ''
+                locked.previous_office_code_valid_until = None
             code = generate_office_code(4)
-        config.office_code = code
-        config.office_code_date = today
-        config.save(update_fields=['office_code', 'office_code_date'])
+            while code == locked.office_code:
+                code = generate_office_code(4)
+            locked.office_code = code
+            locked.office_code_period = period
+            locked.save(update_fields=[
+                'office_code', 'office_code_period',
+                'previous_office_code', 'previous_office_code_valid_until',
+            ])
+    for field in ('office_code', 'office_code_period', 'previous_office_code', 'previous_office_code_valid_until'):
+        setattr(config, field, getattr(locked, field))
     return config.office_code
+
+
+def office_code_matches(config, entered):
+    """True if `entered` is the current code, or last hour's code within its grace period."""
+    entered = str(entered or '').strip()
+    if not entered:
+        return False
+    if entered == get_or_rotate_office_code(config):
+        return True
+    return bool(
+        config.previous_office_code
+        and entered == config.previous_office_code
+        and config.previous_office_code_valid_until
+        and timezone.now() < config.previous_office_code_valid_until
+    )
 
 
 def get_display_key(config, force=False):

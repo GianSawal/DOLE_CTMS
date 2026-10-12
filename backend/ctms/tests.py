@@ -1,5 +1,7 @@
 from datetime import timedelta
 from django.core.cache import cache
+from unittest import mock
+
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -27,6 +29,7 @@ from .services import (
     mark_done,
     undo_done,
     requeue_transaction,
+    current_office_code_period,
 )
 from .serializers import StaffTransactionSerializer
 
@@ -520,7 +523,7 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         }, format='json')
         self.assertEqual(res_unauthorized.status_code, 403)
 
-    def test_daily_office_code_blocks_off_site_checkin(self):
+    def test_hourly_office_code_blocks_off_site_checkin(self):
         def checkin(code=None):
             body = {'office': self.office.id, 'service': self.service.id, 'client_name': 'Citizen'}
             if code is not None:
@@ -535,14 +538,16 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         display_key = cfg['display_key']
         self.assertTrue(display_key)
 
-        # Staff turns it on and sees today's 4-digit code
+        # Staff turns it on and sees this hour's 4-digit code and when it changes
         res_on = self.client.post('/api/staff/qr-config/office-code/', {
             'office_id': self.office.id, 'requires_office_code': True}, format='json')
         self.assertEqual(res_on.status_code, 200)
         self.assertTrue(res_on.data['requires_office_code'])
         code = res_on.data['office_code']
         self.assertRegex(code, r'^\d{4}$')
-        self.assertEqual(res_on.data['office_code_date'], timezone.localdate().isoformat())
+        self.assertEqual(
+            res_on.data['office_code_valid_until'],
+            (current_office_code_period() + timedelta(hours=1)).isoformat())
         self.assertTrue(CtmsAuditLog.objects.filter(action='ENABLE_OFFICE_CODE').exists())
         self.assertNotIn(code, str(CtmsAuditLog.objects.filter(action='ENABLE_OFFICE_CODE').values()))
 
@@ -566,16 +571,28 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         board = self.client.get(f'/api/public/display/{self.office.id}/?key={display_key}').data
         self.assertEqual(board['check_in_code'], code)
 
-        # Yesterday's code stops working: a new one is generated for today
-        CtmsOfficeQrConfig.objects.filter(office=self.office).update(
-            office_code_date=timezone.localdate() - timedelta(days=1))
-        self.assertEqual(checkin(code).status_code, 403)
-        new_code = CtmsOfficeQrConfig.objects.get(office=self.office).office_code
-        self.assertNotEqual(new_code, code)
-        self.assertEqual(checkin(new_code).status_code, 201)
+        cache.clear()  # reset the check-in throttle for the second half
+        hour = current_office_code_period()
 
-        # "New code" replaces today's code immediately
+        def at(delta):
+            return mock.patch('django.utils.timezone.now', return_value=hour + delta)
+
+        # On the next hour a new code is made; last hour's code still works for 10 minutes
+        with at(timedelta(hours=1, minutes=5)):
+            self.assertEqual(checkin(code).status_code, 201)
+            next_code = CtmsOfficeQrConfig.objects.get(office=self.office).office_code
+            self.assertNotEqual(next_code, code)
+            self.assertEqual(checkin(next_code).status_code, 201)
+        with at(timedelta(hours=1, minutes=11)):
+            self.assertEqual(checkin(code).status_code, 403)
+
+        # After hours with no activity, the stale code gets no grace period
+        with at(timedelta(hours=3, minutes=1)):
+            self.assertEqual(checkin(next_code).status_code, 403)
+
+        # "New code" replaces the current code immediately, with no grace period
         self.client.force_authenticate(user=self.staff_user)
+        new_code = self.client.get(f'/api/staff/qr-config/?office={self.office.id}').data['office_code']
         res_regen = self.client.post('/api/staff/qr-config/office-code/', {
             'office_id': self.office.id, 'regenerate': True}, format='json')
         self.assertNotEqual(res_regen.data['office_code'], new_code)

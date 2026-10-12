@@ -268,7 +268,7 @@ class CheckinRequestSerializer(serializers.Serializer):
     )
     office_code = serializers.CharField(
         max_length=10, required=False, allow_blank=True, default='',
-        help_text="Daily in-office code; required when the office enables it"
+        help_text="Hourly in-office code; required when the office enables it"
     )
 
 

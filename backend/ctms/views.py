@@ -185,10 +185,9 @@ class PublicCheckinView(APIView):
             return Response({"detail": msg, "message": msg, "code": "QR_DISABLED"}, status=status.HTTP_403_FORBIDDEN)
 
         # Guard: the printed QR poster never changes, so a photo of it works anywhere. When
-        # enabled, require today's code shown on the TV / whiteboard inside the office.
+        # enabled, require this hour's code shown on the TV / board inside the office.
         if qr_config and qr_config.requires_office_code:
-            entered = str(data.get('office_code') or '').strip()
-            if entered != services.get_or_rotate_office_code(qr_config):
+            if not services.office_code_matches(qr_config, data.get('office_code')):
                 msg = "Incorrect check-in code. Please enter the 4-digit code shown on the screen or board at the office."
                 return Response({"detail": msg, "message": msg, "code": "OFFICE_CODE_INVALID"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -363,7 +362,7 @@ class PublicDisplayBoardView(APIView):
 
         latest = max(serving, key=lambda s: s["called_at"] or "", default=None)
 
-        # Today's check-in code, only for the office's own TV (opened with its secret key):
+        # This hour's check-in code, only for the office's own TV (opened with its secret key):
         # this endpoint is public, so anyone else gets no code.
         check_in_code = None
         key = request.GET.get('key') or ''
@@ -949,12 +948,12 @@ def qr_config_payload(office, config):
         "updated_at": config.updated_at.isoformat() if config.updated_at else None,
         "requires_office_code": config.requires_office_code,
         "office_code": None,
-        "office_code_date": None,
+        "office_code_valid_until": None,
         "display_key": services.get_display_key(config),
     }
     if config.requires_office_code:
         payload["office_code"] = services.get_or_rotate_office_code(config)
-        payload["office_code_date"] = config.office_code_date.isoformat()
+        payload["office_code_valid_until"] = (config.office_code_period + services.OFFICE_CODE_PERIOD).isoformat()
     return payload
 
 
@@ -1041,9 +1040,9 @@ def _truthy(value):
 
 class StaffOfficeCodeView(APIView):
     """
-    Daily in-office check-in code settings for one office:
+    Hourly in-office check-in code settings for one office:
       - requires_office_code: turns the requirement on or off
-      - regenerate: replaces today's code now (e.g. it was shared outside the office)
+      - regenerate: replaces the current code now (e.g. it was shared outside the office)
       - regenerate_display_key: issues a new TV link (old TV links stop showing the code)
     """
     permission_classes = [IsStaffUser]
@@ -1075,9 +1074,9 @@ class StaffOfficeCodeView(APIView):
             changes.append("REGENERATE_DISPLAY_KEY")
 
         descriptions = {
-            "ENABLE_OFFICE_CODE": f"Required the daily check-in code for {office.name}",
-            "DISABLE_OFFICE_CODE": f"Stopped requiring the daily check-in code for {office.name}",
-            "REGENERATE_OFFICE_CODE": f"Generated a new daily check-in code for {office.name}",
+            "ENABLE_OFFICE_CODE": f"Required the hourly check-in code for {office.name}",
+            "DISABLE_OFFICE_CODE": f"Stopped requiring the hourly check-in code for {office.name}",
+            "REGENERATE_OFFICE_CODE": f"Generated a new check-in code for {office.name}",
             "REGENERATE_DISPLAY_KEY": f"Issued a new TV display link for {office.name}",
         }
         for action_name in changes:
