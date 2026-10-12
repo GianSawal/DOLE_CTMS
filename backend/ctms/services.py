@@ -622,6 +622,61 @@ def requeue_transaction(tx, actor=None):
                   ['counter', 'assigned_to', 'assigned_personnel', 'started_at', 'called_at'])
 
 
+def transfer_recipients(office, exclude_users=()):
+    """Active staff of `office` who can receive a transferred client (system admins excluded)."""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    return (User.objects.filter(is_active=True, is_staff=True, is_superuser=False, staff_offices__office=office)
+            .exclude(pk__in=[u.pk for u in exclude_users if u])
+            .select_related('dole_personnel', 'occupied_window')
+            .distinct()
+            .order_by('first_name', 'last_name', 'username'))
+
+
+def transfer_transaction(tx, actor, to_user, reason=''):
+    """
+    Hands a client to another personnel in the same office. The ticket leaves the
+    current handler's lists at once, waits in the recipient's My Clients as
+    'transferred' until they start it, and the change is recorded in history.
+    """
+    from .models import CtmsAssignmentHistory, CtmsNotification
+
+    with transaction.atomic():
+        tx = (CtmsTransaction.objects.select_for_update()
+              .select_related('office', 'service', 'assigned_to', 'counter').get(pk=tx.pk))
+        ensure_handler(tx, actor)
+        if not to_user:
+            raise ValueError("Choose who will take over this client.")
+        if to_user.pk == tx.assigned_to_id or (not tx.assigned_to_id and actor and to_user.pk == actor.pk):
+            raise ValueError("This client is already yours. Choose another personnel.")
+        if not transfer_recipients(tx.office).filter(pk=to_user.pk).exists():
+            raise ValueError(f"{personnel_display_name(to_user)} is not active staff of {tx.office.name}.")
+        ensure_transition(tx, CtmsTransaction.STATUS_TRANSFERRED)
+
+        snap = _snapshot(tx)
+        tx.status = CtmsTransaction.STATUS_TRANSFERRED
+        tx.assigned_to = to_user
+        tx.assigned_personnel = personnel_display_name(to_user)[:200]
+        tx.counter = None  # the client is no longer at the previous handler's window
+        tx.save(update_fields=['status', 'assigned_to', 'assigned_personnel', 'counter'])
+        record_event(tx, CtmsAssignmentHistory.EVENT_TRANSFERRED, actor=actor, reason=reason, **snap)
+
+        sender = personnel_display_name(snap['from_user'] or actor) or 'A colleague'
+        service_name = tx.service.name if tx.service_id else 'Service'
+        note = f" Note: {reason.strip()}" if reason and reason.strip() else ""
+        CtmsNotification.objects.create(
+            recipient=to_user,
+            transaction=tx,
+            notification_type='REASSIGNMENT',
+            title=f"Client Transferred to You: Queue #{tx.queue_no}",
+            message=f"{sender} transferred Queue #{tx.queue_no} ({service_name}) to you. Start it from My Clients.{note}",
+            queue_no=tx.queue_no,
+            service_name=service_name,
+            assigned_at=timezone.now(),
+        )
+        return tx
+
+
 # =====================================================================
 # Windows (office-scoped service windows, stored in ctms_counter)
 # =====================================================================

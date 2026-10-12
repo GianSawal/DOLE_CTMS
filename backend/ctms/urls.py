@@ -16,6 +16,9 @@ from .views import (
     StaffCallNextView,
     StaffTransactionActionView,
     StaffTransactionsListView,
+    StaffMyClientsView,
+    StaffTransferRecipientsView,
+    StaffTransactionHistoryView,
     StaffReportsSummaryView,
     StaffQrCodeView,
     StaffQrConfigView,
@@ -68,6 +71,9 @@ urlpatterns = [
     path('staff/call-next/', StaffCallNextView.as_view(), name='staff-call-next'),
     path('staff/transactions/', StaffTransactionsListView.as_view(), name='staff-transactions-list'),
     path('staff/transactions/walkin/', StaffCreateWalkinView.as_view(), name='staff-walkin'),
+    path('staff/my-clients/', StaffMyClientsView.as_view(), name='staff-my-clients'),
+    path('staff/transactions/<int:pk>/history/', StaffTransactionHistoryView.as_view(), name='staff-transaction-history'),
+    path('staff/transactions/<int:pk>/transfer-recipients/', StaffTransferRecipientsView.as_view(), name='staff-transfer-recipients'),
     path('staff/transactions/<int:pk>/<str:action>/', StaffTransactionActionView.as_view(), name='staff-transaction-action'),
 
     # Reports, QR, and TV Display Video

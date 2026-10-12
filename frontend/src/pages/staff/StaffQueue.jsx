@@ -6,6 +6,7 @@ import Navbar from '../../components/Navbar';
 import Modal from '../../components/Modal';
 import PrintSlip from '../../components/PrintSlip';
 import WalkinModal from '../../components/WalkinModal';
+import ReassignModal from '../../components/ReassignModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
 
 const POLL_MS = 3000;
@@ -73,6 +74,7 @@ export default function StaffQueue() {
   const [confirmModal, setConfirmModal] = useState(null); // { title, message, confirmLabel, danger, onConfirm }
   const [pendingTx, setPendingTx] = useState(null);
   const [pendingReason, setPendingReason] = useState('');
+  const [reassignTx, setReassignTx] = useState(null);
 
   useEffect(() => {
     if (offices.length > 0 && !offices.some(o => String(o.id) === String(selectedOffice))) {
@@ -310,6 +312,7 @@ export default function StaffQueue() {
                       </button>
                       <button className="btn btn-outline" disabled={busy} onClick={() => handleCall(myCurrent, 'recall')}>Recall on TV</button>
                       <button className="btn btn-outline" disabled={busy} onClick={() => { setPendingReason(''); setPendingTx(myCurrent); }}>Pending</button>
+                      <button className="btn btn-outline" disabled={busy} onClick={() => setReassignTx(myCurrent)}>Reassign</button>
                       <button className="btn btn-outline" disabled={busy}
                         onClick={() => confirmThen(`Return Queue ${myCurrent.queue_no} to the queue?`,
                           'The client goes back to the shared waiting line, unassigned, so any window can call them.',
@@ -355,6 +358,7 @@ export default function StaffQueue() {
                           {tx.status === 'pending' && (
                             <button className="btn btn-success btn-sm" disabled={busy} onClick={() => act(tx, 'done', `Queue ${tx.queue_no} completed.`)}>Done</button>
                           )}
+                          <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => setReassignTx(tx)}>Reassign</button>
                           <button className="btn btn-outline btn-sm" disabled={busy}
                             onClick={() => confirmThen(`Return Queue ${tx.queue_no} to the queue?`,
                               'The client goes back to the shared waiting line, unassigned.',
@@ -450,6 +454,16 @@ export default function StaffQueue() {
         onClose={() => setShowWalkin(false)}
         officeId={selectedOffice}
         onCreated={(tx) => { setShowWalkin(false); setPrintedTx(tx); fetchQueue(); }}
+      />
+
+      <ReassignModal
+        tx={reassignTx}
+        onClose={() => setReassignTx(null)}
+        onTransferred={(updated, person) => {
+          setReassignTx(null);
+          flash('success', `Queue ${updated.queue_no} transferred to ${person.name}.`);
+          fetchQueue();
+        }}
       />
 
       <Modal isOpen={!!printedTx} onClose={() => setPrintedTx(null)} title="Queue Slip">

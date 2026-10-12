@@ -39,6 +39,7 @@ from .models import (
     CtmsTransaction,
     CtmsAuditLog,
     CtmsNotification,
+    CtmsAssignmentHistory,
     log_audit_event,
 )
 from .serializers import (
@@ -724,6 +725,25 @@ class StaffTransactionActionView(APIView):
             elif action == 'requeue':
                 tx = services.requeue_transaction(tx, actor=request.user)
 
+            elif action == 'transfer':
+                to_user = User.objects.filter(pk=request.data.get('to_user')).first()
+                previous = services.personnel_display_name(tx.assigned_to) if tx.assigned_to_id else ''
+                tx = services.transfer_transaction(tx, request.user, to_user, reason=str(request.data.get('reason', '')))
+                log_audit_event(
+                    action='TRANSFER_CLIENT',
+                    category=CtmsAuditLog.CATEGORY_QUEUE,
+                    actor=request.user,
+                    request=request,
+                    target_type='Transaction',
+                    target_id=tx.id,
+                    target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
+                    office=tx.office,
+                    division_name=tx.service.division.name if tx.service and tx.service.division else '',
+                    description=f"Transferred Queue #{tx.queue_no} from {previous or 'unassigned'} to {tx.assigned_personnel}",
+                    details={'from': previous, 'to': tx.assigned_personnel, 'to_user_id': tx.assigned_to_id,
+                             'reason': str(request.data.get('reason', ''))},
+                )
+
             else:
                 return Response({"detail": f"Unknown action: {action}"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -767,6 +787,112 @@ class StaffTransactionActionView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+
+
+MY_CLIENT_TABS = {
+    'ongoing': [CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_TRANSFERRED],
+    'pending': [CtmsTransaction.STATUS_PENDING],
+    'done': [CtmsTransaction.STATUS_DONE],
+}
+MY_CLIENTS_DONE_LIMIT = 200
+
+
+class StaffMyClientsView(APIView):
+    """
+    The caller's own workload: Ongoing (serving or transferred to them), Pending
+    (paused, still theirs) and Done (completed with them as final handler).
+    """
+    permission_classes = [IsStaffUser]
+
+    def get(self, request):
+        tab = request.query_params.get('tab', 'ongoing')
+        if tab not in MY_CLIENT_TABS:
+            return Response({"detail": "tab must be ongoing, pending, or done."}, status=status.HTTP_400_BAD_REQUEST)
+
+        base = CtmsTransaction.objects.filter(
+            assigned_to=request.user, office__in=get_staff_offices(request.user)
+        )
+        counts = {name: base.filter(status__in=statuses).count() for name, statuses in MY_CLIENT_TABS.items()}
+
+        qs = base.filter(status__in=MY_CLIENT_TABS[tab]).select_related(
+            'office', 'service', 'service__division', 'counter', 'assigned_to', 'assigned_to__dole_personnel'
+        )
+        q = (request.query_params.get('q') or '').strip()
+        if q:
+            qs = qs.filter(
+                models.Q(queue_no__icontains=q) | models.Q(transaction_no__icontains=q) |
+                models.Q(client_name__icontains=q) | models.Q(service__name__icontains=q)
+            )
+
+        if tab == 'done':
+            qs = qs.order_by('-done_at')[:MY_CLIENTS_DONE_LIMIT]
+        elif tab == 'pending':
+            qs = qs.order_by('-is_priority', 'checked_in_at')
+        else:
+            # transferred-but-not-started first, so new hand-offs are noticed
+            qs = qs.order_by('-status', '-called_at', 'checked_in_at')
+
+        window = CtmsCounter.objects.filter(
+            assigned_user=request.user, is_active=True, archived_at__isnull=True
+        ).first()
+        return Response({
+            "tab": tab,
+            "counts": counts,
+            "results": StaffTransactionSerializer(qs, many=True).data,
+            "my_window": {"id": window.id, "name": window.name, "office": window.office_id} if window else None,
+        })
+
+
+class StaffTransferRecipientsView(APIView):
+    """Personnel in the transaction's office who can take over the client."""
+    permission_classes = [IsStaffUser]
+
+    def get(self, request, pk):
+        tx = get_object_or_404(CtmsTransaction, pk=pk, office__in=get_staff_offices(request.user))
+        busy_ids = set(CtmsTransaction.objects.filter(
+            office=tx.office, status=CtmsTransaction.STATUS_SERVING
+        ).values_list('assigned_to_id', flat=True))
+
+        results = []
+        for u in services.transfer_recipients(tx.office, exclude_users=[request.user, tx.assigned_to]):
+            profile = getattr(u, 'dole_personnel', None)
+            window = getattr(u, 'occupied_window', None)
+            at_window = window if window and window.office_id == tx.office_id and window.is_active else None
+            results.append({
+                "id": u.id,
+                "name": services.personnel_display_name(u),
+                "username": u.username,
+                "position": profile.position if profile else '',
+                "window": at_window.name if at_window else None,
+                "is_serving": u.id in busy_ids,
+            })
+        return Response(results)
+
+
+class StaffTransactionHistoryView(APIView):
+    """Immutable assignment history of one transaction."""
+    permission_classes = [IsStaffUser]
+
+    def get(self, request, pk):
+        tx = get_object_or_404(CtmsTransaction, pk=pk, office__in=get_staff_offices(request.user))
+        events = CtmsAssignmentHistory.objects.filter(transaction=tx).order_by('created_at', 'id')
+        return Response({
+            "transaction": StaffTransactionSerializer(tx).data,
+            "events": [{
+                "id": e.id,
+                "event": e.event,
+                "event_label": e.get_event_display(),
+                "from_status": e.from_status,
+                "to_status": e.to_status,
+                "from_user_name": e.from_user_name,
+                "to_user_name": e.to_user_name,
+                "from_counter_name": e.from_counter_name,
+                "to_counter_name": e.to_counter_name,
+                "actor_name": e.actor_name,
+                "reason": e.reason,
+                "created_at": e.created_at,
+            } for e in events],
+        })
 
 
 class StaffTransactionsListView(APIView):

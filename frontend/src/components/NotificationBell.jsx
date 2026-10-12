@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { staffApi } from '../api/staff';
 import { useAuth } from '../context/AuthContext';
 
@@ -105,6 +106,7 @@ export function playNotificationChime() {
 
 export default function NotificationBell() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
@@ -222,6 +224,7 @@ export default function NotificationBell() {
     }
     setIsOpen(false);
     window.dispatchEvent(new CustomEvent('ctms:new-assignment', { detail: notif }));
+    if (notif.transaction) navigate('/staff/my-clients');
   };
 
   const handleBellButtonClick = () => {

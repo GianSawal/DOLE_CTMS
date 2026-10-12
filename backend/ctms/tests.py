@@ -1154,3 +1154,117 @@ class Stage3SharedQueueTestCase(CsmTablesTestCase):
         tx = create_transaction(self.bataan, self.svc_tssd1)
         self._as(self.ana).post(f'/api/staff/transactions/{tx.id}/call/')
         self.assertEqual(self.client.post(f'/api/staff/transactions/{tx.id}/delete/').status_code, 409)
+
+
+class Stage4MyClientsAndTransferTestCase(CsmTablesTestCase):
+    """Stage 4: personal workload tabs and clean hand-offs between personnel."""
+
+    def setUp(self):
+        self.bataan = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.pampanga = CsmOffice.objects.create(name="Pampanga Field Office", code="PAM", is_active=True)
+        self.service = CsmService.objects.create(name="SEnA Assistance", is_active=True, sort_order=1)
+        self.ana = self._staff("ana", self.bataan, "Window 1")
+        self.ben = self._staff("ben", self.bataan, "Window 2")
+        self.pam = self._staff("pam", self.pampanga, "Window 1")
+        self.client = APIClient()
+
+    def _staff(self, username, office, window):
+        user = User.objects.create_user(username=username, password="pw", is_staff=True, first_name=username.title())
+        CtmsStaffOffice.objects.create(user=user, office=office)
+        CtmsCounter.objects.create(office=office, name=window, assigned_user=user)
+        return user
+
+    def _as(self, user):
+        self.client.force_authenticate(user=user)
+        return self.client
+
+    def _served_by_ana(self):
+        tx = create_transaction(self.bataan, self.service)
+        return call_transaction(tx, self.ana)
+
+    def _tab(self, user, tab):
+        return self._as(user).get(f'/api/staff/my-clients/?tab={tab}').data
+
+    def _transfer(self, tx, by, to, reason=''):
+        return self._as(by).post(f'/api/staff/transactions/{tx.id}/transfer/', {'to_user': to.id, 'reason': reason}, format='json')
+
+    def test_tabs_reflect_the_callers_work(self):
+        from .services import mark_pending
+        paused = self._served_by_ana()
+        mark_pending(paused, actor=self.ana)
+        finished = self._served_by_ana()
+        mark_done(finished, self.ana)
+        current = self._served_by_ana()
+
+        data = self._tab(self.ana, 'ongoing')
+        self.assertEqual([r['id'] for r in data['results']], [current.id])
+        self.assertEqual(data['counts'], {'ongoing': 1, 'pending': 1, 'done': 1})
+        self.assertEqual([r['id'] for r in self._tab(self.ana, 'pending')['results']], [paused.id])
+        self.assertEqual([r['id'] for r in self._tab(self.ana, 'done')['results']], [finished.id])
+        self.assertEqual(self._tab(self.ben, 'ongoing')['counts'], {'ongoing': 0, 'pending': 0, 'done': 0})
+
+    def test_transfer_moves_ownership_cleanly(self):
+        tx = self._served_by_ana()
+        res = self._transfer(tx, self.ana, self.ben, reason="Needs OSH specialist")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['status'], 'transferred')
+        self.assertIsNone(res.data['counter'])
+
+        # Gone from Ana's active lists, waiting in Ben's Ongoing as not-started
+        self.assertEqual(self._tab(self.ana, 'ongoing')['results'], [])
+        ben_ongoing = self._tab(self.ben, 'ongoing')['results']
+        self.assertEqual([(r['id'], r['status']) for r in ben_ongoing], [(tx.id, 'transferred')])
+
+        # Ben is notified
+        note = CtmsNotification.objects.get(recipient=self.ben)
+        self.assertEqual(note.notification_type, 'REASSIGNMENT')
+        self.assertIn("Needs OSH specialist", note.message)
+
+        # Ana can no longer change it
+        for action in ('done', 'pending', 'requeue'):
+            self.assertEqual(self._as(self.ana).post(f'/api/staff/transactions/{tx.id}/{action}/').status_code, 403, action)
+        self.assertEqual(self._transfer(tx, self.ana, self.ana).status_code, 403)
+
+        # Ben starts it at his window, then completes it: CSM credits Ben
+        res = self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/call/')
+        self.assertEqual(res.data['status'], 'serving')
+        self.assertEqual(res.data['counter_name'], 'Window 2')
+        self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/done/')
+        tx.refresh_from_db()
+        self.assertEqual(tx.served_by_name, 'Ben')
+
+        history = self._as(self.ben).get(f'/api/staff/transactions/{tx.id}/history/').data['events']
+        self.assertEqual([e['event'] for e in history], ['CALLED', 'TRANSFERRED', 'RESUMED', 'COMPLETED'])
+        transfer = history[1]
+        self.assertEqual((transfer['from_user_name'], transfer['to_user_name']), ('Ana', 'Ben'))
+        self.assertEqual(transfer['from_counter_name'], 'Window 1')
+        self.assertEqual(transfer['reason'], 'Needs OSH specialist')
+
+    def test_transfer_frees_the_window_for_the_next_client(self):
+        tx = self._served_by_ana()
+        self._transfer(tx, self.ana, self.ben)
+        create_transaction(self.bataan, self.service)
+        res = self._as(self.ana).post('/api/staff/call-next/', {'office': self.bataan.id}, format='json')
+        self.assertEqual(res.status_code, 200)
+
+    def test_recipients_are_same_office_staff_only(self):
+        tx = self._served_by_ana()
+        admin = User.objects.create_superuser(username="sysadmin", password="pw")
+        CtmsStaffOffice.objects.create(user=admin, office=self.bataan)
+        names = [r['name'] for r in self._as(self.ana).get(f'/api/staff/transactions/{tx.id}/transfer-recipients/').data]
+        self.assertEqual(names, ['Ben'])
+        res = self._transfer(tx, self.ana, self.pam)
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("not active staff", res.data['detail'])
+
+    def test_pending_client_can_be_transferred(self):
+        from .services import mark_pending
+        tx = self._served_by_ana()
+        mark_pending(tx, actor=self.ana)
+        self.assertEqual(self._transfer(tx, self.ana, self.ben).status_code, 200)
+        self.assertEqual(self._tab(self.ana, 'pending')['results'], [])
+
+    def test_waiting_ticket_cannot_be_transferred(self):
+        tx = create_transaction(self.bataan, self.service)
+        res = self._transfer(tx, self.ana, self.ben)
+        self.assertEqual(res.status_code, 409)

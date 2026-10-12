@@ -216,6 +216,19 @@ export const staffApi = {
     body: JSON.stringify({ action: 'mark_read', id }),
   }),
 
+  // My Clients & reassignment
+  getMyClients: (tab, q = '') => {
+    const params = new URLSearchParams({ tab });
+    if (q) params.append('q', q);
+    return apiRequest(`/staff/my-clients/?${params.toString()}`);
+  },
+  getTransferRecipients: (id) => apiRequest(`/staff/transactions/${id}/transfer-recipients/`),
+  transferTransaction: (id, toUser, reason = '') => apiRequest(`/staff/transactions/${id}/transfer/`, {
+    method: 'POST',
+    body: JSON.stringify({ to_user: toUser, reason }),
+  }),
+  getTransactionHistory: (id) => apiRequest(`/staff/transactions/${id}/history/`),
+
   // Windows (office-scoped service windows)
   getWindows: (officeId) => {
     const params = new URLSearchParams();
