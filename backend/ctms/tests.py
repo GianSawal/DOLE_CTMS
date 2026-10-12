@@ -998,6 +998,30 @@ class Stage4MyClientsAndTransferTestCase(CsmTablesTestCase):
         self.assertEqual(self._transfer(tx, self.ana, self.ben).status_code, 200)
         self.assertEqual(self._tab(self.ana, 'pending')['results'], [])
 
+    def test_recipient_without_window_can_serve_transferred_client(self):
+        tx = self._served_by_ana()
+        CtmsCounter.objects.filter(assigned_user=self.ben).update(assigned_user=None)
+        self._transfer(tx, self.ana, self.ben)
+
+        res = self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/call/')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['status'], 'serving')
+        self.assertIsNone(res.data['counter'])
+        self.assertEqual(res.data['assigned_to'], self.ben.id)
+        self.assertEqual(self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/done/').status_code, 200)
+
+        # The shared queue and paused clients still need a window
+        waiting = create_transaction(self.bataan, self.service)
+        res = self._as(self.ben).post(f'/api/staff/transactions/{waiting.id}/call/')
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("Windows page", res.data['detail'])
+
+    def test_recipient_with_window_serves_at_it(self):
+        tx = self._served_by_ana()
+        self._transfer(tx, self.ana, self.ben)
+        res = self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/call/')
+        self.assertEqual(res.data['counter_name'], 'Window 2')
+
     def test_waiting_ticket_cannot_be_transferred(self):
         tx = create_transaction(self.bataan, self.service)
         res = self._transfer(tx, self.ana, self.ben)

@@ -457,11 +457,11 @@ def user_window(user, office):
     ).first()
 
 
-def _lock_user_window(user, office):
+def _lock_user_window(user, office, required=True):
     window = CtmsCounter.objects.select_for_update().filter(
         assigned_user=user, office=office, is_active=True, archived_at__isnull=True
     ).first()
-    if not window:
+    if not window and required:
         raise ValueError("Take a window on the Windows page before calling clients.")
     return window
 
@@ -514,15 +514,19 @@ def call_next_transaction(office, user):
 def call_transaction(tx, user):
     """
     Calls a specific ticket to `user`'s window:
-    - waiting: claims it from the shared queue
+    - waiting: claims it from the shared queue (window required)
     - serving (own): re-announces it (recall)
-    - pending / transferred (own): resumes / starts it
+    - pending (own): resumes it (window required)
+    - transferred (own): starts it; a recipient without a window may still serve
+      the client, who is then not shown on the TV board
     """
     from .models import CtmsAssignmentHistory
 
     with transaction.atomic():
         tx = CtmsTransaction.objects.select_for_update().select_related('assigned_to', 'counter').get(pk=tx.pk)
-        window = _lock_user_window(user, tx.office)
+        window = _lock_user_window(user, tx.office, required=False)
+        if not window and tx.status in (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_PENDING):
+            raise ValueError("Take a window on the Windows page before calling clients.")
 
         if tx.status == CtmsTransaction.STATUS_WAITING:
             _ensure_not_serving_another(user, tx.office)
@@ -534,7 +538,7 @@ def call_transaction(tx, user):
 
         if tx.status == CtmsTransaction.STATUS_SERVING:
             tx.called_at = timezone.now()
-            tx.counter = window
+            tx.counter = window or tx.counter
             tx.assigned_to = user
             tx.assigned_personnel = personnel_display_name(user)[:200]
             tx.save(update_fields=['called_at', 'counter', 'assigned_to', 'assigned_personnel'])

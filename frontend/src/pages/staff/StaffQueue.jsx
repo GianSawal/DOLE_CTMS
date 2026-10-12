@@ -113,7 +113,7 @@ export default function StaffQueue() {
   };
 
   const announce = (tx, action) => {
-    if (!tx) return;
+    if (!tx || !tx.counter_name) return;
     broadcastQueueCall({
       officeId: selectedOffice,
       txId: tx.id,
@@ -151,7 +151,9 @@ export default function StaffQueue() {
     const res = await staffApi.transactionAction(tx.id, action);
     announce(res, action);
     return res;
-  }, res => (action === 'recall' ? `Queue ${res.queue_no} announced again.` : `Queue ${res.queue_no} called to ${res.counter_name}.`));
+  }, res => (action === 'recall'
+    ? `Queue ${res.queue_no} announced again.`
+    : res.counter_name ? `Queue ${res.queue_no} called to ${res.counter_name}.` : `You are now serving Queue ${res.queue_no}.`));
 
   const act = (tx, action, successText, payload) =>
     run(() => staffApi.transactionAction(tx.id, action, payload), successText);
@@ -288,7 +290,7 @@ export default function StaffQueue() {
                       <span style={{ fontFamily: 'var(--font-mono)', fontSize: '2.6rem', fontWeight: 800, color: 'var(--dole-blue)', lineHeight: 1 }}>{myCurrent.queue_no}</span>
                       {myCurrent.is_priority && <span className="badge badge-priority">Priority</span>}
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                        at {myCurrent.counter_name} · {formatMinutes(minutesSince(myCurrent.started_at))}
+                        {myCurrent.counter_name ? `at ${myCurrent.counter_name} · ` : 'no window · '}{formatMinutes(minutesSince(myCurrent.started_at))}
                       </span>
                     </div>
                     <div style={{ marginTop: '0.6rem', fontWeight: 700, fontSize: '1.05rem' }}><ClientName tx={myCurrent} /></div>
@@ -310,7 +312,9 @@ export default function StaffQueue() {
                         onClick={() => act(myCurrent, 'done', `Queue ${myCurrent.queue_no} completed. The client can now answer the CSM survey.`)}>
                         Done
                       </button>
-                      <button className="btn btn-outline" disabled={busy} onClick={() => handleCall(myCurrent, 'recall')}>Recall on TV</button>
+                      {myCurrent.counter_name && (
+                        <button className="btn btn-outline" disabled={busy} onClick={() => handleCall(myCurrent, 'recall')}>Recall on TV</button>
+                      )}
                       <button className="btn btn-outline" disabled={busy} onClick={() => { setPendingReason(''); setPendingTx(myCurrent); }}>Pending</button>
                       <button className="btn btn-outline" disabled={busy} onClick={() => setReassignTx(myCurrent)}>Reassign</button>
                       <button className="btn btn-outline" disabled={busy}
@@ -352,9 +356,16 @@ export default function StaffQueue() {
                         </div>
                         <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}><ClientName tx={tx} /> · {tx.service_name}</div>
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
-                          <button className="btn btn-primary btn-sm" disabled={!canCall} title={callBlockedReason || undefined} onClick={() => handleCall(tx)}>
-                            {tx.status === 'transferred' ? 'Start' : 'Resume'}
-                          </button>
+                          {tx.status === 'transferred' ? (
+                            <button className="btn btn-primary btn-sm" disabled={busy || !!myCurrent}
+                              title={myCurrent ? `Finish Queue ${myCurrent.queue_no} first.` : undefined} onClick={() => handleCall(tx)}>
+                              Start
+                            </button>
+                          ) : (
+                            <button className="btn btn-primary btn-sm" disabled={!canCall} title={callBlockedReason || undefined} onClick={() => handleCall(tx)}>
+                              Resume
+                            </button>
+                          )}
                           {tx.status === 'pending' && (
                             <button className="btn btn-success btn-sm" disabled={busy} onClick={() => act(tx, 'done', `Queue ${tx.queue_no} completed.`)}>Done</button>
                           )}

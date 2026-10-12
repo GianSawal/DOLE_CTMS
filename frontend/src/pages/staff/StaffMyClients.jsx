@@ -84,16 +84,19 @@ export default function StaffMyClients() {
 
   const startOrResume = (tx) => run(tx, async () => {
     const res = await staffApi.transactionAction(tx.id, 'call');
-    broadcastQueueCall({
-      officeId: res.office,
-      txId: res.id,
-      queueNo: res.queue_no,
-      counter: res.counter_name,
-      personnel: res.assigned_to_name || '',
-      action: 'call',
-    });
+    // Clients started without a window are served directly and are not announced on the TV.
+    if (res.counter_name) {
+      broadcastQueueCall({
+        officeId: res.office,
+        txId: res.id,
+        queueNo: res.queue_no,
+        counter: res.counter_name,
+        personnel: res.assigned_to_name || '',
+        action: 'call',
+      });
+    }
     return res;
-  }, `Queue ${tx.queue_no} called to your window.`);
+  }, myWindow ? `Queue ${tx.queue_no} called to your window.` : `You are now serving Queue ${tx.queue_no}.`);
 
   const submitPending = async (e) => {
     e.preventDefault();
@@ -116,7 +119,8 @@ export default function StaffMyClients() {
 
   const renderActions = (tx) => {
     const busy = busyId === tx.id;
-    const needsWindow = !myWindow;
+    // Transferred clients can be started without a window; resuming a paused client needs one.
+    const needsWindow = !myWindow && tx.status === 'pending';
     const startLabel = tx.status === 'transferred' ? 'Start' : 'Resume';
     return (
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
