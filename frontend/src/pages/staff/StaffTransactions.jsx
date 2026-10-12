@@ -47,10 +47,10 @@ export default function StaffTransactions() {
   const [dateTo, setDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Strict RBAC: Default and lock to assigned office for non-superusers
+  // Accounts that oversee a single office are locked to it
   useEffect(() => {
-    if (user?.assigned_offices?.length === 1 && !user?.is_superuser) {
-      setOfficeFilter(String(user.assigned_offices[0].id));
+    if (user?.oversight_offices?.length === 1) {
+      setOfficeFilter(String(user.oversight_offices[0].id));
     }
   }, [user]);
 
@@ -122,8 +122,8 @@ export default function StaffTransactions() {
   };
 
   const handleResetFilters = () => {
-    if (user?.assigned_offices?.length === 1 && !user?.is_superuser) {
-      setOfficeFilter(String(user.assigned_offices[0].id));
+    if (user?.oversight_offices?.length === 1) {
+      setOfficeFilter(String(user.oversight_offices[0].id));
     } else {
       setOfficeFilter('');
     }
@@ -212,7 +212,7 @@ export default function StaffTransactions() {
           <form onSubmit={handleSearchSubmit} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end' }}>
             <div style={{ flex: '1 1 180px' }}>
               <label style={{ fontSize: '0.8rem' }}>Office</label>
-              {user?.assigned_offices?.length === 1 && !user?.is_superuser ? (
+              {user?.oversight_offices?.length === 1 ? (
                 <div style={{
                   minHeight: '44px',
                   display: 'flex',
@@ -225,7 +225,7 @@ export default function StaffTransactions() {
                   color: 'var(--dole-blue)',
                   fontSize: '0.9rem',
                 }}>
-                  🔒 {user.assigned_offices[0].name}
+                  🔒 {user.oversight_offices[0].name}
                 </div>
               ) : (
                 <select
@@ -233,8 +233,8 @@ export default function StaffTransactions() {
                   onChange={(e) => setOfficeFilter(e.target.value)}
                   style={{ minHeight: '44px' }}
                 >
-                  <option value="">All Assigned Offices</option>
-                  {user?.assigned_offices?.map(o => (
+                  <option value="">All Offices</option>
+                  {user?.oversight_offices?.map(o => (
                     <option key={o.id} value={o.id}>{o.name}</option>
                   ))}
                 </select>

@@ -109,36 +109,10 @@ export const staffApi = {
     body: JSON.stringify({ personnel_ids: personnelIds }),
   }),
 
-  // Employee & User Management (Admin Only)
+  // User Management (regional administrators)
   getOffices: () => apiRequest('/staff/offices/'),
 
-  getPersonnel: (filters = {}) => {
-    const params = new URLSearchParams();
-    Object.entries(filters).forEach(([k, v]) => {
-      if (v !== '' && v !== null && v !== undefined) params.append(k, v);
-    });
-    return apiRequest(`/staff/personnel/?${params.toString()}`);
-  },
-
-  createPersonnel: (data) => apiRequest('/staff/personnel/', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-
-  updatePersonnel: (id, data) => apiRequest(`/staff/personnel/${id}/`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  }),
-
-  deletePersonnel: (id) => apiRequest(`/staff/personnel/${id}/`, {
-    method: 'DELETE',
-  }),
-
-  togglePersonnelActive: (id) => apiRequest(`/staff/personnel/${id}/toggle-active/`, {
-    method: 'POST',
-  }),
-
-  // Positions Management (Admin Only)
+  // Positions catalog (regional administrators)
   getPositions: () => apiRequest('/staff/positions/'),
   createPosition: (data) => apiRequest('/staff/positions/', {
     method: 'POST',
@@ -170,9 +144,9 @@ export const staffApi = {
     method: 'DELETE',
   }),
 
-  resetEmployeePassword: (id, password = null) => apiRequest(`/staff/users/${id}/reset-password/`, {
+  resetEmployeePassword: (id, password, confirmPassword) => apiRequest(`/staff/users/${id}/reset-password/`, {
     method: 'POST',
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ password, confirm_password: confirmPassword }),
   }),
 
   toggleEmployeeActive: (id) => apiRequest(`/staff/users/${id}/toggle-active/`, {

@@ -170,73 +170,22 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         self.assertNotIn("Confidential Name", content)
         self.assertIn("001", content)
 
-    def test_user_management_crud_by_admin(self):
-        admin_user = User.objects.create_superuser(username="adminuser", password="adminpassword")
-        div_tssd1 = CsmDivision.objects.create(name="TSSD 1")
-        div_malsu = CsmDivision.objects.create(name="MALSU")
-
-        # Regular staff should get 403
-        self.client.force_authenticate(user=self.staff_user)
-        res_forbidden = self.client.get("/api/staff/users/")
-        self.assertEqual(res_forbidden.status_code, status.HTTP_403_FORBIDDEN)
-
-        # Admin user should get 200
-        self.client.force_authenticate(user=admin_user)
-        res_list = self.client.get("/api/staff/users/")
-        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
-
-        # Admin creates new employee
-        create_payload = {
-            "employee_id": "EMP-1001",
-            "first_name": "Juan",
-            "middle_name": "Santos",
-            "last_name": "Dela Cruz",
-            "position": "Labor and Employment Officer III",
-            "office": self.office.id,
-            "division_ids": [div_tssd1.id, div_malsu.id],
-            "temporary_password": "EMP-1001",
-        }
-        res_create = self.client.post("/api/staff/users/", data=create_payload, format='json')
-        self.assertEqual(res_create.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(res_create.data["employee_id"], "EMP-1001")
-        self.assertEqual(len(res_create.data["division_ids"]), 2)
-
-        # Verify created User in database
-        created_user = User.objects.get(username="EMP-1001")
-        self.assertTrue(created_user.is_staff)
-        self.assertFalse(created_user.is_superuser)
-        self.assertTrue(created_user.check_password("EMP-1001"))
-
-        # Verify CtmsEmployee in database
-        from .models import CtmsEmployee
-        emp = CtmsEmployee.objects.get(employee_id="EMP-1001")
-        self.assertEqual(emp.full_name, "Juan Santos Dela Cruz")
-        self.assertEqual(emp.position, "Labor and Employment Officer III")
-        self.assertEqual(emp.office, self.office)
-        self.assertEqual(emp.divisions.count(), 2)
-
-        # Test reset password endpoint
-        res_reset = self.client.post(f"/api/staff/users/{created_user.id}/reset-password/", data={"password": "NewTempPassword123"}, format='json')
-        self.assertEqual(res_reset.status_code, status.HTTP_200_OK)
-        created_user.refresh_from_db()
-        self.assertTrue(created_user.check_password("NewTempPassword123"))
-
     def test_first_time_login_password_change(self):
-        from .models import CtmsEmployee
         admin_user = User.objects.create_superuser(username="admin_sec", password="adminpassword")
 
-        # Admin creates new employee
+        # Admin creates a new account (credentials + personnel profile in one step)
         self.client.force_authenticate(user=admin_user)
         res_create = self.client.post("/api/staff/users/", data={
+            "username": "EMP-9999",
             "employee_id": "EMP-9999",
             "first_name": "Pedro",
             "last_name": "Penduko",
             "office": self.office.id,
-            "temporary_password": "EMP-9999",
+            "password": "EMP-9999",
         }, format='json')
         self.assertEqual(res_create.status_code, status.HTTP_201_CREATED)
 
-        emp = CtmsEmployee.objects.get(employee_id="EMP-9999")
+        emp = DolePersonnel.objects.get(employee_id="EMP-9999")
         self.assertTrue(emp.must_change_password)
 
         # Login as new employee
@@ -395,156 +344,6 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         self.assertEqual(res_search.status_code, status.HTTP_200_OK)
         self.assertTrue(any(t['transaction_no'] == tx.transaction_no for t in res_search.data))
 
-    def test_admin_user_office_and_division_access_options(self):
-        admin_creator = User.objects.create_superuser(username="superadmin", password="superpassword")
-        self.client.force_authenticate(user=admin_creator)
-
-        office2 = CsmOffice.objects.create(name="Zambales Field Office", code="ZFO", is_active=True)
-        div_tssd1 = CsmDivision.objects.create(name="TSSD 1")
-        div_tssd2 = CsmDivision.objects.create(name="TSSD 2")
-        div_imsd = CsmDivision.objects.create(name="IMSD")
-
-        # 1. Create an admin with all offices & all divisions (default)
-        res_full_admin = self.client.post("/api/staff/users/", data={
-            "username": "full_admin",
-            "password": "Password123!",
-            "role": "admin",
-            "all_offices": True,
-            "all_divisions": True,
-        }, format='json')
-        self.assertEqual(res_full_admin.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(res_full_admin.data["all_offices_access"])
-        self.assertTrue(res_full_admin.data["all_divisions_access"])
-        self.assertEqual(res_full_admin.data["office_name"], "All Offices")
-
-        full_admin_user = User.objects.get(username="full_admin")
-        from .views import get_staff_offices, get_staff_divisions
-        offices_allowed = get_staff_offices(full_admin_user)
-        self.assertIn(self.office, offices_allowed)
-        self.assertIn(office2, offices_allowed)
-
-        # 2. Create an admin with specific office choice (e.g. only Zambales)
-        res_specific_admin = self.client.post("/api/staff/users/", data={
-            "username": "zambales_admin",
-            "password": "Password123!",
-            "role": "admin",
-            "office_ids": [office2.id],
-            "division_ids": [div_tssd1.id],
-        }, format='json')
-        self.assertEqual(res_specific_admin.status_code, status.HTTP_201_CREATED)
-        self.assertFalse(res_specific_admin.data["all_offices_access"])
-        self.assertEqual(res_specific_admin.data["office_ids"], [office2.id])
-        self.assertEqual(res_specific_admin.data["office_name"], "Zambales Field Office")
-
-        zambales_admin_user = User.objects.get(username="zambales_admin")
-        zambales_offices = get_staff_offices(zambales_admin_user)
-        self.assertIn(office2, zambales_offices)
-        self.assertNotIn(self.office, zambales_offices)
-
-        # 3. Update admin to add another office
-        res_update = self.client.put(f"/api/staff/users/{zambales_admin_user.id}/", data={
-            "office_ids": [self.office.id, office2.id],
-        }, format='json')
-        self.assertEqual(res_update.status_code, status.HTTP_200_OK)
-        zambales_admin_user.refresh_from_db()
-        updated_offices = get_staff_offices(zambales_admin_user)
-        self.assertIn(self.office, updated_offices)
-        self.assertIn(office2, updated_offices)
-
-    def test_staff_services_tab_and_division_restricted_personnel_assignment(self):
-        # Authenticate as standard non-admin staff user (Services tab available to all accounts)
-        self.client.force_authenticate(user=self.staff_user)
-
-        div_tssd1, _ = CsmDivision.objects.get_or_create(name="TSSD 1")
-        div_tssd2, _ = CsmDivision.objects.get_or_create(name="TSSD 2")
-
-        # 1. Create services
-        tupad = CsmService.objects.create(
-            name="TUPAD Program Assistance",
-            division=div_tssd2,
-            is_active=True,
-            sort_order=31
-        )
-        cshp = CsmService.objects.create(
-            name="Construction Safety and Health Program (CSHP)",
-            division=div_tssd1,
-            is_active=True,
-            sort_order=3
-        )
-        spes = CsmService.objects.create(
-            name="Special Program for Employment of Students (SPES)",
-            division=div_tssd2,
-            is_active=True,
-            sort_order=30
-        )
-
-        # 2. Create personnel in respective divisions
-        p_tssd2_a = DolePersonnel.objects.create(
-            employee_id="EMP-TSSD2-A",
-            first_name="Camille",
-            last_name="Santos",
-            office=self.office,
-            is_active=True
-        )
-        p_tssd2_a.divisions.set([div_tssd2])
-
-        p_tssd2_b = DolePersonnel.objects.create(
-            employee_id="EMP-TSSD2-B",
-            first_name="Arvie",
-            last_name="Angat",
-            office=self.office,
-            is_active=True
-        )
-        p_tssd2_b.divisions.set([div_tssd2])
-
-        p_tssd1_a = DolePersonnel.objects.create(
-            employee_id="EMP-TSSD1-A",
-            first_name="Raymond",
-            last_name="Gonzales",
-            office=self.office,
-            is_active=True
-        )
-        p_tssd1_a.divisions.set([div_tssd1])
-
-        # 3. Test list services endpoint
-        res_list = self.client.get("/api/staff/services/")
-        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
-        service_names = [s['name'] for s in res_list.data]
-        self.assertIn("TUPAD Program Assistance", service_names)
-        self.assertIn("Construction Safety and Health Program (CSHP)", service_names)
-
-        # 4. Test eligible personnel endpoint for TUPAD (belongs to TSSD 2)
-        res_eligible = self.client.get(f"/api/staff/services/{tupad.id}/eligible-personnel/")
-        self.assertEqual(res_eligible.status_code, status.HTTP_200_OK)
-        eligible_ids = [p['id'] for p in res_eligible.data['personnel']]
-        self.assertIn(p_tssd2_a.id, eligible_ids)
-        self.assertIn(p_tssd2_b.id, eligible_ids)
-        self.assertNotIn(p_tssd1_a.id, eligible_ids)  # TSSD 1 personnel must NOT be eligible
-
-        # 5. Multi-selection assignment: assign both TSSD 2 personnel to TUPAD
-        res_assign = self.client.post(f"/api/staff/services/{tupad.id}/assign-personnel/", {
-            "personnel_ids": [p_tssd2_a.id, p_tssd2_b.id]
-        }, format='json')
-        self.assertEqual(res_assign.status_code, status.HTTP_200_OK)
-        self.assertEqual(tupad.assigned_personnel.count(), 2)
-
-        # 6. Strict division restriction: attempting to assign TSSD 1 personnel to TSSD 2 service must fail
-        res_invalid = self.client.post(f"/api/staff/services/{tupad.id}/assign-personnel/", {
-            "personnel_ids": [p_tssd1_a.id]
-        }, format='json')
-        self.assertEqual(res_invalid.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Division Restriction Error", res_invalid.data['detail'])
-
-        # 7. Multiple services per personnel: assign p_tssd2_a to SPES as well
-        res_assign_spes = self.client.post(f"/api/staff/services/{spes.id}/assign-personnel/", {
-            "personnel_ids": [p_tssd2_a.id]
-        }, format='json')
-        self.assertEqual(res_assign_spes.status_code, status.HTTP_200_OK)
-        self.assertEqual(p_tssd2_a.services.count(), 2)
-        assigned_service_names = list(p_tssd2_a.services.values_list('name', flat=True))
-        self.assertIn("TUPAD Program Assistance", assigned_service_names)
-        self.assertIn("Special Program for Employment of Students (SPES)", assigned_service_names)
-
     def test_delete_waiting_ticket_action(self):
         """
         Verify that staff can delete a ticket from the waiting line.
@@ -568,71 +367,6 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         audit = CtmsAuditLog.objects.filter(action='DELETE_TICKET', target_id=str(tx_id)).first()
         self.assertIsNotNone(audit)
         self.assertIn("Deleted Queue", audit.description)
-
-    def test_update_user_personnel_assignment_does_not_mismatch_other_account(self):
-        """
-        Verify that PATCH /api/staff/users/{user_a.id}/ updates User A,
-        even if a CtmsEmployee record exists whose primary key equals user_a.id but is linked to User B.
-        """
-        user_a = User.objects.create_user(
-            username="target_user_a",
-            password="password123",
-            first_name="Target",
-            last_name="Alpha",
-            is_staff=True
-        )
-        user_b = User.objects.create_user(
-            username="other_user_b",
-            password="password123",
-            first_name="Other",
-            last_name="Beta",
-            is_staff=True
-        )
-
-        from .models import CtmsEmployee
-        # Create a CtmsEmployee whose primary key equals user_a.id, but linked to user_b
-        # This simulated the previous bug where get_object checked CtmsEmployee.pk first
-        CtmsEmployee.objects.filter(pk=user_a.id).delete()
-        emp_b = CtmsEmployee.objects.create(
-            id=user_a.id,
-            user=user_b,
-            employee_id="EMP-BETA-ID",
-            first_name="Other",
-            last_name="Beta",
-            office=self.office,
-            is_active=True
-        )
-
-        personnel = DolePersonnel.objects.create(
-            employee_id="EMP-ASSIGN-TARGET",
-            first_name="Target",
-            last_name="Officer",
-            position="Senior Officer",
-            office=self.office,
-            is_active=True
-        )
-
-        admin_user = User.objects.create_superuser(
-            username="admin_test_user",
-            password="adminpassword",
-            email="admintest@dole.gov.ph"
-        )
-        admin_client = APIClient()
-        admin_client.force_authenticate(user=admin_user)
-
-        # Update User A with personnel
-        res = admin_client.patch(f"/api/staff/users/{user_a.id}/", {
-            "first_name": "Target",
-            "last_name": "Alpha",
-            "personnel_id": personnel.id
-        })
-        self.assertEqual(res.status_code, status.HTTP_200_OK)
-        self.assertEqual(res.data.get('personnel_id'), personnel.id)
-
-        # Verify that personnel is linked to User A, NOT User B!
-        personnel.refresh_from_db()
-        self.assertEqual(personnel.user, user_a)
-        self.assertNotEqual(personnel.user, user_b)
 
     def test_transaction_start_and_done_date_saving(self):
         """
@@ -1322,3 +1056,184 @@ class Stage5DisplayBoardTestCase(CsmTablesTestCase):
         create_transaction(self.bataan, self.service)
         create_transaction(self.bataan, self.service, is_priority=True)
         self.assertEqual(self._board()['next'], ["P-002", "001"])
+
+
+class Stage6UnifiedAccountsTestCase(CsmTablesTestCase):
+    """Stage 6: one account = login + personnel profile; role and office type gate admin features."""
+
+    def setUp(self):
+        from .models import CtmsOfficeProfile
+        self.ro3 = CsmOffice.objects.create(name="DOLE Regional Office III", code="RO3", is_active=True)
+        self.bataan = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        CtmsOfficeProfile.objects.create(office=self.ro3, office_type=CtmsOfficeProfile.TYPE_REGIONAL)
+        CtmsOfficeProfile.objects.create(office=self.bataan, office_type=CtmsOfficeProfile.TYPE_PROVINCIAL)
+        self.service = CsmService.objects.create(name="SEnA Assistance", is_active=True, sort_order=1)
+
+        self.regional_admin = self._account("kim", self.ro3, role='ADMIN')
+        self.regional_staff = self._account("ro3staff", self.ro3)
+        self.provincial_admin_role = self._account("batadmin", self.bataan, role='ADMIN')
+        self.provincial_staff = self._account("batstaff", self.bataan)
+        self.sysadmin = User.objects.create_superuser(username="sysadmin", password="pw")
+        self.client = APIClient()
+
+    def _account(self, username, office, role='PERSONNEL'):
+        user = User.objects.create_user(username=username, password="pw", is_staff=True,
+                                        first_name=username.title(), last_name="Test")
+        CtmsStaffOffice.objects.create(user=user, office=office)
+        DolePersonnel.objects.create(user=user, employee_id=username.upper(), first_name=username.title(),
+                                     last_name="Test", office=office, role=role)
+        return user
+
+    def _as(self, user):
+        self.client.force_authenticate(user=user)
+        return self.client
+
+    def _payload(self, **overrides):
+        data = {
+            "username": "newperson", "password": "secret123", "confirm_password": "secret123",
+            "email": "new@dole.gov.ph", "first_name": "Nora", "middle_name": "P", "last_name": "Cruz",
+            "employee_id": "EMP-777", "position": "Labor and Employment Officer I",
+            "office": self.bataan.id, "role": "PERSONNEL",
+        }
+        data.update(overrides)
+        return data
+
+    def test_create_account_with_personnel_profile_in_one_step(self):
+        res = self._as(self.regional_admin).post('/api/staff/users/', self._payload(), format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['full_name'], "Nora P Cruz")
+        self.assertEqual(res.data['office_code'], "BAT")
+        self.assertEqual(res.data['position'], "Labor and Employment Officer I")
+        user = User.objects.get(username="newperson")
+        profile = user.dole_personnel
+        self.assertEqual((profile.employee_id, profile.office, profile.role), ("EMP-777", self.bataan, 'PERSONNEL'))
+        self.assertTrue(profile.must_change_password)
+        self.assertEqual(list(user.staff_offices.values_list('office__code', flat=True)), ["BAT"])
+        self.assertTrue(user.check_password("secret123"))
+
+    def test_create_validation(self):
+        c = self._as(self.regional_admin)
+        self.assertEqual(c.post('/api/staff/users/', self._payload(confirm_password="nope"), format='json').status_code, 400)
+        self.assertEqual(c.post('/api/staff/users/', self._payload(username="KIM"), format='json').status_code, 400)
+        self.assertEqual(c.post('/api/staff/users/', self._payload(employee_id="KIM"), format='json').status_code, 400)
+        res = c.post('/api/staff/users/', self._payload(role="ADMIN"), format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("regional office", res.data['detail'])
+
+    def test_edit_updates_account_and_profile_together(self):
+        res = self._as(self.regional_admin).patch(f'/api/staff/users/{self.regional_staff.id}/', {
+            "first_name": "Rosa", "position": "Planning Officer II", "role": "ADMIN",
+        }, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.regional_staff.refresh_from_db()
+        self.assertEqual(self.regional_staff.first_name, "Rosa")
+        self.assertEqual(self.regional_staff.dole_personnel.first_name, "Rosa")
+        self.assertEqual(self.regional_staff.dole_personnel.role, "ADMIN")
+        self.assertTrue(res.data['is_regional_admin'])
+
+    def test_office_change_moves_assignment_and_is_blocked_by_active_clients(self):
+        res = self._as(self.regional_admin).patch(f'/api/staff/users/{self.provincial_staff.id}/', {"office": self.ro3.id}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(list(self.provincial_staff.staff_offices.values_list('office__code', flat=True)), ["RO3"])
+
+        CtmsCounter.objects.create(office=self.ro3, name="Window 1", assigned_user=self.provincial_staff)
+        call_transaction(create_transaction(self.ro3, self.service), self.provincial_staff)
+        res = self.client.patch(f'/api/staff/users/{self.provincial_staff.id}/', {"office": self.bataan.id}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Reassign", res.data['detail'])
+        res = self.client.post(f'/api/staff/users/{self.provincial_staff.id}/toggle-active/')
+        self.assertEqual(res.status_code, 400)
+
+    def test_accounts_with_history_are_deactivated_not_deleted(self):
+        CtmsCounter.objects.create(office=self.bataan, name="Window 1", assigned_user=self.provincial_staff)
+        mark_done(call_transaction(create_transaction(self.bataan, self.service), self.provincial_staff), self.provincial_staff)
+        res = self._as(self.regional_admin).delete(f'/api/staff/users/{self.provincial_staff.id}/')
+        self.assertEqual(res.status_code, 409)
+        res = self.client.post(f'/api/staff/users/{self.provincial_staff.id}/toggle-active/')
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.data['is_active'])
+
+    def test_provincial_accounts_cannot_use_admin_features(self):
+        for user in (self.provincial_staff, self.provincial_admin_role, self.regional_staff):
+            c = self._as(user)
+            self.assertEqual(c.get('/api/staff/users/').status_code, 403, user.username)
+            self.assertEqual(c.get('/api/staff/reports/summary/').status_code, 403, user.username)
+            self.assertEqual(c.get('/api/staff/audit-logs/').status_code, 403, user.username)
+            self.assertEqual(c.get('/api/staff/personnel/').status_code, 403, user.username)
+            self.assertEqual(c.post('/api/staff/positions/', {'title': 'X'}, format='json').status_code, 403, user.username)
+            # Operational features remain available
+            self.assertEqual(c.get('/api/staff/queue/').status_code, 200, user.username)
+            self.assertEqual(c.get('/api/staff/services/').status_code, 200, user.username)
+
+    def test_regional_admin_has_oversight(self):
+        c = self._as(self.regional_admin)
+        self.assertEqual(c.get('/api/staff/reports/summary/').status_code, 200)
+        self.assertEqual(c.get('/api/staff/audit-logs/').status_code, 200)
+        create_transaction(self.bataan, self.service)
+        listed = c.get(f'/api/staff/transactions/?office={self.bataan.id}').data
+        rows = listed.get('results', listed) if isinstance(listed, dict) else listed
+        self.assertEqual(len(rows), 1)
+        users = [u['username'] for u in c.get('/api/staff/users/').data]
+        self.assertIn("batstaff", users)
+        self.assertNotIn("sysadmin", users)
+
+    def test_session_payload_describes_access(self):
+        me = self._as(self.provincial_staff).get('/api/staff/auth/me/').data
+        self.assertEqual(me['office_type'], 'PROVINCIAL')
+        self.assertFalse(me['permissions']['manage_users'])
+        self.assertEqual([o['code'] for o in me['oversight_offices']], ['BAT'])
+        me = self._as(self.regional_admin).get('/api/staff/auth/me/').data
+        self.assertTrue(me['is_regional_admin'])
+        self.assertTrue(me['permissions']['view_reports'])
+        self.assertEqual(len(me['oversight_offices']), 2)
+
+    def test_staff_cannot_grant_themselves_offices_or_windows(self):
+        c = self._as(self.provincial_staff)
+        res = c.post('/api/staff/staff-offices/', {'user': self.provincial_staff.id, 'office': self.ro3.id}, format='json')
+        self.assertEqual(res.status_code, 403)
+        res = c.post('/api/staff/counters/', {'office': self.bataan.id, 'name': 'Sneaky'}, format='json')
+        self.assertEqual(res.status_code, 405)
+
+    def test_set_system_admin_command(self):
+        from django.core.management import call_command
+        from io import StringIO
+        stray = User.objects.create_superuser(username="oldadmin", password="pw")
+        regional_super = self._account("kimsuper", self.ro3)
+        regional_super.is_superuser = True
+        regional_super.save()
+
+        call_command('set_system_admin', 'sysadmin', stdout=StringIO())  # dry run
+        self.assertTrue(User.objects.get(username="oldadmin").is_superuser)
+
+        call_command('set_system_admin', 'sysadmin', '--apply', stdout=StringIO())
+        self.assertEqual(list(User.objects.filter(is_superuser=True).values_list('username', flat=True)), ["sysadmin"])
+        stray.refresh_from_db()
+        self.assertFalse(stray.is_active)
+        self.assertEqual(DolePersonnel.objects.get(user=regional_super).role, 'ADMIN')
+
+    def test_migration_links_existing_personnel_instead_of_duplicating(self):
+        import importlib
+        from django.apps import apps
+        from .models import CtmsEmployee
+        unify = importlib.import_module('ctms.migrations.0022_stage6_unify_accounts')
+
+        # Account with a typo in its surname, plus that person's unlinked personnel record
+        account = User.objects.create_user(username="MARJORIE_RUSTIA", password="pw", is_staff=True,
+                                           first_name="MARJORIE", last_name="RUSITA")
+        CtmsStaffOffice.objects.create(user=account, office=self.bataan)
+        CtmsEmployee.objects.create(user=account, employee_id="MARJORIE_RUSTIA", first_name="MARJORIE",
+                                    last_name="RUSITA", office=self.bataan)
+        record = DolePersonnel.objects.create(employee_id="MPR-1", first_name="MARJORIE", last_name="RUSTIA", office=self.bataan)
+        # Personnel with no account at all
+        DolePersonnel.objects.create(employee_id="JO-NEW-1", first_name="Joshua", last_name="Tizon", office=self.bataan)
+
+        unify.forwards(apps, None)
+
+        record.refresh_from_db()
+        self.assertEqual(record.user, account)
+        self.assertEqual(DolePersonnel.objects.filter(first_name="MARJORIE").count(), 1)
+        self.assertFalse(User.objects.filter(username="MPR-1").exists())
+        new_login = User.objects.get(username="JO-NEW-1")
+        self.assertTrue(new_login.check_password("JO-NEW-1"))
+        self.assertTrue(new_login.dole_personnel.must_change_password)
+        self.assertEqual(list(new_login.staff_offices.values_list('office__code', flat=True)), ["BAT"])

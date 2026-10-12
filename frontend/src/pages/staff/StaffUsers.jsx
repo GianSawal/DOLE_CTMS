@@ -1,2674 +1,455 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import Navbar from '../../components/Navbar';
+import { useState, useEffect, useCallback } from 'react';
 import { staffApi } from '../../api/staff';
-import Pagination, { paginateArray } from '../../components/Pagination';
-import SearchablePersonnelSelect from '../../components/SearchablePersonnelSelect';
+import { useAuth } from '../../context/AuthContext';
+import Navbar from '../../components/Navbar';
+import Modal from '../../components/Modal';
 
-const ITEMS_PER_PAGE = 10;
+const EMPTY_FORM = {
+  username: '',
+  email: '',
+  password: '',
+  confirm_password: '',
+  role: 'PERSONNEL',
+  first_name: '',
+  middle_name: '',
+  last_name: '',
+  employee_id: '',
+  office: '',
+  position: '',
+};
 
-const TARGET_DIVISIONS = [
-  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Support Services Division 1', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', category: 'division' },
-  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Support Services Division 2', color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd', category: 'division' },
-  { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0', category: 'division' },
-  { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation Arbitration and Legal Services Unit', color: '#b45309', bg: '#fffbeb', border: '#fde68a', category: 'division' },
-  { key: 'Front Desk', alias: 'Front Desk', label: 'Front Desk', fullName: 'Front Desk / PACD (All Services Access)', color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4', isUniversal: true, category: 'counter' },
-  { key: 'Window 1', alias: 'Window 1', label: 'Window 1', fullName: 'Queue Window 1 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 2', alias: 'Window 2', label: 'Window 2', fullName: 'Queue Window 2 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 3', alias: 'Window 3', label: 'Window 3', fullName: 'Queue Window 3 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 4', alias: 'Window 4', label: 'Window 4', fullName: 'Queue Window 4 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 5', alias: 'Window 5', label: 'Window 5', fullName: 'Queue Window 5 (All Services Access)', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 6', alias: 'Window 6', label: 'Window 6', fullName: 'Queue Window 6 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 7', alias: 'Window 7', label: 'Window 7', fullName: 'Queue Window 7 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 8', alias: 'Window 8', label: 'Window 8', fullName: 'Queue Window 8 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 9', alias: 'Window 9', label: 'Window 9', fullName: 'Queue Window 9 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
-  { key: 'Window 10', alias: 'Window 10', label: 'Window 10', fullName: 'Queue Window 10 (All Services Access)', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe', isUniversal: true, category: 'counter' },
-];
+const fieldGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.9rem 1rem' };
+const sectionHeading = {
+  fontSize: '0.78rem',
+  fontWeight: 800,
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+  color: 'var(--dole-blue)',
+  margin: '0 0 0.75rem',
+};
+
+function formatDate(iso) {
+  if (!iso) return 'Never';
+  return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function RoleBadge({ account }) {
+  if (account.role === 'SYSTEM_ADMIN') return <span className="badge" style={{ background: '#1e293b', color: '#fff' }}>System Admin</span>;
+  if (account.is_regional_admin) return <span className="badge badge-priority">Administrator</span>;
+  return <span className="badge badge-waiting">Personnel</span>;
+}
 
 export default function StaffUsers() {
-  const [users, setUsers] = useState([]);
+  const { user: me } = useAuth();
+  const [accounts, setAccounts] = useState([]);
   const [offices, setOffices] = useState([]);
-  const [divisions, setDivisions] = useState([]);
+  const [positions, setPositions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [officeFilter, setOfficeFilter] = useState('');
-  const [divisionFilter, setDivisionFilter] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [notice, setNotice] = useState(null);
 
-  // Toast / notification
-  const [toast, setToast] = useState(null);
+  const [filters, setFilters] = useState({ search: '', office: '', role: '', status: '' });
 
-  // Success alert modal after creating an account
-  const [createdAccountInfo, setCreatedAccountInfo] = useState(null);
+  const [formModal, setFormModal] = useState(null); // { mode: 'create' | 'edit', account? }
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  // Add / Edit Modal state
-  const [showModal, setShowModal] = useState(false);
-  const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit'
-  const [editingId, setEditingId] = useState(null);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [confirmModal, setConfirmModal] = useState(null);
 
-  // Form Fields
-  const [username, setUsername] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [role, setRole] = useState('staff'); // 'staff' | 'admin'
-  const [officeId, setOfficeId] = useState('');
-  const [selectedOfficeIds, setSelectedOfficeIds] = useState([]);
-  const [allOfficesSelected, setAllOfficesSelected] = useState(false);
-  const [selectedDivisionIds, setSelectedDivisionIds] = useState([]);
-  const [allDivisionsSelected, setAllDivisionsSelected] = useState(false);
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-
-  // Linked Personnel Directory
-  const [personnelList, setPersonnelList] = useState([]);
-  const [linkedPersonnelId, setLinkedPersonnelId] = useState('');
-
-  // Reset Password Modal
-  const [resetModalUser, setResetModalUser] = useState(null);
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [resetSubmitting, setResetSubmitting] = useState(false);
-
-  // Delete Confirmation Modal
-  const [deleteModalUser, setDeleteModalUser] = useState(null);
-  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 5000);
+  const flash = (type, text) => {
+    setNotice({ type, text });
+    if (type === 'success') setTimeout(() => setNotice(curr => (curr?.text === text ? null : curr)), 4500);
   };
 
-  const loadData = async () => {
-    setLoading(true);
+  const fetchAccounts = useCallback(async () => {
     try {
-      const [uRes, offRes, divRes, pRes] = await Promise.allSettled([
-        staffApi.getEmployees(),
-        staffApi.getOffices(),
-        staffApi.getDivisions(),
-        staffApi.getPersonnel({ active_only: 'true' }),
-      ]);
-
-      if (uRes.status === 'fulfilled') {
-        setUsers(Array.isArray(uRes.value) ? uRes.value : []);
-      }
-      if (offRes.status === 'fulfilled') {
-        setOffices(Array.isArray(offRes.value) ? offRes.value : []);
-      }
-      if (divRes.status === 'fulfilled') {
-        setDivisions(Array.isArray(divRes.value) ? divRes.value : []);
-      }
-      if (pRes.status === 'fulfilled') {
-        setPersonnelList(Array.isArray(pRes.value) ? pRes.value : []);
-      }
+      const data = await staffApi.getEmployees(filters);
+      setAccounts(Array.isArray(data) ? data : []);
     } catch (err) {
-      showToast(err.message || 'Failed to load user accounts data', 'error');
+      flash('error', err.message || 'Failed to load accounts.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
 
   useEffect(() => {
-    loadData();
+    const t = setTimeout(fetchAccounts, 250);
+    return () => clearTimeout(t);
+  }, [fetchAccounts]);
+
+  useEffect(() => {
+    staffApi.getOffices().then(d => setOffices(Array.isArray(d) ? d : [])).catch(() => {});
+    staffApi.getPositions().then(d => setPositions(Array.isArray(d) ? d : (d?.results || []))).catch(() => {});
   }, []);
 
-  // Map divisions from backend to target checklist
-  const divisionMap = useMemo(() => {
-    const map = {};
-    divisions.forEach((div) => {
-      const name = div.name.trim();
-      map[name] = div.id;
-      if (name === 'TSSD 1') map['TSSD1'] = div.id;
-      if (name === 'TSSD 2') map['TSSD2'] = div.id;
-      map[name.toLowerCase()] = div.id;
-      map[name.toUpperCase().replace(/\s+/g, '')] = div.id;
-    });
-    return map;
-  }, [divisions]);
+  const setFilter = (key, value) => setFilters(f => ({ ...f, [key]: value }));
+  const setField = (key, value) => setForm(f => ({ ...f, [key]: value }));
 
-  // Find currently linked personnel object in directory
-  const selectedPersonnelObj = useMemo(() => {
-    if (!linkedPersonnelId) return null;
-    return personnelList.find((p) => String(p.id) === String(linkedPersonnelId)) || null;
-  }, [personnelList, linkedPersonnelId]);
+  const selectedOffice = offices.find(o => String(o.id) === String(form.office));
+  const adminAllowed = selectedOffice?.office_type === 'REGIONAL';
 
-  // Handle role change (staff <-> admin)
-  const handleRoleChange = (newRole) => {
-    setRole(newRole);
-    if (newRole === 'admin') {
-      // By default when choosing an ADMIN role, grant access to all offices & all divisions
-      setAllOfficesSelected(true);
-      setSelectedOfficeIds(offices.map((o) => o.id));
-      setAllDivisionsSelected(true);
-      const allDivIds = divisions.map((d) => d.id);
-      setSelectedDivisionIds(
-        allDivIds.length > 0
-          ? allDivIds
-          : TARGET_DIVISIONS.map((td) => divisionMap[td.key] || divisionMap[td.alias]).filter(Boolean)
-      );
-    } else {
-      setAllOfficesSelected(false);
-      setAllDivisionsSelected(false);
-      if (selectedOfficeIds.length > 0) {
-        setOfficeId(selectedOfficeIds[0]);
-      } else if (offices.length > 0) {
-        setOfficeId(offices[0].id);
-      }
-    }
-  };
-
-  // Toggle individual office selection
-  const handleToggleOffice = (id) => {
-    setSelectedOfficeIds((prev) => {
-      let updated;
-      if (prev.includes(id)) {
-        updated = prev.filter((oId) => oId !== id);
-      } else {
-        updated = [...prev, id];
-      }
-      setAllOfficesSelected(updated.length === offices.length && offices.length > 0);
-      return updated;
-    });
-  };
-
-  // Toggle All Offices
-  const handleToggleAllOffices = () => {
-    if (allOfficesSelected) {
-      setAllOfficesSelected(false);
-      setSelectedOfficeIds([]);
-    } else {
-      setAllOfficesSelected(true);
-      setSelectedOfficeIds(offices.map((o) => o.id));
-    }
-  };
-
-  // Toggle All Divisions
-  const handleToggleAllDivisions = () => {
-    if (allDivisionsSelected) {
-      setAllDivisionsSelected(false);
-      setSelectedDivisionIds([]);
-    } else {
-      setAllDivisionsSelected(true);
-      const allDivIds = divisions.map((d) => d.id);
-      setSelectedDivisionIds(
-        allDivIds.length > 0
-          ? allDivIds
-          : TARGET_DIVISIONS.map((td) => divisionMap[td.key] || divisionMap[td.alias]).filter(Boolean)
-      );
-    }
-  };
-
-  // Handle selecting a personnel record to link
-  const handleSelectLinkedPersonnel = (pId, pObj) => {
-    const cleanId = pId ? String(pId) : '';
-    setLinkedPersonnelId(cleanId);
-    if (!cleanId) return;
-    const p = pObj || personnelList.find((item) => String(item.id) === cleanId);
-    if (p) {
-      if (!firstName || modalMode === 'create') setFirstName(p.first_name || '');
-      if (!lastName || modalMode === 'create') setLastName(p.last_name || '');
-      if (!username || modalMode === 'create') {
-        setUsername((p.employee_id || '').toLowerCase().replace(/\s+/g, ''));
-      }
-      if (p.office) {
-        setOfficeId(p.office);
-        setSelectedOfficeIds([p.office]);
-      }
-      if (Array.isArray(p.division_ids) && p.division_ids.length > 0) {
-        setSelectedDivisionIds(p.division_ids);
-      }
-    }
-  };
-
-  // Open Create Modal
-  const openCreateModal = () => {
-    setModalMode('create');
-    setEditingId(null);
-    setLinkedPersonnelId('');
-    setUsername('');
-    setFirstName('');
-    setLastName('');
-    setRole('staff');
-    setOfficeId(offices[0]?.id || '');
-    setSelectedOfficeIds(offices[0] ? [offices[0].id] : []);
-    setAllOfficesSelected(false);
-    setSelectedDivisionIds([]);
-    setAllDivisionsSelected(false);
-    setPassword('');
-    setShowPassword(false);
-    setShowModal(true);
-  };
-
-  // Open Edit Modal
-  const openEditModal = (u) => {
-    setModalMode('edit');
-    setEditingId(u.id);
-    setLinkedPersonnelId(u.personnel_id ? String(u.personnel_id) : '');
-    setUsername(u.username || '');
-    setFirstName(u.first_name || '');
-    setLastName(u.last_name || '');
-    const isAdmin = Boolean(u.is_superuser);
-    setRole(isAdmin ? 'admin' : 'staff');
-
-    // Office assignments
-    const userOffIds = Array.isArray(u.office_ids) && u.office_ids.length > 0
-      ? u.office_ids
-      : (u.office ? [u.office] : []);
-
-    if (isAdmin) {
-      const isAllOffices = Boolean(
-        u.all_offices_access ||
-        u.office_name === 'All Offices' ||
-        (userOffIds.length >= offices.length && offices.length > 0)
-      );
-      setAllOfficesSelected(isAllOffices);
-      setSelectedOfficeIds(isAllOffices ? offices.map((o) => o.id) : userOffIds);
-    } else {
-      setAllOfficesSelected(false);
-      setSelectedOfficeIds(userOffIds);
-      setOfficeId(u.office || offices[0]?.id || '');
-    }
-
-    // Division assignments
-    const currentDivIds = Array.isArray(u.division_ids) ? u.division_ids : [];
-    if (isAdmin) {
-      const isAllDivs = Boolean(
-        u.all_divisions_access ||
-        (currentDivIds.length >= divisions.length && divisions.length > 0)
-      );
-      setAllDivisionsSelected(isAllDivs);
-      setSelectedDivisionIds(isAllDivs ? divisions.map((d) => d.id) : currentDivIds);
-    } else {
-      setAllDivisionsSelected(false);
-      setSelectedDivisionIds(currentDivIds);
-    }
-
-    setPassword('');
-    setShowPassword(false);
-    setShowModal(true);
-  };
-
-  // Toggle division selection
-  const handleToggleDivision = (divKey, divAlias) => {
-    let targetId = divisionMap[divKey] || (divAlias && divisionMap[divAlias]);
-    if (!targetId) {
-      const found = divisions.find(
-        (d) =>
-          d.name.toLowerCase() === divKey.toLowerCase() ||
-          (divAlias && d.name.toLowerCase() === divAlias.toLowerCase())
-      );
-      if (found) targetId = found.id;
-    }
-
-    if (!targetId) return;
-
-    setSelectedDivisionIds((prev) => {
-      let updated;
-      if (prev.includes(targetId)) {
-        updated = prev.filter((id) => id !== targetId);
-      } else {
-        updated = [...prev, targetId];
-      }
-      setAllDivisionsSelected(updated.length === TARGET_DIVISIONS.length && TARGET_DIVISIONS.length > 0);
-      return updated;
-    });
-  };
-
-  // Check if currently selected divisions include Front Desk or any Window 1-10
-  const hasUniversalCounterSelected = useMemo(() => {
-    return selectedDivisionIds.some((divId) => {
-      const divObj = divisions.find((d) => d.id === divId);
-      if (!divObj) return false;
-      const target = TARGET_DIVISIONS.find(
-        (t) =>
-          t.key.toLowerCase() === divObj.name.toLowerCase() ||
-          (t.alias && t.alias.toLowerCase() === divObj.name.toLowerCase())
-      );
-      return Boolean(target?.isUniversal);
-    });
-  }, [selectedDivisionIds, divisions]);
-
-  // Submit Add / Edit Form
-  const handleSubmitForm = async (e) => {
-    e.preventDefault();
-    if (!username.trim()) {
-      showToast('Username is required.', 'error');
-      return;
-    }
-    if (modalMode === 'create' && !password.trim()) {
-      showToast('Password is required for creating a new user account.', 'error');
-      return;
-    }
-
-    const isAdmin = role === 'admin';
-    if (isAdmin) {
-      if (!allOfficesSelected && selectedOfficeIds.length === 0) {
-        showToast('Please select at least one Office for this Administrator account.', 'error');
-        return;
-      }
-    } else {
-      if (!officeId) {
-        showToast('Please select an Office.', 'error');
-        return;
-      }
-      if (selectedDivisionIds.length === 0) {
-        showToast('Please select at least one Division queue line.', 'error');
-        return;
-      }
-    }
-
-    setSubmitting(true);
-    try {
-      const effectiveOfficeIds = isAdmin
-        ? (allOfficesSelected ? offices.map((o) => o.id) : selectedOfficeIds)
-        : [officeId];
-      const effectivePrimaryOffice = effectiveOfficeIds[0] || officeId || offices[0]?.id || null;
-      const effectiveDivisionIds = isAdmin
-        ? (allDivisionsSelected ? divisions.map((d) => d.id) : selectedDivisionIds)
-        : selectedDivisionIds;
-
-      const payload = {
-        username: username.trim(),
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        role: role,
-        office: effectivePrimaryOffice,
-        office_ids: effectiveOfficeIds,
-        all_offices: isAdmin && allOfficesSelected,
-        division_ids: effectiveDivisionIds,
-        all_divisions: isAdmin && allDivisionsSelected,
-        personnel_id: linkedPersonnelId ? Number(linkedPersonnelId) : null,
-      };
-
-      if (modalMode === 'create') {
-        payload.password = password.trim();
-        await staffApi.createEmployee(payload);
-
-        let officeDisplay = 'Assigned Office';
-        if (isAdmin) {
-          if (allOfficesSelected || effectiveOfficeIds.length >= offices.length) {
-            officeDisplay = 'All Offices (Full DOLE System Access)';
-          } else {
-            officeDisplay = `${effectiveOfficeIds.length} Assigned Office(s)`;
-          }
-        } else {
-          officeDisplay = offices.find((o) => String(o.id) === String(officeId))?.name || 'Assigned Office';
-        }
-
-        setCreatedAccountInfo({
-          name: `${firstName.trim()} ${lastName.trim()}`.trim() || username.trim(),
-          username: username.trim(),
-          password: password.trim(),
-          role: isAdmin ? 'Administrator' : 'Staff',
-          office: officeDisplay,
-        });
-
-        showToast(`User account '${username.trim()}' created successfully!`);
-      } else {
-        if (password.trim()) {
-          payload.password = password.trim();
-        }
-        await staffApi.updateEmployee(editingId, payload);
-        showToast(`User account '${username}' updated successfully.`);
-      }
-      setShowModal(false);
-      loadData();
-    } catch (err) {
-      showToast(err.message || 'Operation failed. Please check inputs and try again.', 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Reset Password Modal
-  const openResetPasswordModal = (u) => {
-    setResetModalUser(u);
-    setNewPasswordInput('');
-  };
-
-  const handleConfirmResetPassword = async () => {
-    if (!resetModalUser) return;
-    if (!newPasswordInput.trim()) {
-      showToast('Please enter a new password.', 'error');
-      return;
-    }
-    setResetSubmitting(true);
-    try {
-      const res = await staffApi.resetEmployeePassword(resetModalUser.id, newPasswordInput.trim());
-      showToast(res.message || `Password for ${resetModalUser.username} has been reset.`);
-      setResetModalUser(null);
-    } catch (err) {
-      showToast(err.message || 'Failed to reset password', 'error');
-    } finally {
-      setResetSubmitting(false);
-    }
-  };
-
-  // Toggle Active Status
-  const handleToggleActive = async (u) => {
-    try {
-      const res = await staffApi.toggleEmployeeActive(u.id);
-      showToast(`Account ${u.username} is now ${res.is_active ? 'Active' : 'Inactive'}.`);
-      setUsers((prev) =>
-        prev.map((item) => (item.id === u.id ? { ...item, is_active: res.is_active } : item))
-      );
-    } catch (err) {
-      showToast(err.message || 'Failed to toggle account status', 'error');
-    }
-  };
-
-  // Delete Confirmation Modal
-  const openDeleteModal = (u) => {
-    setDeleteModalUser(u);
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!deleteModalUser) return;
-    setDeleteSubmitting(true);
-    try {
-      await staffApi.deleteEmployee(deleteModalUser.id);
-      showToast(`Account ${deleteModalUser.username} deleted.`);
-      setDeleteModalUser(null);
-      setUsers((prev) => prev.filter((item) => item.id !== deleteModalUser.id));
-    } catch (err) {
-      showToast(err.message || 'Failed to delete account', 'error');
-    } finally {
-      setDeleteSubmitting(false);
-    }
-  };
-
-  // Filtered users list
-  const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        (u.username && u.username.toLowerCase().includes(q)) ||
-        (u.full_name && u.full_name.toLowerCase().includes(q)) ||
-        (u.first_name && u.first_name.toLowerCase().includes(q)) ||
-        (u.last_name && u.last_name.toLowerCase().includes(q)) ||
-        (u.office_name && u.office_name.toLowerCase().includes(q));
-
-      const matchesOffice =
-        !officeFilter ||
-        (u.is_superuser && (u.all_offices_access || u.office_name === 'All Offices')) ||
-        String(u.office) === String(officeFilter) ||
-        (Array.isArray(u.office_ids) && u.office_ids.map(String).includes(String(officeFilter)));
-
-      const matchesDivision =
-        !divisionFilter ||
-        (u.is_superuser && (u.all_divisions_access || !u.division_ids || u.division_ids.length >= TARGET_DIVISIONS.length)) ||
-        (Array.isArray(u.division_names) && u.division_names.some((d) => d.toLowerCase() === divisionFilter.toLowerCase())) ||
-        (Array.isArray(u.division_ids) && u.division_ids.map(String).includes(String(divisionFilter)));
-
-      return matchesSearch && matchesOffice && matchesDivision;
-    });
-  }, [users, searchQuery, officeFilter, divisionFilter]);
-
-  // Reset to page 1 when filters change
+  // An Administrator role only means something on a regional account.
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, officeFilter, divisionFilter]);
+    if (form.role === 'ADMIN' && selectedOffice && !adminAllowed) setField('role', 'PERSONNEL');
+  }, [form.role, selectedOffice, adminAllowed]);
 
-  const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
-  const paginatedUsers = paginateArray(filteredUsers, currentPage, ITEMS_PER_PAGE);
+  const openCreate = () => {
+    setForm({ ...EMPTY_FORM, office: filters.office || '' });
+    setFormError('');
+    setFormModal({ mode: 'create' });
+  };
 
-  // Summary counts
-  const totalUsers = users.length;
-  const activeCount = users.filter((u) => u.is_active).length;
-  const adminCount = users.filter((u) => u.is_superuser).length;
-  const staffCount = users.filter((u) => !u.is_superuser).length;
+  const openEdit = (account) => {
+    setForm({
+      ...EMPTY_FORM,
+      username: account.username,
+      email: account.email || '',
+      role: account.role === 'ADMIN' ? 'ADMIN' : 'PERSONNEL',
+      first_name: account.first_name || '',
+      middle_name: account.middle_name || '',
+      last_name: account.last_name || '',
+      employee_id: account.employee_id || '',
+      office: account.office ? String(account.office) : '',
+      position: account.position || '',
+    });
+    setFormError('');
+    setFormModal({ mode: 'edit', account });
+  };
+
+  const submitForm = async (e) => {
+    e.preventDefault();
+    setFormError('');
+    if (formModal.mode === 'create' && form.password !== form.confirm_password) {
+      setFormError('Password and confirmation do not match.');
+      return;
+    }
+    const payload = {
+      email: form.email.trim(),
+      role: form.role,
+      first_name: form.first_name.trim(),
+      middle_name: form.middle_name.trim(),
+      last_name: form.last_name.trim(),
+      employee_id: form.employee_id.trim(),
+      office: form.office ? Number(form.office) : null,
+      position: form.position.trim(),
+    };
+    try {
+      setSaving(true);
+      if (formModal.mode === 'create') {
+        const created = await staffApi.createEmployee({
+          ...payload,
+          username: form.username.trim(),
+          password: form.password,
+          confirm_password: form.confirm_password,
+        });
+        flash('success', `Account ${created.username} created. They will be asked to change the password at first login.`);
+      } else {
+        await staffApi.updateEmployee(formModal.account.id, payload);
+        flash('success', `Account ${formModal.account.username} updated.`);
+      }
+      setFormModal(null);
+      fetchAccounts();
+    } catch (err) {
+      setFormError(err.message || 'Could not save the account.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitReset = async (e) => {
+    e.preventDefault();
+    setResetError('');
+    if (resetPassword !== resetConfirm) {
+      setResetError('Password and confirmation do not match.');
+      return;
+    }
+    try {
+      const res = await staffApi.resetEmployeePassword(resetTarget.id, resetPassword, resetConfirm);
+      setResetTarget(null);
+      flash('success', res.message || 'Temporary password set.');
+      fetchAccounts();
+    } catch (err) {
+      setResetError(err.message || 'Could not reset the password.');
+    }
+  };
+
+  const toggleActive = (account) => {
+    const deactivating = account.is_active;
+    setConfirmModal({
+      title: `${deactivating ? 'Deactivate' : 'Activate'} ${account.username}?`,
+      message: deactivating
+        ? 'They will no longer be able to log in, and they are released from their window. History stays intact.'
+        : 'They will be able to log in again.',
+      confirmLabel: deactivating ? 'Deactivate' : 'Activate',
+      danger: deactivating,
+      onConfirm: async () => {
+        try {
+          await staffApi.toggleEmployeeActive(account.id);
+          flash('success', `${account.username} ${deactivating ? 'deactivated' : 'activated'}.`);
+          fetchAccounts();
+        } catch (err) {
+          flash('error', err.message);
+        }
+      },
+    });
+  };
+
+  const deleteAccount = (account) => setConfirmModal({
+    title: `Delete ${account.username}?`,
+    message: 'Only accounts that never handled a transaction can be deleted. Otherwise, deactivate the account to keep its history.',
+    confirmLabel: 'Delete Account',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        await staffApi.deleteEmployee(account.id);
+        flash('success', `${account.username} deleted.`);
+        fetchAccounts();
+      } catch (err) {
+        flash('error', err.message);
+      }
+    },
+  });
+
+  const filterOffices = me?.oversight_offices?.length ? me.oversight_offices : offices;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-ground)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-ground)' }}>
       <Navbar />
 
-      {/* Toast Notification */}
-      {toast && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '20px',
-            right: '20px',
-            zIndex: 9999,
-            backgroundColor: toast.type === 'error' ? 'var(--dole-red)' : 'var(--dole-green)',
-            color: '#fff',
-            padding: '0.85rem 1.4rem',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            fontWeight: 600,
-            fontSize: '0.92rem',
-            animation: 'fadeIn 0.2s ease',
-          }}
-        >
-          <span>{toast.type === 'error' ? '⚠️' : '✅'}</span>
-          <span>{toast.message}</span>
-          <button
-            onClick={() => setToast(null)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
-              fontSize: '1.1rem',
-              cursor: 'pointer',
-              marginLeft: '0.5rem',
-              minHeight: 'auto',
-              padding: 0,
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Account Creation Success Dialog */}
-      {createdAccountInfo && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(17, 24, 39, 0.65)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 99999,
-            padding: '1rem',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#fff',
-              borderRadius: 'var(--radius-lg)',
-              maxWidth: '480px',
-              width: '100%',
-              padding: '1.75rem',
-              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
-              border: '2px solid var(--dole-green)',
-              textAlign: 'center',
-            }}
-          >
-            <div
-              style={{
-                width: '52px',
-                height: '52px',
-                borderRadius: '50%',
-                backgroundColor: '#ecfdf5',
-                color: '#059669',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 0.75rem auto',
-                border: '1px solid #a7f3d0',
-              }}
-            >
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-            </div>
-            <h3 style={{ fontSize: '1.3rem', color: 'var(--dole-green)', margin: '0 0 0.5rem 0', fontWeight: 800 }}>
-              User Account Created!
-            </h3>
-            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-              The login account for <strong>{createdAccountInfo.name}</strong> was created. They can now log in using these credentials:
+      <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+          <div>
+            <h1 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--text-primary)' }}>User Management</h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '0.25rem 0 0' }}>
+              Each account holds the login and the personnel details of one staff member.
             </p>
-
-            <div
-              style={{
-                backgroundColor: 'var(--bg-ground)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-md)',
-                padding: '1rem 1.25rem',
-                textAlign: 'left',
-                marginBottom: '1.5rem',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Username:</span>
-                <span className="mono" style={{ fontWeight: 800, color: 'var(--dole-blue)', fontSize: '0.95rem' }}>
-                  {createdAccountInfo.username}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Password:</span>
-                <span className="mono" style={{ fontWeight: 800, color: 'var(--dole-red)', fontSize: '0.95rem' }}>
-                  {createdAccountInfo.password}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Role:</span>
-                <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
-                  {createdAccountInfo.role}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Office:</span>
-                <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
-                  {createdAccountInfo.office}
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setCreatedAccountInfo(null)}
-              className="btn btn-primary"
-              style={{ width: '100%', padding: '0.75rem', fontWeight: 700 }}
-            >
-              Done & Return to User List
-            </button>
           </div>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <main style={{ flex: 1, padding: '1.75rem 2rem', maxWidth: '1440px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-        {/* Page Header */}
-        <div
-          style={{
-            backgroundColor: '#ffffff',
-            border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '1.5rem 1.75rem',
-            marginBottom: '1.5rem',
-            boxShadow: '0 1px 3px 0 rgba(15, 23, 42, 0.05)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: '3px',
-              background: 'linear-gradient(90deg, #0305ba 0%, #1e40af 50%, #ffc603 50%, #ffc603 55%, #ff0103 55%, #dc2626 100%)',
-            }}
-          />
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: '1.25rem',
-            }}
-          >
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    color: 'var(--dole-blue)',
-                    backgroundColor: 'rgba(3, 5, 186, 0.06)',
-                    padding: '0.2rem 0.55rem',
-                    borderRadius: '9999px',
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                  </svg>
-                  <span>Access Control &amp; Security Directory</span>
-                </span>
-                <span
-                  style={{
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    padding: '0.2rem 0.55rem',
-                    borderRadius: '9999px',
-                    backgroundColor: 'var(--dole-red-light)',
-                    color: 'var(--dole-red)',
-                    border: '1px solid #fecaca',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  Admin Only
-                </span>
-              </div>
-              <h1 style={{ fontSize: '1.5rem', color: '#0f172a', margin: 0, fontWeight: 800, letterSpacing: '-0.02em' }}>
-                User Accounts Management
-              </h1>
-              <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: 1.4, maxWidth: '750px' }}>
-                Manage login accounts, credentials, and office access for DOLE staff. Personnel who assist clients are managed in the <strong>Personnel</strong> tab.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={openCreateModal}
-              className="btn btn-primary"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.65rem 1.4rem',
-                fontSize: '0.9rem',
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #0305ba 0%, #1e40af 100%)',
-                color: '#fff',
-                borderRadius: '8px',
-                boxShadow: '0 4px 10px rgba(3, 5, 186, 0.25)',
-                minHeight: '44px',
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              <span>Create User Account</span>
-            </button>
-          </div>
+          <button className="btn btn-primary" onClick={openCreate} style={{ minHeight: '44px' }}>+ New Account</button>
         </div>
 
-        {/* Stats Summary Cards */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: '1rem',
-            marginBottom: '1.5rem',
-          }}
-        >
-          {/* Total Accounts */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              padding: '1.25rem',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--border-color)',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
-              <div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Total User Accounts
-                </div>
-                <div className="mono" style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a', marginTop: '0.2rem', lineHeight: 1.1 }}>
-                  {totalUsers}
-                </div>
-              </div>
-              <div
-                style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '8px',
-                  backgroundColor: '#eff6ff',
-                  color: 'var(--dole-blue)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-              </div>
-            </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
-              System directory registry
-            </div>
-          </div>
-
-          {/* Active Logins */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              padding: '1.25rem',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--border-color)',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
-              <div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Active Logins
-                </div>
-                <div className="mono" style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--dole-green)', marginTop: '0.2rem', lineHeight: 1.1 }}>
-                  {activeCount}
-                </div>
-              </div>
-              <div
-                style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '8px',
-                  backgroundColor: '#ecfdf5',
-                  color: 'var(--dole-green)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                  <polyline points="9 12 11 14 15 10"></polyline>
-                </svg>
-              </div>
-            </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
-              Authorized to sign in
-            </div>
-          </div>
-
-          {/* Administrators */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              padding: '1.25rem',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--border-color)',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
-              <div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Administrators
-                </div>
-                <div className="mono" style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.2rem', lineHeight: 1.1 }}>
-                  {adminCount}
-                </div>
-              </div>
-              <div
-                style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '8px',
-                  backgroundColor: '#f5f3ff',
-                  color: '#7c3aed',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
-                </svg>
-              </div>
-            </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
-              Full administrative authority
-            </div>
-          </div>
-
-          {/* Staff Accounts */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              padding: '1.25rem',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--border-color)',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
-              <div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Staff Accounts
-                </div>
-                <div className="mono" style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--dole-blue)', marginTop: '0.2rem', lineHeight: 1.1 }}>
-                  {staffCount}
-                </div>
-              </div>
-              <div
-                style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '8px',
-                  backgroundColor: 'var(--dole-blue-light)',
-                  color: 'var(--dole-blue)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-              </div>
-            </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
-              Counter &amp; frontline operators
-            </div>
-          </div>
+        <div className="card" style={{ padding: '1rem 1.25rem', marginBottom: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+          <input type="search" value={filters.search} onChange={(e) => setFilter('search', e.target.value)}
+            placeholder="Search name, username, ID, position" aria-label="Search accounts" style={{ minHeight: '44px' }} />
+          <select value={filters.office} onChange={(e) => setFilter('office', e.target.value)} aria-label="Office" style={{ minHeight: '44px' }}>
+            <option value="">All offices</option>
+            {filterOffices.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          <select value={filters.role} onChange={(e) => setFilter('role', e.target.value)} aria-label="Role" style={{ minHeight: '44px' }}>
+            <option value="">All roles</option>
+            <option value="PERSONNEL">Personnel</option>
+            <option value="ADMIN">Administrator</option>
+          </select>
+          <select value={filters.status} onChange={(e) => setFilter('status', e.target.value)} aria-label="Status" style={{ minHeight: '44px' }}>
+            <option value="">Active and inactive</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
         </div>
 
-        {/* Filter & Search Bar */}
-        <div
-          style={{
-            backgroundColor: 'var(--bg-card)',
-            padding: '1rem 1.25rem',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--border-color)',
-            boxShadow: '0 1px 3px 0 rgba(15, 23, 42, 0.05)',
+        {notice && (
+          <div role="status" style={{
+            marginBottom: '1rem',
+            padding: '0.75rem 1rem',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '0.9rem',
+            fontWeight: 600,
             display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
+            justifyContent: 'space-between',
             gap: '1rem',
-            marginBottom: '1.5rem',
-          }}
-        >
-          <div style={{ flex: '1 1 260px', position: 'relative' }}>
-            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-            </span>
-            <input
-              type="text"
-              placeholder="Search by username, account owner, or ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.55rem 0.85rem 0.55rem 2.25rem',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1',
-                fontSize: '0.88rem',
-                backgroundColor: '#ffffff',
-                outline: 'none',
-                minHeight: '40px',
-              }}
-            />
+            backgroundColor: notice.type === 'error' ? 'var(--dole-red-light)' : 'var(--dole-green-light)',
+            color: notice.type === 'error' ? 'var(--dole-red-dark)' : '#047857',
+            border: `1px solid ${notice.type === 'error' ? '#fecaca' : '#a7f3d0'}`,
+          }}>
+            <span>{notice.text}</span>
+            <button onClick={() => setNotice(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700 }} aria-label="Dismiss">✕</button>
           </div>
+        )}
 
-          <div style={{ minWidth: '190px' }}>
-            <select
-              value={officeFilter}
-              onChange={(e) => setOfficeFilter(e.target.value)}
-              className="staff-custom-select"
-              style={{
-                width: '100%',
-                padding: '0.45rem 2.2rem 0.45rem 0.8rem',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1',
-                fontSize: '0.88rem',
-                minHeight: '40px',
-              }}
-            >
-              <option value="">All Offices</option>
-              {offices.map((off) => (
-                <option key={off.id} value={off.id}>
-                  {off.name}
-                </option>
+        <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', minWidth: '860px' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <th style={{ padding: '0.75rem 1rem' }}>Name</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Office</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Position</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Role</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Status</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Last login</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading accounts…</td></tr>
+              ) : accounts.length === 0 ? (
+                <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No accounts match these filters.</td></tr>
+              ) : accounts.map(a => (
+                <tr key={a.id} style={{ borderTop: 'var(--border-hairline)', opacity: a.is_active ? 1 : 0.6 }}>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{a.full_name}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      {a.username}{a.employee_id && a.employee_id !== a.username ? ` · ID ${a.employee_id}` : ''}
+                    </div>
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <div>{a.office_name || '—'}</div>
+                    {a.window_name && <div style={{ fontSize: '0.78rem', color: '#047857', fontWeight: 600 }}>At {a.window_name}</div>}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{a.position || '—'}</td>
+                  <td style={{ padding: '0.75rem 1rem' }}><RoleBadge account={a} /></td>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <span className={a.is_active ? 'badge badge-done' : 'badge badge-waiting'}>{a.is_active ? 'Active' : 'Inactive'}</span>
+                    {a.must_change_password && a.is_active && (
+                      <div style={{ fontSize: '0.72rem', color: '#b45309', marginTop: '0.2rem' }}>Must change password</div>
+                    )}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatDate(a.last_login)}</td>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      <button className="btn btn-outline btn-sm" onClick={() => openEdit(a)}>Edit</button>
+                      <button className="btn btn-outline btn-sm" onClick={() => { setResetTarget(a); setResetPassword(''); setResetConfirm(''); setResetError(''); }}>Reset Password</button>
+                      {a.id !== me?.id && (
+                        <>
+                          <button className="btn btn-outline btn-sm" onClick={() => toggleActive(a)}>{a.is_active ? 'Deactivate' : 'Activate'}</button>
+                          <button className="btn btn-outline btn-sm" style={{ color: 'var(--dole-red-dark)' }} onClick={() => deleteAccount(a)}>Delete</button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
               ))}
-            </select>
-          </div>
-
-          <div style={{ minWidth: '160px' }}>
-            <select
-              value={divisionFilter}
-              onChange={(e) => setDivisionFilter(e.target.value)}
-              className="staff-custom-select"
-              style={{
-                width: '100%',
-                padding: '0.45rem 2.2rem 0.45rem 0.8rem',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1',
-                fontSize: '0.88rem',
-                minHeight: '40px',
-              }}
-            >
-              <option value="">All Divisions</option>
-              {TARGET_DIVISIONS.map((t) => (
-                <option key={t.key} value={t.key}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            type="button"
-            onClick={loadData}
-            title="Refresh table"
-            className="btn btn-outline"
-            style={{
-              padding: '0.45rem 0.95rem',
-              borderRadius: '8px',
-              border: '1px solid #cbd5e1',
-              backgroundColor: '#ffffff',
-              color: '#334155',
-              fontSize: '0.86rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              minHeight: '40px',
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M23 4v6h-6"></path>
-              <path d="M1 20v-6h6"></path>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-            <span>Refresh</span>
-          </button>
-        </div>
-
-        {/* Users Table */}
-        <div
-          style={{
-            backgroundColor: 'var(--bg-card)',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--border-color)',
-            boxShadow: '0 1px 3px 0 rgba(15, 23, 42, 0.05)',
-            overflow: 'hidden',
-          }}
-        >
-          {loading ? (
-            <div style={{ padding: '4rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                border: '3px solid #e2e8f0',
-                borderTopColor: 'var(--dole-blue)',
-                animation: 'spin 1s linear infinite',
-                margin: '0 auto 1rem auto',
-              }} />
-              <p style={{ fontWeight: 600, color: '#334155' }}>Loading user accounts...</p>
-            </div>
-          ) : filteredUsers.length === 0 ? (
-            <div style={{ padding: '4rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <div
-                style={{
-                  width: '56px',
-                  height: '56px',
-                  borderRadius: '50%',
-                  backgroundColor: '#f1f5f9',
-                  color: '#94a3b8',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 1rem auto',
-                }}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                </svg>
-              </div>
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1e293b', margin: '0 0 0.25rem 0' }}>
-                No user accounts found
-              </h3>
-              <p style={{ fontSize: '0.88rem', color: '#64748b', maxWidth: '420px', margin: '0 auto 1.25rem auto' }}>
-                {searchQuery || officeFilter || divisionFilter
-                  ? 'No accounts match the active search filters.'
-                  : 'Get started by creating your first DOLE staff user account.'}
-              </p>
-              {searchQuery || officeFilter || divisionFilter ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setOfficeFilter('');
-                    setDivisionFilter('');
-                  }}
-                  className="btn btn-outline btn-sm"
-                  style={{ borderRadius: '6px' }}
-                >
-                  Clear Filters
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={openCreateModal}
-                  className="btn btn-primary btn-sm"
-                  style={{ borderRadius: '6px' }}
-                >
-                  Create User Account
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
-                <thead>
-                  <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border-color)' }}>
-                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Login Username</th>
-                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Account Name</th>
-                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Linked Personnel
-                      <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', fontWeight: 500, textTransform: 'none', letterSpacing: 'normal' }}>
-                        Queue &amp; Alerts Link
-                      </span>
-                    </th>
-                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Role</th>
-                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Office</th>
-                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Assigned Division(s)
-                      <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', fontWeight: 500, textTransform: 'none', letterSpacing: 'normal' }}>
-                        Dictates queue counter access
-                      </span>
-                    </th>
-                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
-                    <th style={{ padding: '0.85rem 1.15rem', fontWeight: 700, color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedUsers.map((u) => {
-                    return (
-                      <tr
-                        key={u.id}
-                        style={{
-                          borderBottom: '1px solid #f1f5f9',
-                          transition: 'background-color 0.15s ease',
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(3, 5, 186, 0.02)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                      >
-                        {/* Username */}
-                        <td style={{ padding: '0.9rem 1.15rem' }}>
-                          <span
-                            className="mono"
-                            style={{
-                              backgroundColor: '#f1f5f9',
-                              padding: '0.3rem 0.6rem',
-                              borderRadius: '6px',
-                              fontWeight: 800,
-                              color: 'var(--dole-blue)',
-                              fontSize: '0.86rem',
-                              border: '1px solid #e2e8f0',
-                              letterSpacing: '-0.01em',
-                            }}
-                          >
-                            {u.username}
-                          </span>
-                        </td>
-
-                        {/* Full Name */}
-                        <td style={{ padding: '0.9rem 1.15rem' }}>
-                          <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
-                            {u.full_name || (u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.username)}
-                          </div>
-                        </td>
-
-                        {/* Linked Personnel Record */}
-                        <td style={{ padding: '0.9rem 1.15rem' }}>
-                          {u.personnel_name ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                              <span
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.35rem',
-                                  fontSize: '0.8rem',
-                                  fontWeight: 700,
-                                  color: 'var(--dole-blue)',
-                                  backgroundColor: 'rgba(3, 5, 186, 0.08)',
-                                  border: '1px solid rgba(3, 5, 186, 0.2)',
-                                  padding: '0.2rem 0.55rem',
-                                  borderRadius: '6px',
-                                  maxWidth: '220px',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                                title={`Linked to personnel directory: ${u.personnel_name} (${u.personnel_employee_id || ''})`}
-                              >
-                                👤 {u.personnel_name}
-                              </span>
-                              {u.personnel_position && (
-                                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                                  {u.personnel_position}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: '0.76rem', color: '#94a3b8', fontStyle: 'italic' }}>
-                              — Unlinked —
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Role */}
-                        <td style={{ padding: '0.9rem 1.15rem' }}>
-                          {u.is_superuser ? (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                padding: '0.25rem 0.65rem',
-                                borderRadius: '9999px',
-                                backgroundColor: '#f5f3ff',
-                                color: '#7c3aed',
-                                border: '1px solid #ddd6fe',
-                              }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
-                              </svg>
-                              <span>Administrator</span>
-                            </span>
-                          ) : (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                padding: '0.25rem 0.65rem',
-                                borderRadius: '9999px',
-                                backgroundColor: '#eff6ff',
-                                color: '#1d4ed8',
-                                border: '1px solid #bfdbfe',
-                              }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                <circle cx="12" cy="7" r="4"></circle>
-                              </svg>
-                              <span>Staff User</span>
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Office */}
-                        <td style={{ padding: '0.9rem 1.15rem' }}>
-                          {u.is_superuser && (u.all_offices_access || u.office_name === 'All Offices' || (Array.isArray(u.office_ids) && offices.length > 0 && u.office_ids.length >= offices.length)) ? (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                padding: '0.25rem 0.65rem',
-                                borderRadius: '9999px',
-                                backgroundColor: '#eff6ff',
-                                color: '#1d4ed8',
-                                border: '1px solid #bfdbfe',
-                              }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <path d="M3 21h18"></path>
-                                <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
-                              </svg>
-                              <span>All Offices Access</span>
-                            </span>
-                          ) : u.office_names && u.office_names.length > 1 ? (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', maxWidth: '280px' }}>
-                              {u.office_names.map((offName) => (
-                                <span
-                                  key={offName}
-                                  style={{
-                                    fontSize: '0.73rem',
-                                    fontWeight: 600,
-                                    padding: '0.15rem 0.5rem',
-                                    borderRadius: '4px',
-                                    backgroundColor: '#f1f5f9',
-                                    color: '#334155',
-                                    border: '1px solid #e2e8f0',
-                                  }}
-                                >
-                                  {offName}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <div style={{ fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#94a3b8' }}>
-                                <path d="M3 21h18"></path>
-                                <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
-                              </svg>
-                              <span>{u.office_name}</span>
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Assigned Divisions */}
-                        <td style={{ padding: '0.9rem 1.15rem' }}>
-                          {u.is_superuser && (u.all_divisions_access || !u.division_ids || u.division_ids.length >= TARGET_DIVISIONS.length) ? (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                padding: '0.25rem 0.65rem',
-                                borderRadius: '9999px',
-                                backgroundColor: '#ecfdf5',
-                                color: '#047857',
-                                border: '1px solid #a7f3d0',
-                              }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                              </svg>
-                              <span>All Divisions Access</span>
-                            </span>
-                          ) : u.division_names && u.division_names.length > 0 ? (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
-                              {u.division_names.map((divName) => {
-                                const targetDiv = TARGET_DIVISIONS.find(
-                                  (t) => t.key.toLowerCase() === divName.toLowerCase() || (t.alias && t.alias.toLowerCase() === divName.toLowerCase())
-                                );
-                                const color = targetDiv?.color || '#374151';
-                                const bg = targetDiv?.bg || '#f3f4f6';
-                                const border = targetDiv?.border || '#e5e7eb';
-                                return (
-                                  <span
-                                    key={divName}
-                                    style={{
-                                      fontSize: '0.75rem',
-                                      fontWeight: 700,
-                                      padding: '0.2rem 0.55rem',
-                                      borderRadius: '6px',
-                                      color: color,
-                                      backgroundColor: bg,
-                                      border: `1px solid ${border}`,
-                                    }}
-                                  >
-                                    {divName}
-                                  </span>
-                                );
-                              })}
-                              {(u.all_services_access || u.all_divisions_access) && (
-                                <span
-                                  style={{
-                                    fontSize: '0.7rem',
-                                    fontWeight: 700,
-                                    padding: '0.15rem 0.45rem',
-                                    borderRadius: '9999px',
-                                    backgroundColor: '#eef2ff',
-                                    color: '#4f46e5',
-                                    border: '1px solid #c7d2fe',
-                                  }}
-                                  title="Can serve all queue services across all divisions"
-                                >
-                                  ⚡ All Services
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.3rem',
-                                fontSize: '0.74rem',
-                                color: '#991b1b',
-                                backgroundColor: '#fef2f2',
-                                padding: '0.2rem 0.55rem',
-                                borderRadius: '6px',
-                                border: '1px solid #fecaca',
-                                fontWeight: 600,
-                              }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                <line x1="12" y1="9" x2="12" y2="13"></line>
-                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                              </svg>
-                              <span>No Division Assigned</span>
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Status */}
-                        <td style={{ padding: '0.9rem 1.15rem' }}>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleActive(u)}
-                            title="Click to toggle active status"
-                            style={{
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              padding: '0.25rem 0.65rem',
-                              borderRadius: '9999px',
-                              border: u.is_active ? '1px solid #a7f3d0' : '1px solid #fecaca',
-                              cursor: 'pointer',
-                              backgroundColor: u.is_active ? '#ecfdf5' : '#fef2f2',
-                              color: u.is_active ? '#047857' : '#991b1b',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.35rem',
-                              minHeight: 'auto',
-                              transition: 'all 0.15s ease',
-                            }}
-                          >
-                            <span
-                              style={{
-                                width: '6px',
-                                height: '6px',
-                                borderRadius: '50%',
-                                backgroundColor: u.is_active ? '#10b981' : '#ef4444',
-                              }}
-                            />
-                            <span>{u.is_active ? 'Active' : 'Inactive'}</span>
-                          </button>
-                        </td>
-
-                        {/* Actions */}
-                        <td style={{ padding: '0.9rem 1.15rem', textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(u)}
-                              className="btn btn-outline"
-                              title="Edit user account"
-                              style={{
-                                minHeight: '32px',
-                                padding: '0.3rem 0.65rem',
-                                fontSize: '0.785rem',
-                                borderRadius: '6px',
-                                color: 'var(--dole-blue)',
-                                borderColor: '#cbd5e1',
-                                backgroundColor: '#ffffff',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                                fontWeight: 600,
-                              }}
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                              </svg>
-                              <span>Edit</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => openResetPasswordModal(u)}
-                              className="btn btn-outline"
-                              title="Reset account password"
-                              style={{
-                                minHeight: '32px',
-                                padding: '0.3rem 0.65rem',
-                                fontSize: '0.785rem',
-                                borderRadius: '6px',
-                                color: '#b45309',
-                                borderColor: '#cbd5e1',
-                                backgroundColor: '#ffffff',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                                fontWeight: 600,
-                              }}
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <circle cx="7.5" cy="15.5" r="4.5"></circle>
-                                <path d="M10.5 12.5L20 3"></path>
-                                <path d="M18 5l2 2"></path>
-                                <path d="M15 8l2 2"></path>
-                              </svg>
-                              <span>Reset Pass</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => openDeleteModal(u)}
-                              className="btn btn-outline"
-                              title="Delete user account"
-                              style={{
-                                minHeight: '32px',
-                                padding: '0.3rem 0.55rem',
-                                fontSize: '0.785rem',
-                                borderRadius: '6px',
-                                color: '#dc2626',
-                                borderColor: '#cbd5e1',
-                                backgroundColor: '#ffffff',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <polyline points="3 6 5 6 21 6"></polyline>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                              </svg>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-              totalItems={filteredUsers.length}
-              pageSize={ITEMS_PER_PAGE}
-            />
-            </>
-          )}
+            </tbody>
+          </table>
         </div>
       </main>
 
-      {/* Modal: Add / Edit User Account */}
-      {showModal && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(17, 24, 39, 0.6)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '1rem',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: 'var(--radius-lg)',
-              maxWidth: '660px',
-              width: '100%',
-              maxHeight: '92vh',
-              overflowY: 'auto',
-              boxShadow: '0 20px 45px rgba(0,0,0,0.22)',
-              border: '1px solid var(--border-color)',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            {/* Modal Header */}
-            <div
-              style={{
-                padding: '1.25rem 1.5rem',
-                borderBottom: '1px solid var(--border-color)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                backgroundColor: '#f8fafc',
-                borderTopLeftRadius: 'var(--radius-lg)',
-                borderTopRightRadius: 'var(--radius-lg)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div
-                  style={{
-                    width: '38px',
-                    height: '38px',
-                    borderRadius: '8px',
-                    backgroundColor: modalMode === 'create' ? '#eff6ff' : '#f5f3ff',
-                    color: modalMode === 'create' ? 'var(--dole-blue)' : '#7c3aed',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  {modalMode === 'create' ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <line x1="12" y1="5" x2="12" y2="19"></line>
-                      <line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                    </svg>
-                  )}
-                </div>
-                <div>
-                  <h2 style={{ fontSize: '1.15rem', color: '#0f172a', margin: 0, fontWeight: 800 }}>
-                    {modalMode === 'create' ? 'Create User Account' : `Edit Account (${username})`}
-                  </h2>
-                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {modalMode === 'create'
-                      ? 'Configure login credentials, role, office access, and division queue permissions.'
-                      : 'Update account details, role, and office/division queue permissions.'}
-                  </p>
-                </div>
+      {/* Create / edit account */}
+      <Modal
+        isOpen={!!formModal}
+        onClose={() => setFormModal(null)}
+        title={formModal?.mode === 'edit' ? `Edit ${formModal.account.username}` : 'New Account'}
+        maxWidth="720px"
+      >
+        {formModal && (
+          <form onSubmit={submitForm}>
+            {formError && (
+              <div role="alert" style={{ background: 'var(--dole-red-light)', color: 'var(--dole-red-dark)', border: '1px solid #fecaca', borderRadius: 'var(--radius-md)', padding: '0.65rem 0.9rem', fontSize: '0.88rem', marginBottom: '1rem' }}>
+                {formError}
               </div>
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '1.25rem',
-                  cursor: 'pointer',
-                  color: 'var(--text-muted)',
-                  padding: '0.25rem',
-                  minHeight: 'auto',
-                }}
-              >
-                ✕
-              </button>
-            </div>
+            )}
 
-            {/* Modal Form */}
-            <form onSubmit={handleSubmitForm} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Linked Personnel Record Selector */}
-              <div
-                style={{
-                  backgroundColor: linkedPersonnelId ? 'rgba(3, 5, 186, 0.03)' : '#f8fafc',
-                  border: linkedPersonnelId ? '1.5px solid rgba(3, 5, 186, 0.28)' : '1px solid #e2e8f0',
-                  borderRadius: '10px',
-                  padding: '1rem 1.15rem',
-                  transition: 'all 0.2s ease',
-                  boxShadow: linkedPersonnelId ? '0 2px 8px rgba(3, 5, 186, 0.04)' : 'none',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.4rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <label style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <span>🔗</span> Link to Specific Personnel Record <span style={{ fontWeight: 500, fontSize: '0.78rem', color: '#64748b' }}>(Optional)</span>
-                    </label>
-                    {linkedPersonnelId ? (
-                      <span
-                        style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          padding: '0.15rem 0.55rem',
-                          borderRadius: '12px',
-                          backgroundColor: '#ecfdf5',
-                          color: '#047857',
-                          border: '1px solid #a7f3d0',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                        }}
-                      >
-                        ● Linked Record
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 600,
-                          padding: '0.15rem 0.55rem',
-                          borderRadius: '12px',
-                          backgroundColor: '#f1f5f9',
-                          color: '#64748b',
-                          border: '1px solid #e2e8f0',
-                        }}
-                      >
-                        Stand-alone Account
-                      </span>
-                    )}
-                  </div>
-
-                  {linkedPersonnelId && (
-                    <button
-                      type="button"
-                      onClick={() => handleSelectLinkedPersonnel('', null)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--dole-red)',
-                        fontSize: '0.76rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        padding: '0.2rem 0.4rem',
-                        borderRadius: '4px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                        transition: 'background-color 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                      title="Unlink personnel from this account"
-                    >
-                      ✕ Unlink Personnel
-                    </button>
-                  )}
-                </div>
-
-                <div style={{ fontSize: '0.76rem', color: '#64748b', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-                  Connect this user login account to a DOLE personnel record. Linked officers receive real-time notifications when clients are added to their queue and can monitor their own clients directly.
-                </div>
-
-                <SearchablePersonnelSelect
-                  personnel={personnelList}
-                  value={linkedPersonnelId}
-                  valueKey="id"
-                  onChange={(pId, pObj) => handleSelectLinkedPersonnel(pId, pObj)}
-                  placeholder="-- Search & Select DOLE Personnel to Link (or leave unlinked) --"
-                  searchPlaceholder="Type name, employee ID, position, office, or division..."
-                  allowStandAlone={true}
-                  standAloneLabel="-- No Personnel Linked (Stand-alone Account) --"
-                  showOffice={true}
-                  showAccountStatus={true}
-                  currentUserId={editingId}
-                  dropDirection="auto"
-                />
-
-                {/* Selected Personnel Details Summary Card */}
-                {selectedPersonnelObj && (
-                  <div
-                    style={{
-                      marginTop: '0.75rem',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid rgba(3, 5, 186, 0.2)',
-                      borderRadius: '8px',
-                      padding: '0.75rem 0.95rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.45rem',
-                      boxShadow: '0 2px 6px rgba(3, 5, 186, 0.04)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                        <div
-                          style={{
-                            width: '34px',
-                            height: '34px',
-                            borderRadius: '50%',
-                            background: 'linear-gradient(135deg, #0305ba 0%, #1e40af 100%)',
-                            color: '#ffffff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontWeight: 800,
-                            fontSize: '0.8rem',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {selectedPersonnelObj.first_name?.[0] || ''}{selectedPersonnelObj.last_name?.[0] || ''}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                            <span>{selectedPersonnelObj.full_name}</span>
-                            {selectedPersonnelObj.employee_id && (
-                              <span
-                                className="mono"
-                                style={{
-                                  fontSize: '0.74rem',
-                                  fontWeight: 700,
-                                  color: 'var(--dole-blue)',
-                                  backgroundColor: 'rgba(3, 5, 186, 0.08)',
-                                  padding: '0.1rem 0.4rem',
-                                  borderRadius: '4px',
-                                }}
-                              >
-                                {selectedPersonnelObj.employee_id}
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.1rem' }}>
-                            {selectedPersonnelObj.position || 'DOLE Officer'} · 🏢 {selectedPersonnelObj.office_name}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                        {selectedPersonnelObj.division_names?.map((d) => (
-                          <span
-                            key={d}
-                            style={{
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              padding: '0.15rem 0.5rem',
-                              borderRadius: '4px',
-                              backgroundColor: '#eff6ff',
-                              color: '#1d4ed8',
-                              border: '1px solid #bfdbfe',
-                            }}
-                          >
-                            {d}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: '0.75rem',
-                        color: '#047857',
-                        backgroundColor: '#ecfdf5',
-                        border: '1px solid #a7f3d0',
-                        padding: '0.35rem 0.6rem',
-                        borderRadius: '6px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                        lineHeight: 1.35,
-                      }}
-                    >
-                      <span style={{ fontWeight: 800 }}>✓</span>
-                      <span>
-                        <strong>Auto-Synchronized:</strong> Name, Office, and Divisions automatically populated. This user account will monitor this officer's queue & receive real-time notifications.
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Row 1: Username & Role */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem' }}>
-                <div>
-                  <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                    Login Username <span style={{ color: 'var(--dole-red)' }}>*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    disabled={modalMode === 'edit'}
-                    placeholder="e.g. staff_pampanga"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value.replace(/\s+/g, ''))}
-                    className="mono"
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.8rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      fontSize: '0.88rem',
-                      fontWeight: 700,
-                      backgroundColor: modalMode === 'edit' ? 'var(--bg-ground)' : '#fff',
-                      outline: 'none',
-                    }}
-                  />
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    {modalMode === 'create' ? 'Unique login ID used to sign in.' : 'Username cannot be modified.'}
-                  </span>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                    Account Role <span style={{ color: 'var(--dole-red)' }}>*</span>
-                  </label>
-                  <select
-                    value={role}
-                    onChange={(e) => handleRoleChange(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.8rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      fontSize: '0.88rem',
-                      outline: 'none',
-                      backgroundColor: '#fff',
-                    }}
-                  >
-                    <option value="staff">👤 Staff User (Queue & Counter Access)</option>
-                    <option value="admin">👑 Administrator (Full System Access)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Row 2: Account Owner Name */}
+            <h3 style={sectionHeading}>Login account</h3>
+            <div style={fieldGrid}>
               <div>
-                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                  Account Owner / Full Name (Optional)
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <input
-                    type="text"
-                    placeholder="First Name"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.8rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      fontSize: '0.88rem',
-                      outline: 'none',
-                    }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Last Name"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.8rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      fontSize: '0.88rem',
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Row 3: Office Field (Dropdown for Staff, Checkboxes with All Offices for Admin) */}
-              <div>
-                {role === 'admin' ? (
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div>
-                        <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', margin: 0 }}>
-                          DOLE Office Access Permissions <span style={{ color: 'var(--dole-red)' }}>*</span>
-                        </label>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                          Choose which DOLE offices this Administrator can manage and access.
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleToggleAllOffices}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.4rem',
-                          cursor: 'pointer',
-                          backgroundColor: allOfficesSelected ? '#1d4ed8' : '#ffffff',
-                          color: allOfficesSelected ? '#ffffff' : '#1d4ed8',
-                          padding: '0.3rem 0.75rem',
-                          borderRadius: '6px',
-                          border: '1.5px solid #1d4ed8',
-                          fontSize: '0.78rem',
-                          fontWeight: 700,
-                          userSelect: 'none',
-                          transition: 'all 0.15s ease',
-                          minHeight: 'auto',
-                          boxShadow: allOfficesSelected ? '0 2px 6px rgba(29, 78, 216, 0.25)' : 'none',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={allOfficesSelected}
-                          onChange={() => {}} // Handled by button click
-                          style={{ width: '15px', height: '15px', accentColor: '#1d4ed8', cursor: 'pointer' }}
-                        />
-                        <span>All Offices Access ({offices.length})</span>
-                      </button>
-                    </div>
-
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                        gap: '0.65rem',
-                        maxHeight: '220px',
-                        overflowY: 'auto',
-                        padding: '0.2rem',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: 'var(--radius-md)',
-                        backgroundColor: '#fafafa',
-                      }}
-                    >
-                      {offices.map((off) => {
-                        const isChecked = allOfficesSelected || selectedOfficeIds.includes(off.id);
-                        return (
-                          <div
-                            key={off.id}
-                            onClick={() => handleToggleOffice(off.id)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: '0.65rem',
-                              padding: '0.65rem 0.85rem',
-                              borderRadius: 'var(--radius-sm)',
-                              border: isChecked ? '2px solid #1d4ed8' : '1px solid #e2e8f0',
-                              backgroundColor: isChecked ? '#eff6ff' : '#ffffff',
-                              cursor: 'pointer',
-                              userSelect: 'none',
-                              transition: 'all 0.15s ease',
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => {}}
-                                style={{ width: '16px', height: '16px', accentColor: '#1d4ed8', cursor: 'pointer', flexShrink: 0 }}
-                              />
-                              <span
-                                style={{
-                                  fontSize: '0.84rem',
-                                  fontWeight: isChecked ? 700 : 500,
-                                  color: isChecked ? '#1e40af' : 'var(--text-primary)',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                                title={off.name}
-                              >
-                                {off.name}
-                              </span>
-                            </div>
-                            {off.code && (
-                              <span
-                                style={{
-                                  fontSize: '0.7rem',
-                                  fontWeight: 700,
-                                  padding: '0.15rem 0.45rem',
-                                  borderRadius: '4px',
-                                  backgroundColor: isChecked ? '#dbeafe' : '#f1f5f9',
-                                  color: isChecked ? '#1d4ed8' : '#64748b',
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {off.code}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                      DOLE Office Assignment <span style={{ color: 'var(--dole-red)' }}>*</span>
-                    </label>
-                    <select
-                      required
-                      value={officeId}
-                      onChange={(e) => setOfficeId(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.65rem 0.85rem',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--border-color)',
-                        fontSize: '0.9rem',
-                        backgroundColor: '#fff',
-                        outline: 'none',
-                      }}
-                    >
-                      <option value="" disabled>-- Select DOLE Office --</option>
-                      {offices.map((off) => (
-                        <option key={off.id} value={off.id}>
-                          {off.name} {off.code ? `(${off.code})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              {/* Row 4: Password Field (Required for create, optional for edit) */}
-              <div>
-                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>
-                  {modalMode === 'create' ? 'Initial Login Password *' : 'Change Password (Leave blank to keep current)'}
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required={modalMode === 'create'}
-                    placeholder={modalMode === 'create' ? 'Enter login password...' : 'Enter new password to change...'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="mono"
-                    style={{
-                      width: '100%',
-                      padding: '0.65rem 2.5rem 0.65rem 0.8rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      fontSize: '0.88rem',
-                      outline: 'none',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '10px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      border: 'none',
-                      background: 'none',
-                      cursor: 'pointer',
-                      color: '#64748b',
-                      padding: '0.25rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                        <line x1="1" y1="1" x2="23" y2="23"></line>
-                      </svg>
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                        <circle cx="12" cy="12" r="3"></circle>
-                      </svg>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Row 5: Division Queue Access Checklist */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div>
-                    <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)', margin: 0 }}>
-                      Assigned Division(s) & Queue Counter Lines
-                    </label>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      Dictates which division queue services this account can manage and serve.
-                    </div>
-                  </div>
-
-                  {role === 'admin' && (
-                    <button
-                      type="button"
-                      onClick={handleToggleAllDivisions}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                        cursor: 'pointer',
-                        backgroundColor: allDivisionsSelected ? '#047857' : '#ffffff',
-                        color: allDivisionsSelected ? '#ffffff' : '#047857',
-                        padding: '0.3rem 0.75rem',
-                        borderRadius: '6px',
-                        border: '1.5px solid #047857',
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        userSelect: 'none',
-                        transition: 'all 0.15s ease',
-                        minHeight: 'auto',
-                        boxShadow: allDivisionsSelected ? '0 2px 6px rgba(4, 120, 87, 0.25)' : 'none',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={allDivisionsSelected}
-                        onChange={() => {}} // Handled by button click
-                        style={{ width: '15px', height: '15px', accentColor: '#047857', cursor: 'pointer' }}
-                      />
-                      <span>All Divisions Access ({TARGET_DIVISIONS.length})</span>
-                    </button>
-                  )}
-                </div>
-
-                {hasUniversalCounterSelected && (
-                  <div
-                    style={{
-                      marginBottom: '0.65rem',
-                      padding: '0.55rem 0.85rem',
-                      borderRadius: '8px',
-                      backgroundColor: '#eff6ff',
-                      border: '1px solid #bfdbfe',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      fontSize: '0.78rem',
-                      color: '#1d4ed8',
-                      fontWeight: 600,
-                    }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>⚡</span>
-                    <span>
-                      <strong>All Services Access:</strong> Accounts assigned to Window 1–10 or Front Desk can access and serve all queue services across all divisions without having division-level access.
-                    </span>
-                  </div>
-                )}
-
-                <div
-                  style={{
-                    maxHeight: '340px',
-                    overflowY: 'auto',
-                    paddingRight: '0.35rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.85rem',
-                  }}
-                >
-                  {/* Category 1: Operational Divisions */}
-                  <div>
-                    <div style={{ fontSize: '0.73rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.45rem' }}>
-                      Operational Divisions (Service-Specific Queue Lines)
-                    </div>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                        gap: '0.55rem',
-                      }}
-                    >
-                      {TARGET_DIVISIONS.filter((d) => d.category === 'division').map((tDiv) => {
-                        const targetId = divisionMap[tDiv.key] || (tDiv.alias && divisionMap[tDiv.alias]);
-                        const isChecked = Boolean(
-                          allDivisionsSelected || (targetId && selectedDivisionIds.includes(targetId))
-                        );
-
-                        return (
-                          <div
-                            key={tDiv.key}
-                            onClick={() => handleToggleDivision(tDiv.key, tDiv.alias)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.65rem',
-                              padding: '0.65rem 0.85rem',
-                              borderRadius: 'var(--radius-md)',
-                              border: isChecked ? `2px solid ${tDiv.color}` : '1px solid var(--border-color)',
-                              backgroundColor: isChecked ? tDiv.bg : 'var(--bg-ground)',
-                              cursor: 'pointer',
-                              userSelect: 'none',
-                              transition: 'all 0.15s ease',
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {}}
-                              style={{
-                                width: '16px',
-                                height: '16px',
-                                accentColor: tDiv.color,
-                                cursor: 'pointer',
-                              }}
-                            />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 800, color: isChecked ? tDiv.color : 'var(--text-primary)', fontSize: '0.84rem' }}>
-                                {tDiv.label}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '0.72rem',
-                                  color: 'var(--text-muted)',
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                }}
-                                title={tDiv.fullName}
-                              >
-                                {tDiv.fullName}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Category 2: Queue Counter Windows & Front Desk */}
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      <div style={{ fontSize: '0.73rem', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Queue Counter Windows & Front Desk (All Services Access)
-                      </div>
-                      <span style={{ fontSize: '0.68rem', color: '#4f46e5', fontWeight: 700, backgroundColor: '#eef2ff', padding: '0.1rem 0.45rem', borderRadius: '4px', border: '1px solid #c7d2fe' }}>
-                        ⚡ Access All Services
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                        gap: '0.55rem',
-                      }}
-                    >
-                      {TARGET_DIVISIONS.filter((d) => d.category === 'counter').map((tDiv) => {
-                        const targetId = divisionMap[tDiv.key] || (tDiv.alias && divisionMap[tDiv.alias]);
-                        const isChecked = Boolean(
-                          allDivisionsSelected || (targetId && selectedDivisionIds.includes(targetId))
-                        );
-
-                        return (
-                          <div
-                            key={tDiv.key}
-                            onClick={() => handleToggleDivision(tDiv.key, tDiv.alias)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.65rem',
-                              padding: '0.65rem 0.85rem',
-                              borderRadius: 'var(--radius-md)',
-                              border: isChecked ? `2px solid ${tDiv.color}` : '1px solid var(--border-color)',
-                              backgroundColor: isChecked ? tDiv.bg : 'var(--bg-ground)',
-                              cursor: 'pointer',
-                              userSelect: 'none',
-                              transition: 'all 0.15s ease',
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {}}
-                              style={{
-                                width: '16px',
-                                height: '16px',
-                                accentColor: tDiv.color,
-                                cursor: 'pointer',
-                              }}
-                            />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                <span style={{ fontWeight: 800, color: isChecked ? tDiv.color : 'var(--text-primary)', fontSize: '0.84rem' }}>
-                                  {tDiv.label}
-                                </span>
-                                <span style={{ fontSize: '0.66rem', color: '#4f46e5', fontWeight: 700, backgroundColor: '#eef2ff', padding: '0.05rem 0.35rem', borderRadius: '4px' }}>
-                                  All Services
-                                </span>
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '0.72rem',
-                                  color: 'var(--text-muted)',
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                }}
-                                title={tDiv.fullName}
-                              >
-                                {tDiv.fullName}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: '0.75rem',
-                  marginTop: '0.5rem',
-                  paddingTop: '1rem',
-                  borderTop: '1px solid var(--border-color)',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="btn btn-outline"
-                  disabled={submitting}
-                  style={{ padding: '0.65rem 1.25rem' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={submitting}
-                  style={{
-                    padding: '0.65rem 1.5rem',
-                    backgroundColor: 'var(--dole-blue)',
-                    color: '#fff',
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.45rem',
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-                    <polyline points="17 21 17 13 7 13 7 21"></polyline>
-                    <polyline points="7 3 7 8 15 8"></polyline>
-                  </svg>
-                  <span>
-                    {submitting
-                      ? 'Saving...'
-                      : modalMode === 'create'
-                      ? 'Create Account'
-                      : 'Save Changes'}
-                  </span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Reset Password */}
-      {resetModalUser && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(17, 24, 39, 0.6)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '1rem',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: 'var(--radius-lg)',
-              maxWidth: '440px',
-              width: '100%',
-              padding: '1.5rem',
-              boxShadow: '0 20px 45px rgba(0,0,0,0.22)',
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div
-                style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '8px',
-                  backgroundColor: '#fffbeb',
-                  color: '#b45309',
-                  border: '1px solid #fde68a',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="7.5" cy="15.5" r="4.5"></circle>
-                  <path d="M10.5 12.5L20 3"></path>
-                  <path d="M18 5l2 2"></path>
-                  <path d="M15 8l2 2"></path>
-                </svg>
+                <label htmlFor="acc-username">Username *</label>
+                <input id="acc-username" required disabled={formModal.mode === 'edit'} value={form.username}
+                  onChange={(e) => setField('username', e.target.value)} placeholder="e.g. JUAN_DELACRUZ" autoComplete="off" />
               </div>
               <div>
-                <h3 style={{ fontSize: '1.15rem', color: '#0f172a', margin: 0, fontWeight: 800 }}>
-                  Reset Password
-                </h3>
-                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Administrative credential override</span>
+                <label htmlFor="acc-email">Email</label>
+                <input id="acc-email" type="email" value={form.email} onChange={(e) => setField('email', e.target.value)} placeholder="name@dole.gov.ph" />
+              </div>
+              {formModal.mode === 'create' && (
+                <>
+                  <div>
+                    <label htmlFor="acc-password">Temporary password *</label>
+                    <input id="acc-password" type="password" required minLength={6} value={form.password}
+                      onChange={(e) => setField('password', e.target.value)} autoComplete="new-password" />
+                  </div>
+                  <div>
+                    <label htmlFor="acc-confirm">Confirm password *</label>
+                    <input id="acc-confirm" type="password" required minLength={6} value={form.confirm_password}
+                      onChange={(e) => setField('confirm_password', e.target.value)} autoComplete="new-password" />
+                  </div>
+                </>
+              )}
+              <div>
+                <label htmlFor="acc-role">Role *</label>
+                <select id="acc-role" value={form.role} onChange={(e) => setField('role', e.target.value)}>
+                  <option value="PERSONNEL">Personnel</option>
+                  <option value="ADMIN" disabled={!adminAllowed}>Administrator{adminAllowed ? '' : ' (regional office only)'}</option>
+                </select>
               </div>
             </div>
-
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
-              Set a new password for account <strong>{resetModalUser.username}</strong> ({resetModalUser.full_name}):
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.5rem 0 1.4rem' }}>
+              Administrators of the regional office manage accounts, services and reports for all offices.
+              {formModal.mode === 'create' && ' New accounts must change their password at first login.'}
             </p>
 
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
-                New Password
-              </label>
-              <input
-                type="text"
-                value={newPasswordInput}
-                onChange={(e) => setNewPasswordInput(e.target.value)}
-                placeholder="Enter new password..."
-                className="mono"
-                style={{
-                  width: '100%',
-                  padding: '0.65rem 0.8rem',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border-color)',
-                  fontSize: '0.9rem',
-                  fontWeight: 700,
-                  outline: 'none',
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.65rem' }}>
-              <button
-                type="button"
-                onClick={() => setResetModalUser(null)}
-                className="btn btn-outline"
-                disabled={resetSubmitting}
-                style={{ padding: '0.55rem 1rem' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmResetPassword}
-                className="btn btn-primary"
-                disabled={resetSubmitting || !newPasswordInput.trim()}
-                style={{
-                  padding: '0.55rem 1.25rem',
-                  backgroundColor: 'var(--dole-gold-dark)',
-                  color: '#fff',
-                  fontWeight: 700,
-                }}
-              >
-                {resetSubmitting ? 'Resetting...' : 'Confirm Reset'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Delete Confirmation */}
-      {deleteModalUser && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(17, 24, 39, 0.6)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '1rem',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              borderRadius: 'var(--radius-lg)',
-              maxWidth: '440px',
-              width: '100%',
-              padding: '1.5rem',
-              boxShadow: '0 20px 45px rgba(0,0,0,0.22)',
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div
-                style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '8px',
-                  backgroundColor: '#fef2f2',
-                  color: '#dc2626',
-                  border: '1px solid #fecaca',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  <line x1="10" y1="11" x2="10" y2="17"></line>
-                  <line x1="14" y1="11" x2="14" y2="17"></line>
-                </svg>
+            <h3 style={sectionHeading}>Personnel details</h3>
+            <div style={fieldGrid}>
+              <div>
+                <label htmlFor="acc-first">First name *</label>
+                <input id="acc-first" required value={form.first_name} onChange={(e) => setField('first_name', e.target.value)} />
               </div>
               <div>
-                <h3 style={{ fontSize: '1.15rem', color: '#dc2626', margin: 0, fontWeight: 800 }}>
-                  Delete User Account
-                </h3>
-                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Permanent account revocation</span>
+                <label htmlFor="acc-middle">Middle name</label>
+                <input id="acc-middle" value={form.middle_name} onChange={(e) => setField('middle_name', e.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="acc-last">Last name *</label>
+                <input id="acc-last" required value={form.last_name} onChange={(e) => setField('last_name', e.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="acc-empid">Personnel ID</label>
+                <input id="acc-empid" value={form.employee_id} onChange={(e) => setField('employee_id', e.target.value)} placeholder="Defaults to the username" />
+              </div>
+              <div>
+                <label htmlFor="acc-office">Office *</label>
+                <select id="acc-office" required value={form.office} onChange={(e) => setField('office', e.target.value)}>
+                  <option value="">Choose office…</option>
+                  {offices.map(o => (
+                    <option key={o.id} value={o.id}>{o.name}{o.office_type === 'REGIONAL' ? ' (Regional)' : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="acc-position">Position</label>
+                <input id="acc-position" list="position-options" value={form.position} onChange={(e) => setField('position', e.target.value)} placeholder="e.g. Labor and Employment Officer I" />
+                <datalist id="position-options">
+                  {positions.map(p => <option key={p.id} value={p.title} />)}
+                </datalist>
               </div>
             </div>
 
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
-              Are you sure you want to delete user account <strong>{deleteModalUser.username}</strong> ({deleteModalUser.full_name})? This will permanently remove their login access.
-            </p>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.65rem' }}>
-              <button
-                type="button"
-                onClick={() => setDeleteModalUser(null)}
-                className="btn btn-outline"
-                disabled={deleteSubmitting}
-                style={{ padding: '0.55rem 1rem' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="btn btn-primary"
-                disabled={deleteSubmitting}
-                style={{
-                  padding: '0.55rem 1.25rem',
-                  backgroundColor: 'var(--dole-red)',
-                  color: '#fff',
-                  fontWeight: 700,
-                }}
-              >
-                {deleteSubmitting ? 'Deleting...' : 'Yes, Delete Account'}
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.5rem' }}>
+              <button type="button" className="btn btn-outline" onClick={() => setFormModal(null)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{formModal.mode === 'edit' ? 'Save Changes' : 'Create Account'}</button>
             </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Reset password */}
+      <Modal isOpen={!!resetTarget} onClose={() => setResetTarget(null)} title={resetTarget ? `Reset password for ${resetTarget.username}` : ''} maxWidth="440px">
+        <form onSubmit={submitReset}>
+          {resetError && <div role="alert" style={{ color: 'var(--dole-red-dark)', fontSize: '0.88rem', marginBottom: '0.75rem' }}>{resetError}</div>}
+          <label htmlFor="reset-pw">New temporary password</label>
+          <input id="reset-pw" type="password" required minLength={6} value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} autoComplete="new-password" />
+          <label htmlFor="reset-confirm" style={{ marginTop: '0.75rem' }}>Confirm password</label>
+          <input id="reset-confirm" type="password" required minLength={6} value={resetConfirm} onChange={(e) => setResetConfirm(e.target.value)} autoComplete="new-password" />
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>They will be asked to choose a new password at their next login.</p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+            <button type="button" className="btn btn-outline" onClick={() => setResetTarget(null)}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Set Password</button>
           </div>
+        </form>
+      </Modal>
+
+      <Modal isOpen={!!confirmModal} onClose={() => setConfirmModal(null)} title={confirmModal?.title} maxWidth="440px">
+        <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{confirmModal?.message}</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.5rem' }}>
+          <button className="btn btn-outline" onClick={() => setConfirmModal(null)}>Back</button>
+          <button className={confirmModal?.danger ? 'btn btn-danger' : 'btn btn-primary'}
+            onClick={() => { const action = confirmModal.onConfirm; setConfirmModal(null); action(); }}>
+            {confirmModal?.confirmLabel}
+          </button>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

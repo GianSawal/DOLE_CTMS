@@ -5,6 +5,9 @@ import NotificationBell from './NotificationBell';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const can = user?.is_superuser
+    ? { manage_users: true, manage_services: true, view_reports: true, view_audit_logs: true }
+    : (user?.permissions || {});
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -90,22 +93,26 @@ export default function Navbar() {
             <span>Transactions</span>
           </NavLink>
 
-          <NavLink to="/staff/services" style={navLinkStyle} id="nav-services">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-            </svg>
-            <span>Services</span>
-          </NavLink>
+          {can.manage_services && (
+            <NavLink to="/staff/services" style={navLinkStyle} id="nav-services">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+              </svg>
+              <span>Services</span>
+            </NavLink>
+          )}
 
-          <NavLink to="/staff/reports" style={navLinkStyle}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <line x1="18" y1="20" x2="18" y2="10"></line>
-              <line x1="12" y1="20" x2="12" y2="4"></line>
-              <line x1="6" y1="20" x2="6" y2="14"></line>
-            </svg>
-            <span>Reports &amp; Rate</span>
-          </NavLink>
+          {can.view_reports && (
+            <NavLink to="/staff/reports" style={navLinkStyle}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+              </svg>
+              <span>Reports &amp; Rate</span>
+            </NavLink>
+          )}
 
           <NavLink to="/staff/qr" style={navLinkStyle}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -117,7 +124,7 @@ export default function Navbar() {
             <span>Check-in QR</span>
           </NavLink>
 
-          {user?.is_superuser && (
+          {can.manage_users && (
             <>
               <NavLink to="/staff/users" style={navLinkStyle} id="nav-user-management">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -129,14 +136,11 @@ export default function Navbar() {
                 <span>User Management</span>
               </NavLink>
 
-              <NavLink to="/staff/personnel" style={navLinkStyle} id="nav-personnel">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-                <span>Personnel</span>
-              </NavLink>
+            </>
+          )}
 
+          {can.view_audit_logs && (
+            <>
               <NavLink to="/staff/audit-logs" style={navLinkStyle} id="nav-audit-logs">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -175,16 +179,16 @@ export default function Navbar() {
             <div className="staff-user-info">
               <div className="staff-user-name">
                 {user?.username}
-                {user?.linked_personnel && (
+                {user?.full_name && user.full_name !== user.username && (
                   <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--dole-blue)', display: 'block' }}>
-                    👤 {user.linked_personnel.full_name}
+                    {user.full_name}
                   </span>
                 )}
               </div>
               <div className="staff-user-office">
                 {user?.is_superuser
-                  ? 'DOLE Admin'
-                  : (user?.assigned_offices?.[0]?.code || 'Staff')}
+                  ? 'System Admin'
+                  : `${user?.primary_office?.code || user?.assigned_offices?.[0]?.code || 'Staff'}${user?.is_regional_admin ? ' · Admin' : ''}`}
               </div>
             </div>
           </div>

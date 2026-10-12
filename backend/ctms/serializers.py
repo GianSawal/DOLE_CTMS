@@ -266,171 +266,92 @@ class DolePositionSerializer(serializers.ModelSerializer):
 
 
 class CtmsUserAccountSerializer(serializers.ModelSerializer):
-    """Serializer for login user accounts."""
-    role = serializers.SerializerMethodField()
+    """
+    One staff account = login credentials + its personnel profile (DolePersonnel).
+    Read-only representation; writes go through StaffUserAccountViewSet.
+    """
+    full_name = serializers.SerializerMethodField()
+    middle_name = serializers.SerializerMethodField()
+    employee_id = serializers.SerializerMethodField()
+    position = serializers.SerializerMethodField()
     office = serializers.SerializerMethodField()
     office_name = serializers.SerializerMethodField()
-    office_ids = serializers.SerializerMethodField()
-    office_names = serializers.SerializerMethodField()
-    all_offices_access = serializers.SerializerMethodField()
-    all_divisions_access = serializers.SerializerMethodField()
-    all_services_access = serializers.SerializerMethodField()
-    division_ids = serializers.SerializerMethodField()
-    division_names = serializers.SerializerMethodField()
-    full_name = serializers.SerializerMethodField()
-    employee_id = serializers.CharField(source='username', read_only=True)
-
-    personnel_id = serializers.SerializerMethodField()
-    personnel_name = serializers.SerializerMethodField()
-    personnel_employee_id = serializers.SerializerMethodField()
-    personnel_position = serializers.SerializerMethodField()
-    personnel_detail = serializers.SerializerMethodField()
+    office_code = serializers.SerializerMethodField()
+    office_type = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField()
+    is_regional_admin = serializers.SerializerMethodField()
+    must_change_password = serializers.SerializerMethodField()
+    window_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
-            'id',
-            'username',
-            'employee_id',
-            'first_name',
-            'last_name',
-            'full_name',
-            'role',
-            'is_staff',
-            'is_superuser',
-            'is_active',
-            'personnel_id',
-            'personnel_name',
-            'personnel_employee_id',
-            'personnel_position',
-            'personnel_detail',
-            'office',
-            'office_name',
-            'office_ids',
-            'office_names',
-            'all_offices_access',
-            'all_divisions_access',
-            'all_services_access',
-            'division_ids',
-            'division_names',
-            'date_joined',
-            'last_login',
+            'id', 'username', 'email',
+            'first_name', 'middle_name', 'last_name', 'full_name',
+            'employee_id', 'position', 'office', 'office_name', 'office_code', 'office_type',
+            'role', 'is_regional_admin', 'is_superuser', 'is_active', 'must_change_password',
+            'window_name', 'date_joined', 'last_login',
         ]
-        read_only_fields = ['id', 'date_joined', 'last_login']
 
-    def get_personnel_id(self, obj):
+    @staticmethod
+    def _profile(obj):
         try:
-            p = getattr(obj, 'dole_personnel', None)
-            return p.id if p else None
-        except Exception:
+            return obj.dole_personnel
+        except DolePersonnel.DoesNotExist:
             return None
 
-    def get_personnel_name(self, obj):
-        try:
-            p = getattr(obj, 'dole_personnel', None)
-            return p.full_name if p else None
-        except Exception:
-            return None
-
-    def get_personnel_employee_id(self, obj):
-        try:
-            p = getattr(obj, 'dole_personnel', None)
-            return p.employee_id if p else None
-        except Exception:
-            return None
-
-    def get_personnel_position(self, obj):
-        try:
-            p = getattr(obj, 'dole_personnel', None)
-            return p.position if p else None
-        except Exception:
-            return None
-
-    def get_personnel_detail(self, obj):
-        try:
-            p = getattr(obj, 'dole_personnel', None)
-            if not p:
-                return None
-            return {
-                'id': p.id,
-                'full_name': p.full_name,
-                'employee_id': p.employee_id,
-                'position': p.position,
-                'office_id': p.office_id,
-                'office_name': p.office.name if p.office else '',
-                'division_names': [d.name for d in p.divisions.all()],
-            }
-        except Exception:
-            return None
-
-    def get_role(self, obj):
-        return "Administrator" if obj.is_superuser else "Staff"
+    def _office(self, obj):
+        from .permissions import primary_office
+        return primary_office(obj)
 
     def get_full_name(self, obj):
-        name = f"{obj.first_name} {obj.last_name}".strip()
-        return name if name else obj.username
+        return personnel_display_name(obj)
 
-    def get_all_offices_access(self, obj):
-        if not obj.is_superuser:
-            return False
-        total_active_offices = CsmOffice.objects.filter(is_active=True).count()
-        assigned_count = obj.staff_offices.count()
-        return assigned_count == 0 or (total_active_offices > 0 and assigned_count >= total_active_offices)
+    def get_middle_name(self, obj):
+        p = self._profile(obj)
+        return p.middle_name if p else ''
 
-    def get_all_divisions_access(self, obj):
-        if not obj.is_superuser:
-            return False
-        total_divisions = CsmDivision.objects.exclude(name__iexact='ALL').count()
-        assigned_count = obj.staff_divisions.count()
-        return assigned_count == 0 or (total_divisions > 0 and assigned_count >= total_divisions)
+    def get_employee_id(self, obj):
+        p = self._profile(obj)
+        return p.employee_id if p else ''
 
-    def get_all_services_access(self, obj):
-        if obj.is_superuser:
-            return True
-        div_names = list(obj.staff_divisions.values_list('division__name', flat=True))
-        if any(is_universal_division_name(name) for name in div_names):
-            return True
-        total_divisions = CsmDivision.objects.exclude(name__iexact='ALL').count()
-        assigned_count = len(div_names)
-        return assigned_count == 0 or (total_divisions > 0 and assigned_count >= total_divisions)
+    def get_position(self, obj):
+        p = self._profile(obj)
+        return p.position if p else ''
 
     def get_office(self, obj):
-        staff_off = obj.staff_offices.select_related('office').first()
-        return staff_off.office_id if staff_off else None
-
-    def get_office_ids(self, obj):
-        ids = list(obj.staff_offices.values_list('office_id', flat=True))
-        if not ids and obj.is_superuser:
-            return list(CsmOffice.objects.filter(is_active=True).values_list('id', flat=True).order_by('id'))
-        return ids
-
-    def get_office_names(self, obj):
-        names = list(obj.staff_offices.values_list('office__name', flat=True))
-        if not names and obj.is_superuser:
-            return list(CsmOffice.objects.filter(is_active=True).values_list('name', flat=True).order_by('name'))
-        return names
+        office = self._office(obj)
+        return office.id if office else None
 
     def get_office_name(self, obj):
-        if self.get_all_offices_access(obj):
-            return "All Offices"
-        office_names = self.get_office_names(obj)
-        if not office_names:
-            return "All Offices" if obj.is_superuser else "Unassigned"
-        if len(office_names) == 1:
-            return office_names[0]
-        return f"{office_names[0]} (+{len(office_names) - 1} more)"
+        office = self._office(obj)
+        return office.name if office else ''
 
-    def get_division_ids(self, obj):
-        ids = list(obj.staff_divisions.values_list('division_id', flat=True))
-        if not ids and obj.is_superuser:
-            return list(CsmDivision.objects.exclude(name__iexact='ALL').values_list('id', flat=True).order_by('id'))
-        return ids
+    def get_office_code(self, obj):
+        office = self._office(obj)
+        return office.code if office else ''
 
-    def get_division_names(self, obj):
-        names = list(obj.staff_divisions.values_list('division__name', flat=True))
-        if not names and obj.is_superuser:
-            return list(CsmDivision.objects.exclude(name__iexact='ALL').values_list('name', flat=True).order_by('id'))
-        return names
+    def get_office_type(self, obj):
+        from .permissions import office_type
+        return office_type(self._office(obj))
+
+    def get_role(self, obj):
+        if obj.is_superuser:
+            return 'SYSTEM_ADMIN'
+        p = self._profile(obj)
+        return p.role if p else DolePersonnel.ROLE_PERSONNEL
+
+    def get_is_regional_admin(self, obj):
+        from .permissions import is_regional_admin
+        return is_regional_admin(obj)
+
+    def get_must_change_password(self, obj):
+        p = self._profile(obj)
+        return bool(p and p.must_change_password)
+
+    def get_window_name(self, obj):
+        window = getattr(obj, 'occupied_window', None)
+        return window.name if window and window.archived_at is None else None
 
 
 class CtmsNotificationSerializer(serializers.ModelSerializer):
@@ -661,63 +582,14 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
 
 
 class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """
-    Ensures user is staff (is_staff = True), same requirement as CSM.
-    Returns user details and assigned offices in token response.
-    """
+    """Staff-only login (is_staff, same requirement as the CSM) returning the session summary."""
+
     def validate(self, attrs):
         data = super().validate(attrs)
-
         if not self.user.is_staff:
             raise serializers.ValidationError("Access denied. Only DOLE staff members may log in.")
-
-        assigned_offices = list(
-            CtmsStaffOffice.objects.filter(user=self.user).values('office_id', 'office__name', 'office__code')
-        )
-
-        assigned_divisions = []
-        staff_divs = CtmsStaffDivision.objects.filter(user=self.user).select_related('division').order_by('division__id')
-        if staff_divs.exists():
-            assigned_divisions = [
-                {'id': sd.division.id, 'name': sd.division.name} for sd in staff_divs if sd.division
-            ]
-        else:
-            try:
-                profile = self.user.employee_profile
-                if profile and profile.divisions.exists():
-                    assigned_divisions = [
-                        {'id': d.id, 'name': d.name} for d in profile.divisions.all()
-                    ]
-            except Exception:
-                pass
-
-        if not assigned_divisions:
-            # Superusers and unrestricted accounts have access to all operational divisions
-            all_divs = CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
-            assigned_divisions = [
-                {'id': d.id, 'name': d.name} for d in all_divs
-            ]
-
-        must_change_password = False
-        try:
-            profile = self.user.employee_profile
-            must_change_password = bool(profile.must_change_password)
-        except Exception:
-            pass
-
-        data['user'] = {
-            'id': self.user.id,
-            'username': self.user.username,
-            'first_name': self.user.first_name,
-            'last_name': self.user.last_name,
-            'is_superuser': self.user.is_superuser,
-            'must_change_password': must_change_password,
-            'assigned_offices': [
-                {'id': o['office_id'], 'name': o['office__name'], 'code': o['office__code']}
-                for o in assigned_offices
-            ],
-            'assigned_divisions': assigned_divisions,
-        }
+        from .permissions import staff_session
+        data['user'] = staff_session(self.user)
         return data
 
 

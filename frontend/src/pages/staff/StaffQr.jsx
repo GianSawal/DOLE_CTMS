@@ -155,7 +155,7 @@ export default function StaffQr() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {user?.assigned_offices?.length === 1 && !user?.is_superuser ? (
+            {user?.assigned_offices?.length === 1 ? (
               <div style={{
                 minHeight: '44px',
                 display: 'flex',

@@ -17,7 +17,6 @@ import StaffServices from './pages/staff/StaffServices';
 import StaffReports from './pages/staff/StaffReports';
 import StaffQr from './pages/staff/StaffQr';
 import StaffUsers from './pages/staff/StaffUsers';
-import StaffPersonnel from './pages/staff/StaffPersonnel';
 import StaffAuditLogs from './pages/staff/StaffAuditLogs';
 import StaffChangePassword from './pages/staff/StaffChangePassword';
 
@@ -43,7 +42,7 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
-function AdminRoute({ children }) {
+function PermissionRoute({ permission, children }) {
   const { user, isAuthenticated, loading } = useAuth();
 
   if (loading) {
@@ -62,7 +61,8 @@ function AdminRoute({ children }) {
     return <Navigate to="/staff/change-password" replace />;
   }
 
-  if (!user?.is_superuser) {
+  // Mirrors the API's role checks; the server rejects these requests regardless.
+  if (!user?.is_superuser && !user?.permissions?.[permission]) {
     return <Navigate to="/staff/queue" replace />;
   }
 
@@ -138,17 +138,17 @@ export default function App() {
           <Route
             path="/staff/services"
             element={
-              <ProtectedRoute>
+              <PermissionRoute permission="manage_services">
                 <StaffServices />
-              </ProtectedRoute>
+              </PermissionRoute>
             }
           />
           <Route
             path="/staff/reports"
             element={
-              <ProtectedRoute>
+              <PermissionRoute permission="view_reports">
                 <StaffReports />
-              </ProtectedRoute>
+              </PermissionRoute>
             }
           />
           <Route
@@ -160,27 +160,19 @@ export default function App() {
             }
           />
           <Route
-            path="/staff/personnel"
-            element={
-              <AdminRoute>
-                <StaffPersonnel />
-              </AdminRoute>
-            }
-          />
-          <Route
             path="/staff/users"
             element={
-              <AdminRoute>
+              <PermissionRoute permission="manage_users">
                 <StaffUsers />
-              </AdminRoute>
+              </PermissionRoute>
             }
           />
           <Route
             path="/staff/audit-logs"
             element={
-              <AdminRoute>
+              <PermissionRoute permission="view_audit_logs">
                 <StaffAuditLogs />
-              </AdminRoute>
+              </PermissionRoute>
             }
           />
           <Route

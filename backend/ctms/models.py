@@ -215,10 +215,16 @@ class CtmsEmployee(models.Model):
 
 class DolePersonnel(models.Model):
     """
-    Pure personnel directory for DOLE officers and personnel who assist clients.
-    Personnel do NOT have user login accounts or passwords.
-    Used strictly for assigning personnel on queue transactions.
+    Canonical personnel profile of a staff login account (one-to-one with User):
+    name, personnel ID, office, position, and the account's role.
     """
+    ROLE_PERSONNEL = 'PERSONNEL'
+    ROLE_ADMIN = 'ADMIN'
+    ROLE_CHOICES = (
+        (ROLE_PERSONNEL, 'Personnel'),
+        (ROLE_ADMIN, 'Administrator'),
+    )
+
     id = models.BigAutoField(primary_key=True)
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -238,6 +244,10 @@ class DolePersonnel(models.Model):
     services = models.ManyToManyField(CsmService, blank=True, related_name='assigned_personnel', db_table='ctms_dole_personnel_services')
     is_active = models.BooleanField(default=True)
     must_change_password = models.BooleanField(default=False, help_text="Requires password change on next login")
+    role = models.CharField(
+        max_length=12, choices=ROLE_CHOICES, default=ROLE_PERSONNEL,
+        help_text="Administrator grants User Management, Reports and Services only for regional-office accounts",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
