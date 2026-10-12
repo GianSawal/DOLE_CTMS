@@ -377,131 +377,82 @@ def get_service_description(service_name):
 
 
 class PublicDisplayBoardView(APIView):
+    """
+    Office TV board: one card per active, non-archived window created on the
+    Windows page, with what each window is serving. Queue numbers only, never
+    client names (RA 10173).
+    """
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, office_id):
         office = get_object_or_404(CsmOffice, pk=office_id, is_active=True)
         today = timezone.localdate()
 
-        # Check if caller has an authenticated staff account with division restrictions or query param
-        user = request.user if (request.user and request.user.is_authenticated) else None
-        user_divisions = []
-        restrict_to_divisions = False
+        windows = list(
+            CtmsCounter.objects.filter(office=office, is_active=True, archived_at__isnull=True)
+            .select_related('assigned_user', 'assigned_user__dole_personnel')
+            .order_by('sort_order', 'name', 'id')
+        )
+        serving_by_window = {}
+        for tx in (CtmsTransaction.objects
+                   .filter(counter__in=windows, status=CtmsTransaction.STATUS_SERVING)
+                   .select_related('service', 'assigned_to', 'assigned_to__dole_personnel')
+                   .order_by('called_at')):
+            serving_by_window[tx.counter_id] = tx  # latest call per window wins
 
-        if user and user.is_staff and not user.is_superuser and not has_universal_division_access(user):
-            has_explicit_divs = CtmsStaffDivision.objects.filter(user=user).exists()
-            if not has_explicit_divs:
-                try:
-                    profile = getattr(user, 'employee_profile', None)
-                    has_explicit_divs = bool(profile and profile.divisions.exists())
-                except Exception:
-                    has_explicit_divs = False
-
-            if has_explicit_divs:
-                allowed_divs = get_staff_divisions(user).exclude(name__iexact='ALL')
-                user_divisions = list(allowed_divs.values_list('name', flat=True))
-                all_ops_count = CsmDivision.objects.exclude(name__iexact='ALL').count()
-                if allowed_divs.count() < all_ops_count:
-                    restrict_to_divisions = bool(user_divisions)
-                else:
-                    restrict_to_divisions = False
-
-        divisions_param = request.query_params.get('divisions') or request.query_params.get('division')
-        if divisions_param:
-            req_div_names = [d.strip() for d in divisions_param.split(',') if d.strip() and d.strip().upper() != 'ALL']
-            if req_div_names:
-                user_divisions = req_div_names
-                restrict_to_divisions = True
-
-        allowed_div_norms = {
-            re.sub(r'[\s\-_]+', '', n.upper())
-            for n in user_divisions if n
-        }
-
-        # Currently serving transactions at this office (including multi-day pending tickets resumed today)
-        serving_qs = CtmsTransaction.objects.filter(
-            office=office,
-            status=CtmsTransaction.STATUS_SERVING,
-        ).filter(
-            models.Q(queue_date=today) | models.Q(called_at__date=today)
-        ).select_related('counter', 'service', 'service__division').order_by('-called_at')
-
-        serving_data = []
-        filtered_serving_objs = []
-        for s in serving_qs:
-            service_name = s.service.name if s.service else ""
-            div = s.service.division if (s.service and s.service.division) else None
-            div_name = div.name if div else ""
-            counter_name = s.counter.name if s.counter else "Counter"
-
-            if restrict_to_divisions:
-                tx_div_norm = re.sub(r'[\s\-_]+', '', (div_name or counter_name).upper())
-                if tx_div_norm not in allowed_div_norms:
-                    continue
-
-            filtered_serving_objs.append(s)
-            serving_data.append({
-                "id": s.id,
-                "counter": counter_name,
-                "queue_no": s.queue_no,
-                "called_at": s.called_at.isoformat() if s.called_at else None,
-                "service_name": service_name,
-                "service_description": get_service_description(service_name),
-                "assigned_personnel": s.assigned_personnel or "",
-                "is_priority": s.is_priority,
-                "division_name": div_name or (counter_name if counter_name != "Counter" else ""),
-                "division_id": div.id if div else None,
+        window_cards = []
+        serving = []
+        for w in windows:
+            tx = serving_by_window.get(w.id)
+            current = None
+            if tx:
+                service_name = tx.service.name if tx.service_id else ""
+                personnel = services.personnel_display_name(tx.assigned_to) if tx.assigned_to_id else (tx.assigned_personnel or "")
+                current = {
+                    "id": tx.id,
+                    "queue_no": tx.queue_no,
+                    "is_priority": tx.is_priority,
+                    "service_name": service_name,
+                    "service_description": get_service_description(service_name),
+                    "personnel": personnel,
+                    "called_at": tx.called_at.isoformat() if tx.called_at else None,
+                }
+                serving.append({
+                    "id": tx.id,
+                    "counter": w.name,
+                    "queue_no": tx.queue_no,
+                    "called_at": current["called_at"],
+                    "service_name": service_name,
+                    "assigned_personnel": personnel,
+                    "is_priority": tx.is_priority,
+                })
+            window_cards.append({
+                "id": w.id,
+                "name": w.name,
+                "personnel_name": services.personnel_display_name(w.assigned_user) if w.assigned_user_id else "",
+                "current": current,
             })
 
-        # Next waiting queue numbers (priority first, then FIFO) - numbers only, never names!
-        next_waiting_qs = CtmsTransaction.objects.filter(
-            office=office,
-            status=CtmsTransaction.STATUS_WAITING,
-            queue_date=today
-        ).select_related('service', 'service__division').order_by('-is_priority', 'checked_in_at')[:50]
+        next_qs = CtmsTransaction.objects.filter(
+            office=office, status=CtmsTransaction.STATUS_WAITING, queue_date=today
+        ).order_by('-is_priority', 'checked_in_at', 'id').values_list('queue_no', 'is_priority')[:25]
+        next_details = [{"queue_no": q, "is_priority": p} for q, p in next_qs]
 
-        next_details = []
-        for tx in next_waiting_qs:
-            div = tx.service.division if (tx.service and tx.service.division) else None
-            div_name = div.name if div else ""
-
-            if restrict_to_divisions:
-                tx_div_norm = re.sub(r'[\s\-_]+', '', div_name.upper())
-                if tx_div_norm not in allowed_div_norms:
-                    continue
-
-            next_details.append({
-                "queue_no": tx.queue_no,
-                "is_priority": tx.is_priority,
-                "division_name": div_name,
-                "division_id": div.id if div else None,
-                "service_name": tx.service.name if tx.service else "",
-            })
-
-        next_details = next_details[:25]
-        next_queue_numbers = [item["queue_no"] for item in next_details[:10]]
-
-        first_serving = filtered_serving_objs[0] if filtered_serving_objs else None
-        latest_called_at = first_serving.called_at.isoformat() if first_serving and first_serving.called_at else None
-
-
-        # ARTA video is linked locally by staff on each TV display — not served from the server
-        arta_video_url = ""
-
-        all_divisions = list(CsmDivision.objects.exclude(name__iexact='ALL').values_list('name', flat=True).order_by('id'))
+        latest = max(serving, key=lambda s: s["called_at"] or "", default=None)
 
         return Response({
             "office": CsmOfficeSerializer(office).data,
-            "serving": serving_data,
-            "next": next_queue_numbers,
+            "windows": window_cards,
+            "serving": serving,
+            "next": [d["queue_no"] for d in next_details[:10]],
             "next_details": next_details,
-            "user_divisions": user_divisions,
-            "all_divisions": all_divisions,
-            "latest_called_at": latest_called_at,
-            "latest_called_queue_no": first_serving.queue_no if first_serving else None,
-            "latest_called_counter": (first_serving.counter.name if first_serving.counter else "Counter") if first_serving else None,
-            "latest_called_personnel": (first_serving.assigned_personnel or "") if first_serving else None,
-            "arta_video_url": arta_video_url,
+            "waiting_count": CtmsTransaction.objects.filter(
+                office=office, status=CtmsTransaction.STATUS_WAITING, queue_date=today
+            ).count(),
+            "latest_called_at": latest["called_at"] if latest else None,
+            "latest_called_queue_no": latest["queue_no"] if latest else None,
+            "latest_called_counter": latest["counter"] if latest else None,
+            "latest_called_personnel": latest["assigned_personnel"] if latest else None,
             "updated_at": timezone.now().isoformat(),
         })
 

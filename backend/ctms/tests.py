@@ -1268,3 +1268,57 @@ class Stage4MyClientsAndTransferTestCase(CsmTablesTestCase):
         tx = create_transaction(self.bataan, self.service)
         res = self._transfer(tx, self.ana, self.ben)
         self.assertEqual(res.status_code, 409)
+
+
+class Stage5DisplayBoardTestCase(CsmTablesTestCase):
+    """Stage 5: the TV board renders exactly the office's active windows."""
+
+    def setUp(self):
+        self.bataan = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.pampanga = CsmOffice.objects.create(name="Pampanga Field Office", code="PAM", is_active=True)
+        self.service = CsmService.objects.create(name="SEnA Assistance", is_active=True, sort_order=1)
+        self.ana = User.objects.create_user(username="ana", password="pw", is_staff=True, first_name="Ana", last_name="Reyes")
+        CtmsStaffOffice.objects.create(user=self.ana, office=self.bataan)
+        self.windows = [CtmsCounter.objects.create(office=self.bataan, name=f"Window {i}", sort_order=i) for i in range(1, 5)]
+        self.windows[0].assigned_user = self.ana
+        self.windows[0].save()
+        CtmsCounter.objects.create(office=self.pampanga, name="Pampanga Window", sort_order=1)
+        self.client = APIClient()
+
+    def _board(self, office=None):
+        return self.client.get(f"/api/public/display/{(office or self.bataan).id}/").data
+
+    def test_four_windows_four_cards_in_order(self):
+        names = [w['name'] for w in self._board()['windows']]
+        self.assertEqual(names, ["Window 1", "Window 2", "Window 3", "Window 4"])
+
+    def test_cards_follow_window_changes(self):
+        from .services import create_window, archive_window, update_window
+        create_window(self.bataan, "Window 5")
+        archive_window(self.windows[3])
+        update_window(self.windows[2], is_active=False)
+        names = [w['name'] for w in self._board()['windows']]
+        self.assertEqual(names, ["Window 1", "Window 2", "Window 5"])
+
+    def test_card_shows_called_client_without_name(self):
+        tx = create_transaction(self.bataan, self.service, client_name="Confidential Name")
+        call_transaction(tx, self.ana)
+        board = self._board()
+        card = board['windows'][0]
+        self.assertEqual(card['current']['queue_no'], tx.queue_no)
+        self.assertEqual(card['current']['personnel'], "Ana Reyes")
+        self.assertEqual(card['personnel_name'], "Ana Reyes")
+        self.assertIsNone(board['windows'][1]['current'])
+        self.assertEqual(board['latest_called_counter'], "Window 1")
+        self.assertNotIn("Confidential Name", str(board))
+
+    def test_no_other_office_data(self):
+        create_transaction(self.pampanga, self.service)
+        board = self._board()
+        self.assertNotIn("Pampanga Window", [w['name'] for w in board['windows']])
+        self.assertEqual(board['next'], [])
+
+    def test_next_in_line_is_priority_then_fifo(self):
+        create_transaction(self.bataan, self.service)
+        create_transaction(self.bataan, self.service, is_priority=True)
+        self.assertEqual(self._board()['next'], ["P-002", "001"])

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useParams, useLocation } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useParams } from 'react-router-dom';
 import { publicApi } from '../../api/public';
 import { translations } from '../../locales/translations';
 import {
@@ -23,259 +22,15 @@ import {
   pickFolderNative,
 } from '../../utils/localVideoPlaylist';
 
-const fallbackServiceDescriptions = {
-  sena: 'Conciliation-mediation of labor issues, disputes, and worker grievances.',
-  aep: 'Employment permit processing for foreign nationals.',
-  tupad: 'Emergency community employment assistance for displaced workers.',
-  livelihood: 'Grants and enterprise development support for self-employment.',
-  dilp: 'Grants and enterprise development support for self-employment.',
-  spes: 'Youth employment assistance during academic breaks.',
-  '1020': 'Registration of establishments under OSH standards.',
-  cshp: 'Construction safety and health program evaluation & approval.',
-  inspection: 'Compliance verification for general labor standards.',
-  child: 'Working child permit processing under child labor laws.',
-  contractor: 'Contractor & subcontractor registration under D.O. 174.',
-};
-
-function getFallbackDesc(serviceName) {
-  if (!serviceName) return '';
-  const s = serviceName.toLowerCase();
-  for (const [key, desc] of Object.entries(fallbackServiceDescriptions)) {
-    if (s.includes(key)) return desc;
-  }
-  return 'Frontline public service, inquiry assistance, and document processing.';
-}
-
-const KNOWN_DIVISIONS = [
-  { key: 'TSSD 1', alias: 'TSSD1', label: 'TSSD 1', fullName: 'Technical Services & Support Division 1 (Labor Standards / OSH)', color: '#1e40af', accent: '#3b82f6', bgLight: '#dbeafe', bgDark: '#172554', category: 'division' },
-  { key: 'TSSD 2', alias: 'TSSD2', label: 'TSSD 2', fullName: 'Technical Services & Support Division 2 (Employment / Welfare)', color: '#047857', accent: '#10b981', bgLight: '#d1fae5', bgDark: '#064e3b', category: 'division' },
-  { key: 'IMSD', alias: 'IMSD', label: 'IMSD', fullName: 'Internal Management Services Division (Finance / Admin)', color: '#b45309', accent: '#f59e0b', bgLight: '#fef3c7', bgDark: '#451a03', category: 'division' },
-  { key: 'MALSU', alias: 'MALSU', label: 'MALSU', fullName: 'Mediation-Arbitration & Legal Services Unit', color: '#6d28d9', accent: '#8b5cf6', bgLight: '#ede9fe', bgDark: '#3b0764', category: 'division' },
-  { key: 'Front Desk', alias: 'Front Desk', label: 'Front Desk', fullName: 'Front Desk / Public Assistance & Complaints Desk (PACD)', color: '#0f766e', accent: '#14b8a6', bgLight: '#f0fdfa', bgDark: '#134e4a', category: 'counter' },
-  { key: 'Window 1', alias: 'Window 1', label: 'Window 1', fullName: 'Queue Service Window 1', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
-  { key: 'Window 2', alias: 'Window 2', label: 'Window 2', fullName: 'Queue Service Window 2', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
-  { key: 'Window 3', alias: 'Window 3', label: 'Window 3', fullName: 'Queue Service Window 3', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
-  { key: 'Window 4', alias: 'Window 4', label: 'Window 4', fullName: 'Queue Service Window 4', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
-  { key: 'Window 5', alias: 'Window 5', label: 'Window 5', fullName: 'Queue Service Window 5', color: '#4f46e5', accent: '#6366f1', bgLight: '#eef2ff', bgDark: '#312e81', category: 'counter' },
-  { key: 'Window 6', alias: 'Window 6', label: 'Window 6', fullName: 'Queue Service Window 6', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
-  { key: 'Window 7', alias: 'Window 7', label: 'Window 7', fullName: 'Queue Service Window 7', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
-  { key: 'Window 8', alias: 'Window 8', label: 'Window 8', fullName: 'Queue Service Window 8', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
-  { key: 'Window 9', alias: 'Window 9', label: 'Window 9', fullName: 'Queue Service Window 9', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
-  { key: 'Window 10', alias: 'Window 10', label: 'Window 10', fullName: 'Queue Service Window 10', color: '#7c3aed', accent: '#a855f7', bgLight: '#f5f3ff', bgDark: '#4c1d95', category: 'counter' },
-];
-
-function normalizeDiv(name) {
-  return (name || '').toUpperCase().replace(/[\s\-_]+/g, '');
-}
-
-function matchDivision(divName) {
-  if (!divName) return null;
-  const norm = normalizeDiv(divName);
-  // 1. Exact match by key or alias
-  const exact = KNOWN_DIVISIONS.find(d => normalizeDiv(d.key) === norm || normalizeDiv(d.alias) === norm);
-  if (exact) return exact;
-
-  // 2. Window-specific regex check (e.g. "Window 1", "Window 10")
-  const winMatch = norm.match(/^WINDOW(\d+)/);
-  if (winMatch) {
-    const num = winMatch[1];
-    return KNOWN_DIVISIONS.find(d => d.key === `Window ${num}` || normalizeDiv(d.key) === `WINDOW${num}`);
-  }
-
-  // 3. Substring match for divisions
-  return KNOWN_DIVISIONS.find(d => {
-    const aliasNorm = normalizeDiv(d.alias);
-    if (!aliasNorm) return false;
-    return norm.includes(aliasNorm);
-  });
-}
-
-// Dynamically scale down layout and font sizes based on queue volume AND number of simultaneous division columns
-function getDynamicScaling(count, numCols = 1) {
-  const isCrowded = numCols >= 4; // e.g. 4 or 5 divisions simultaneous
-
-  if (isCrowded) {
-    if (count <= 1) {
-      return {
-        queueFontSize: '2.0rem',
-        queueLineHeight: '1',
-        rowPadding: '0.6rem 0.75rem',
-        cardPadding: '0.7rem 0.75rem',
-        counterFontSize: '0.9rem',
-        personnelFontSize: '0.86rem',
-        serviceFontSize: '0.78rem',
-        badgePadding: '0.15rem 0.45rem',
-        statusFontSize: '0.7rem',
-      };
-    } else if (count === 2) {
-      return {
-        queueFontSize: '1.8rem',
-        queueLineHeight: '1',
-        rowPadding: '0.5rem 0.65rem',
-        cardPadding: '0.6rem 0.65rem',
-        counterFontSize: '0.86rem',
-        personnelFontSize: '0.82rem',
-        serviceFontSize: '0.74rem',
-        badgePadding: '0.12rem 0.4rem',
-        statusFontSize: '0.68rem',
-      };
-    } else if (count === 3) {
-      return {
-        queueFontSize: '1.6rem',
-        queueLineHeight: '1.05',
-        rowPadding: '0.45rem 0.55rem',
-        cardPadding: '0.5rem 0.6rem',
-        counterFontSize: '0.82rem',
-        personnelFontSize: '0.8rem',
-        serviceFontSize: '0.72rem',
-        badgePadding: '0.12rem 0.35rem',
-        statusFontSize: '0.65rem',
-      };
-    } else {
-      return {
-        queueFontSize: '1.45rem',
-        queueLineHeight: '1.1',
-        rowPadding: '0.35rem 0.45rem',
-        cardPadding: '0.4rem 0.5rem',
-        counterFontSize: '0.8rem',
-        personnelFontSize: '0.76rem',
-        serviceFontSize: '0.7rem',
-        badgePadding: '0.1rem 0.3rem',
-        statusFontSize: '0.62rem',
-      };
-    }
-  }
-
-  if (numCols === 3) {
-    if (count <= 1) {
-      return {
-        queueFontSize: '2.3rem',
-        queueLineHeight: '1',
-        rowPadding: '0.75rem 0.85rem',
-        cardPadding: '0.75rem 0.85rem',
-        counterFontSize: '0.98rem',
-        personnelFontSize: '0.92rem',
-        serviceFontSize: '0.82rem',
-        badgePadding: '0.18rem 0.5rem',
-        statusFontSize: '0.74rem',
-      };
-    } else if (count === 2) {
-      return {
-        queueFontSize: '2.0rem',
-        queueLineHeight: '1.05',
-        rowPadding: '0.6rem 0.75rem',
-        cardPadding: '0.65rem 0.75rem',
-        counterFontSize: '0.92rem',
-        personnelFontSize: '0.88rem',
-        serviceFontSize: '0.78rem',
-        badgePadding: '0.15rem 0.45rem',
-        statusFontSize: '0.7rem',
-      };
-    } else {
-      return {
-        queueFontSize: '1.7rem',
-        queueLineHeight: '1.1',
-        rowPadding: '0.5rem 0.65rem',
-        cardPadding: '0.5rem 0.65rem',
-        counterFontSize: '0.86rem',
-        personnelFontSize: '0.82rem',
-        serviceFontSize: '0.74rem',
-        badgePadding: '0.12rem 0.4rem',
-        statusFontSize: '0.68rem',
-      };
-    }
-  }
-
-  if (numCols === 2) {
-    if (count <= 1) {
-      return {
-        queueFontSize: '2.6rem',
-        queueLineHeight: '1',
-        rowPadding: '0.9rem 1rem',
-        cardPadding: '0.85rem 1rem',
-        counterFontSize: '1.15rem',
-        personnelFontSize: '1.02rem',
-        serviceFontSize: '0.86rem',
-        badgePadding: '0.25rem 0.6rem',
-        statusFontSize: '0.78rem',
-      };
-    } else if (count === 2) {
-      return {
-        queueFontSize: '2.2rem',
-        queueLineHeight: '1.05',
-        rowPadding: '0.75rem 0.85rem',
-        cardPadding: '0.7rem 0.85rem',
-        counterFontSize: '1.05rem',
-        personnelFontSize: '0.95rem',
-        serviceFontSize: '0.82rem',
-        badgePadding: '0.2rem 0.55rem',
-        statusFontSize: '0.75rem',
-      };
-    } else {
-      return {
-        queueFontSize: '1.85rem',
-        queueLineHeight: '1.1',
-        rowPadding: '0.55rem 0.7rem',
-        cardPadding: '0.55rem 0.7rem',
-        counterFontSize: '0.92rem',
-        personnelFontSize: '0.88rem',
-        serviceFontSize: '0.78rem',
-        badgePadding: '0.18rem 0.45rem',
-        statusFontSize: '0.72rem',
-      };
-    }
-  }
-
-  // Single Column View (numCols === 1)
-  if (count <= 1) {
-    return {
-      queueFontSize: '3.2rem',
-      queueLineHeight: '1',
-      rowPadding: '1.25rem 1rem',
-      cardPadding: '1.25rem 1rem',
-      counterFontSize: '1.35rem',
-      personnelFontSize: '1.15rem',
-      serviceFontSize: '0.92rem',
-      badgePadding: '0.35rem 0.75rem',
-      statusFontSize: '0.85rem',
-    };
-  } else if (count === 2) {
-    return {
-      queueFontSize: '2.7rem',
-      queueLineHeight: '1.05',
-      rowPadding: '1rem 0.9rem',
-      cardPadding: '1rem 0.9rem',
-      counterFontSize: '1.2rem',
-      personnelFontSize: '1.05rem',
-      serviceFontSize: '0.88rem',
-      badgePadding: '0.3rem 0.65rem',
-      statusFontSize: '0.82rem',
-    };
-  } else if (count === 3) {
-    return {
-      queueFontSize: '2.2rem',
-      queueLineHeight: '1.1',
-      rowPadding: '0.75rem 0.85rem',
-      cardPadding: '0.75rem 0.85rem',
-      counterFontSize: '1.05rem',
-      personnelFontSize: '0.98rem',
-      serviceFontSize: '0.84rem',
-      badgePadding: '0.25rem 0.6rem',
-      statusFontSize: '0.78rem',
-    };
-  } else {
-    return {
-      queueFontSize: '1.75rem',
-      queueLineHeight: '1.1',
-      rowPadding: '0.55rem 0.7rem',
-      cardPadding: '0.55rem 0.7rem',
-      counterFontSize: '0.95rem',
-      personnelFontSize: '0.9rem',
-      serviceFontSize: '0.8rem',
-      badgePadding: '0.2rem 0.55rem',
-      statusFontSize: '0.75rem',
-    };
-  }
+// Cards fill the screen width; columns and type shrink as an office adds windows.
+function windowGridSizing(count) {
+  if (count <= 1) return { cols: 1, queueFont: '9rem', nameFont: '2.2rem', pad: '2.25rem' };
+  if (count <= 2) return { cols: 2, queueFont: '7.5rem', nameFont: '2rem', pad: '2rem' };
+  if (count <= 3) return { cols: 3, queueFont: '6rem', nameFont: '1.75rem', pad: '1.75rem' };
+  if (count <= 4) return { cols: 4, queueFont: '4.75rem', nameFont: '1.5rem', pad: '1.5rem' };
+  if (count <= 6) return { cols: 3, queueFont: '4.25rem', nameFont: '1.35rem', pad: '1.25rem' };
+  if (count <= 8) return { cols: 4, queueFont: '3.5rem', nameFont: '1.2rem', pad: '1.1rem' };
+  return { cols: 5, queueFont: '2.8rem', nameFont: '1.05rem', pad: '0.9rem' };
 }
 
 export default function DisplayBoard() {
@@ -288,491 +43,7 @@ export default function DisplayBoard() {
   }, [lang]);
 
   const [displayData, setDisplayData] = useState(null);
-  const { user } = useAuth();
-  const location = useLocation();
-  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
 
-  // Selected divisions & windows for simultaneous TV display
-  const [selectedDivisions, setSelectedDivisions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('ctms_tv_selected_divisions');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch { }
-
-    const oldFilter = localStorage.getItem('ctms_tv_division_filter');
-    if (oldFilter && oldFilter.trim() && oldFilter !== 'ALL') {
-      const parts = oldFilter.split(',').map(s => s.trim()).filter(Boolean);
-      if (parts.length > 0) return parts;
-    }
-
-    return ['TSSD 1', 'TSSD 2', 'IMSD', 'MALSU'];
-  });
-
-  const filterDropdownRef = useRef(null);
-  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
-
-  const updateSelectedDivisions = (newDivs) => {
-    setSelectedDivisions(newDivs);
-    try {
-      localStorage.setItem('ctms_tv_selected_divisions', JSON.stringify(newDivs));
-      localStorage.setItem('ctms_tv_division_filter', newDivs.join(','));
-    } catch (e) {
-      console.warn('Failed to save selected divisions:', e);
-    }
-  };
-
-  const handleToggleDivisionCheckbox = (key) => {
-    const keyNorm = normalizeDiv(key);
-    const exists = selectedDivisions.some(sd => normalizeDiv(sd) === keyNorm || matchDivision(sd)?.key === key);
-    let updated;
-    if (exists) {
-      updated = selectedDivisions.filter(sd => normalizeDiv(sd) !== keyNorm && matchDivision(sd)?.key !== key);
-    } else {
-      updated = [...selectedDivisions, key];
-    }
-    updateSelectedDivisions(updated);
-  };
-
-  const handleSelectOnly = (key) => {
-    updateSelectedDivisions([key]);
-  };
-
-  const handleSelectOperationalOnly = () => {
-    updateSelectedDivisions(['TSSD 1', 'TSSD 2', 'IMSD', 'MALSU']);
-  };
-
-  const handleSelectWindowsOnly = () => {
-    updateSelectedDivisions([
-      'Front Desk',
-      'Window 1', 'Window 2', 'Window 3', 'Window 4', 'Window 5',
-      'Window 6', 'Window 7', 'Window 8', 'Window 9', 'Window 10'
-    ]);
-  };
-
-  const handleSelectAllChoices = () => {
-    updateSelectedDivisions([
-      'TSSD 1', 'TSSD 2', 'IMSD', 'MALSU',
-      'Front Desk',
-      'Window 1', 'Window 2', 'Window 3', 'Window 4', 'Window 5',
-      'Window 6', 'Window 7', 'Window 8', 'Window 9', 'Window 10'
-    ]);
-  };
-
-  const handleClearAllChoices = () => {
-    updateSelectedDivisions([]);
-  };
-
-  // Close filter dropdown on outside click or Escape key
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target)) {
-        setShowFilterDropdown(false);
-      }
-    }
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') {
-        setShowFilterDropdown(false);
-      }
-    }
-    if (showFilterDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleKeyDown);
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-        document.removeEventListener('keydown', handleKeyDown);
-      };
-    }
-  }, [showFilterDropdown]);
-
-  // Custom division display order for Now Serving drag-and-drop
-  const orderStorageKey = officeId ? `ctms_tv_division_order_${officeId}` : 'ctms_tv_division_order';
-  const [customDivisionOrder, setCustomDivisionOrder] = useState(() => {
-    try {
-      const saved = localStorage.getItem(orderStorageKey);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [draggedDiv, setDraggedDiv] = useState(null);
-  const [dragOverDiv, setDragOverDiv] = useState(null);
-
-  // Sync saved division order if officeId changes
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(orderStorageKey);
-      if (saved) {
-        setCustomDivisionOrder(JSON.parse(saved));
-      }
-    } catch { }
-  }, [orderStorageKey]);
-
-  // Calculate divisions eligible for this account/screen
-  const eligibleDivisions = useMemo(() => {
-    // 1. URL search params override (?divisions=TSSD1,TSSD2 or ?division=TSSD1)
-    const paramDivs = searchParams.get('divisions') || searchParams.get('division');
-    if (paramDivs) {
-      const parts = paramDivs.split(',').map(s => s.trim()).filter(Boolean);
-      if (parts.length > 0) return parts;
-    }
-
-    const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
-
-    // 2. Check logged-in user assigned divisions
-    const userDivs = (user?.assigned_divisions || user?.division_names || [])
-      .map(d => (typeof d === 'string' ? d : d?.name))
-      .filter(Boolean);
-    const userDivNorms = userDivs.map(d => normalizeDiv(d));
-    const isUniversalNorm = (norm) => norm === 'ALL' || norm === 'FRONTDESK' || /^WINDOW(\d+)$/.test(norm);
-    const userHasAll = user?.is_superuser || user?.all_services_access || user?.all_divisions_access || (userDivs.length >= 4 && allDivNorms.every(req => userDivNorms.includes(req))) || userDivNorms.some(isUniversalNorm);
-
-    // Restrict ONLY if staff user has a restricted subset (e.g. only 1 or 2 divisions, NOT all divisions)
-    if (user && !user.is_superuser && userDivs.length > 0 && !userHasAll) {
-      return userDivs;
-    }
-
-    // 3. Backend response user_divisions (if backend specifically returned a restricted subset)
-    if (displayData?.user_divisions && displayData.user_divisions.length > 0) {
-      const udNorms = displayData.user_divisions.map(d => normalizeDiv(d));
-      const backendHasAll = allDivNorms.every(req => udNorms.includes(req));
-      if (!backendHasAll) {
-        return displayData.user_divisions;
-      }
-    }
-
-    // 4. For accounts with access to all divisions (or public TV display of all office divisions):
-    // Retrieve all operational divisions from backend response or fallback to KNOWN_DIVISIONS
-    let baseDivs = [];
-    if (displayData?.all_divisions && displayData.all_divisions.length > 0) {
-      baseDivs = displayData.all_divisions.filter(d => d && d.toUpperCase().trim() !== 'ALL');
-    }
-    if (baseDivs.length === 0) {
-      baseDivs = KNOWN_DIVISIONS.filter(d => d.category === 'division').map(d => d.key);
-    }
-
-    // Also include any active division found in serving or upcoming queue
-    const resultDivs = [...baseDivs];
-    const existingNorms = new Set(resultDivs.map(d => normalizeDiv(d)));
-
-    (displayData?.serving || []).forEach(s => {
-      if (s.division_name && !existingNorms.has(normalizeDiv(s.division_name))) {
-        resultDivs.push(s.division_name);
-        existingNorms.add(normalizeDiv(s.division_name));
-      }
-    });
-    (displayData?.next_details || []).forEach(n => {
-      if (n.division_name && !existingNorms.has(normalizeDiv(n.division_name))) {
-        resultDivs.push(n.division_name);
-        existingNorms.add(normalizeDiv(n.division_name));
-      }
-    });
-
-    // Canonical order: TSSD 1, TSSD 2, IMSD, MALSU, followed by any additional custom divisions
-    const standardOrder = ['TSSD 1', 'TSSD1', 'TSSD 2', 'TSSD2', 'IMSD', 'MALSU'];
-    return resultDivs.sort((a, b) => {
-      const normA = normalizeDiv(a);
-      const normB = normalizeDiv(b);
-      const idxA = standardOrder.findIndex(o => normalizeDiv(o) === normA);
-      const idxB = standardOrder.findIndex(o => normalizeDiv(o) === normB);
-      const posA = idxA !== -1 ? idxA : 999;
-      const posB = idxB !== -1 ? idxB : 999;
-      return posA - posB;
-    });
-  }, [searchParams, user, displayData]);
-
-  // Check if account has access to all divisions (Superuser, unconstrained TV display, or all 4 divisions accessible)
-  const hasAccessToAllDivisions = useMemo(() => {
-    // 1. Superuser always has full access
-    if (user?.is_superuser) return true;
-
-    const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
-
-    // 2. If URL parameters restrict divisions
-    const paramDivs = searchParams.get('divisions') || searchParams.get('division');
-    if (paramDivs) {
-      const parts = paramDivs.split(',').map(s => s.trim()).filter(Boolean);
-      if (!allDivNorms.every(req => parts.some(p => normalizeDiv(p) === req))) {
-        return false;
-      }
-    }
-
-    // 3. If logged in staff user has assigned divisions, verify if they have all 4 divisions
-    const userDivs = (user?.assigned_divisions || user?.division_names || [])
-      .map(d => (typeof d === 'string' ? d : d?.name))
-      .filter(Boolean);
-    if (user && !user.is_superuser && userDivs.length > 0) {
-      if (user?.all_services_access || user?.all_divisions_access) return true;
-      const userDivNorms = userDivs.map(d => normalizeDiv(d));
-      if (userDivNorms.some(d => d === 'ALL' || d === 'FRONTDESK' || /^WINDOW(\d+)$/.test(d))) return true;
-      return allDivNorms.every(req => userDivNorms.includes(req));
-    }
-
-    // 4. Verify all 4 required divisions exist in eligibleDivisions
-    const eligibleNorms = eligibleDivisions.map(d => normalizeDiv(d));
-    return allDivNorms.every(req => eligibleNorms.includes(req));
-  }, [user, searchParams, eligibleDivisions]);
-
-  // Reset selected divisions if account loses full division access
-  useEffect(() => {
-    if (!hasAccessToAllDivisions && eligibleDivisions.length > 0) {
-      const filtered = selectedDivisions.filter(sd =>
-        eligibleDivisions.some(ed => normalizeDiv(ed) === normalizeDiv(sd))
-      );
-      if (filtered.length !== selectedDivisions.length && filtered.length > 0) {
-        updateSelectedDivisions(filtered);
-      }
-    }
-  }, [hasAccessToAllDivisions, eligibleDivisions]);
-
-  const simultaneousTriggerLabel = useMemo(() => {
-    if (!selectedDivisions || selectedDivisions.length === 0) {
-      return 'Display View: None (Choose)';
-    }
-
-    const ops = ['TSSD 1', 'TSSD 2', 'IMSD', 'MALSU'];
-    const isAllOps = ops.length === selectedDivisions.length &&
-      ops.every(op => selectedDivisions.some(s => normalizeDiv(s) === normalizeDiv(op)));
-
-    if (isAllOps) {
-      return 'Simultaneous (All Divisions: TSSD 1, TSSD 2, IMSD & MALSU)';
-    }
-
-    if (selectedDivisions.length === 1) {
-      const match = matchDivision(selectedDivisions[0]);
-      return `Show ${match?.label || selectedDivisions[0]} Only`;
-    }
-
-    if (selectedDivisions.length <= 3) {
-      const labels = selectedDivisions.map(d => matchDivision(d)?.label || d);
-      return `Simultaneous (${labels.join(' & ')})`;
-    }
-
-    return `Simultaneous (${selectedDivisions.length} Active)`;
-  }, [selectedDivisions]);
-
-  const operationalDivisionChoices = useMemo(() => {
-    const base = KNOWN_DIVISIONS.filter(d => d.category === 'division');
-    if (user && !user.is_superuser && !hasAccessToAllDivisions && eligibleDivisions.length > 0) {
-      return base.filter(d => eligibleDivisions.some(ed => normalizeDiv(ed) === normalizeDiv(d.key)));
-    }
-    (eligibleDivisions || []).forEach(ed => {
-      const match = matchDivision(ed);
-      if (!match || match.category === 'division') {
-        const norm = normalizeDiv(ed);
-        if (!base.some(b => normalizeDiv(b.key) === norm)) {
-          base.push({
-            key: ed,
-            alias: ed,
-            label: ed,
-            fullName: ed,
-            color: '#3b82f6',
-            accent: '#60a5fa',
-            bgLight: '#eff6ff',
-            bgDark: '#1e293b',
-            category: 'division',
-          });
-        }
-      }
-    });
-    return base;
-  }, [eligibleDivisions, user, hasAccessToAllDivisions]);
-
-  const counterWindowChoices = useMemo(() => {
-    return KNOWN_DIVISIONS.filter(d => d.category === 'counter');
-  }, []);
-
-  // Active divisions & windows to render simultaneously
-  const activeDivisionsToRender = useMemo(() => {
-    // 1. URL search params override (?divisions=TSSD1,TSSD2 or ?division=TSSD1)
-    const paramDivs = searchParams.get('divisions') || searchParams.get('division');
-    if (paramDivs) {
-      const parts = paramDivs.split(',').map(s => s.trim()).filter(Boolean);
-      if (parts.length > 0) return parts;
-    }
-
-    // 2. Restricted staff account check
-    if (user && !user.is_superuser && !hasAccessToAllDivisions && eligibleDivisions.length > 0) {
-      const userAllowed = selectedDivisions.filter(sd =>
-        eligibleDivisions.some(ed => normalizeDiv(ed) === normalizeDiv(sd))
-      );
-      if (userAllowed.length > 0) {
-        return userAllowed;
-      }
-      return eligibleDivisions;
-    }
-
-    if (!selectedDivisions || selectedDivisions.length === 0) {
-      return [];
-    }
-
-    let result = [...selectedDivisions];
-
-    // Apply custom order if present
-    if (customDivisionOrder && customDivisionOrder.length > 0) {
-      result.sort((a, b) => {
-        const idxA = customDivisionOrder.findIndex(d => normalizeDiv(d) === normalizeDiv(a));
-        const idxB = customDivisionOrder.findIndex(d => normalizeDiv(d) === normalizeDiv(b));
-        const posA = idxA !== -1 ? idxA : 999;
-        const posB = idxB !== -1 ? idxB : 999;
-        return posA - posB;
-      });
-    }
-
-    return result;
-  }, [searchParams, user, hasAccessToAllDivisions, eligibleDivisions, selectedDivisions, customDivisionOrder]);
-
-  // Reorder divisions via drag-and-drop
-  const handleDropDivision = (sourceDivName, targetDivName) => {
-    if (!sourceDivName || !targetDivName || sourceDivName === targetDivName) return;
-
-    setCustomDivisionOrder(prev => {
-      const master = [...(prev || [])];
-      const allDivs = [...activeDivisionsToRender, ...selectedDivisions];
-      allDivs.forEach(div => {
-        if (!master.some(m => normalizeDiv(m) === normalizeDiv(div))) {
-          master.push(div);
-        }
-      });
-
-      const sourceIdx = master.findIndex(d => normalizeDiv(d) === normalizeDiv(sourceDivName));
-      const targetIdx = master.findIndex(d => normalizeDiv(d) === normalizeDiv(targetDivName));
-
-      if (sourceIdx === -1 || targetIdx === -1 || sourceIdx === targetIdx) {
-        return prev;
-      }
-
-      const [moved] = master.splice(sourceIdx, 1);
-      master.splice(targetIdx, 0, moved);
-
-      try {
-        localStorage.setItem(orderStorageKey, JSON.stringify(master));
-      } catch (e) {
-        console.warn('Failed to save TV division order:', e);
-      }
-
-      return master;
-    });
-  };
-
-  // Helper to check if a division/counter string matches one of activeDivisionsToRender
-  const findMatchingActiveDivision = useMemo(() => {
-    return (divOrCounterName) => {
-      if (!divOrCounterName) return null;
-      const direct = activeDivisionsToRender.find(
-        targetDiv => normalizeDiv(targetDiv) === normalizeDiv(divOrCounterName)
-      );
-      if (direct) return direct;
-      for (const targetDiv of activeDivisionsToRender) {
-        const m1 = matchDivision(targetDiv);
-        const m2 = matchDivision(divOrCounterName);
-        if (m1 && m2 && m1.key === m2.key) {
-          return targetDiv;
-        }
-      }
-      return null;
-    };
-  }, [activeDivisionsToRender]);
-
-  // Group serving items strictly by division or counter
-  const servingByDivision = useMemo(() => {
-    const groups = {};
-    activeDivisionsToRender.forEach(div => {
-      groups[div] = [];
-    });
-
-    (displayData?.serving || []).forEach(item => {
-      activeDivisionsToRender.forEach(col => {
-        const colMeta = matchDivision(col);
-        const isCounterCol = colMeta?.category === 'counter' || /^WINDOW(\d+)$/i.test(normalizeDiv(col)) || normalizeDiv(col) === 'FRONTDESK';
-
-        let matches = false;
-        if (isCounterCol) {
-          // Counter column matches if ticket was called at this counter
-          if (item.counter && (normalizeDiv(item.counter) === normalizeDiv(col) || matchDivision(item.counter)?.key === col)) {
-            matches = true;
-          }
-        } else {
-          // Division column matches if ticket belongs to this division
-          if (item.division_name && (normalizeDiv(item.division_name) === normalizeDiv(col) || matchDivision(item.division_name)?.key === col)) {
-            matches = true;
-          } else if (!item.division_name && item.counter && (normalizeDiv(item.counter) === normalizeDiv(col) || matchDivision(item.counter)?.key === col)) {
-            matches = true;
-          }
-        }
-
-        if (matches && !groups[col].some(existing => existing.id === item.id)) {
-          groups[col].push(item);
-        }
-      });
-    });
-
-    return groups;
-  }, [activeDivisionsToRender, displayData?.serving]);
-
-  // Group upcoming tickets strictly by division or counter
-  const nextByDivision = useMemo(() => {
-    const groups = {};
-    activeDivisionsToRender.forEach(div => {
-      groups[div] = [];
-    });
-
-    (displayData?.next_details || []).forEach(item => {
-      activeDivisionsToRender.forEach(col => {
-        const colMeta = matchDivision(col);
-        const isCounterCol = colMeta?.category === 'counter' || /^WINDOW(\d+)$/i.test(normalizeDiv(col)) || normalizeDiv(col) === 'FRONTDESK';
-
-        let matches = false;
-        if (!isCounterCol) {
-          if (item.division_name && (normalizeDiv(item.division_name) === normalizeDiv(col) || matchDivision(item.division_name)?.key === col)) {
-            matches = true;
-          }
-        } else {
-          if (item.counter && (normalizeDiv(item.counter) === normalizeDiv(col) || matchDivision(item.counter)?.key === col)) {
-            matches = true;
-          }
-        }
-
-        if (matches && !groups[col].includes(item.queue_no)) {
-          groups[col].push(item.queue_no);
-        }
-      });
-    });
-
-    return groups;
-  }, [activeDivisionsToRender, displayData?.next_details]);
-
-  // Right-side "NEXT IN LINE" list filtered strictly to activeDivisionsToRender
-  const filteredNextNumbers = useMemo(() => {
-    if (Array.isArray(displayData?.next_details) && displayData.next_details.length > 0) {
-      if (activeDivisionsToRender.length > 0 && activeDivisionsToRender.length < 15) {
-        const matched = displayData.next_details.filter(item => {
-          return activeDivisionsToRender.some(col => {
-            const colMeta = matchDivision(col);
-            const isCounterCol = colMeta?.category === 'counter';
-            if (!isCounterCol && item.division_name) {
-              return normalizeDiv(item.division_name) === normalizeDiv(col) || matchDivision(item.division_name)?.key === col;
-            }
-            if (isCounterCol && item.counter) {
-              return normalizeDiv(item.counter) === normalizeDiv(col) || matchDivision(item.counter)?.key === col;
-            }
-            return false;
-          });
-        });
-
-        if (matched.length > 0) {
-          return matched.map(m => m.queue_no).slice(0, 10);
-        }
-      }
-    }
-
-    return (displayData?.next || []).slice(0, 10);
-  }, [displayData?.next, displayData?.next_details, activeDivisionsToRender]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -1346,26 +617,6 @@ export default function DisplayBoard() {
     }
   };
 
-  const findMatchingActiveDivisionRef = useRef(findMatchingActiveDivision);
-  useEffect(() => {
-    findMatchingActiveDivisionRef.current = findMatchingActiveDivision;
-  }, [findMatchingActiveDivision]);
-
-  const divisionsQueryParam = useMemo(() => {
-    const fromUrl = searchParams.get('divisions') || searchParams.get('division');
-    if (fromUrl) return fromUrl;
-    const userDivs = (user?.assigned_divisions || user?.division_names || [])
-      .map(d => (typeof d === 'string' ? d : d?.name))
-      .filter(Boolean);
-    const allDivNorms = ['TSSD1', 'TSSD2', 'IMSD', 'MALSU'];
-    const userDivNorms = userDivs.map(d => normalizeDiv(d));
-    const userHasAll = user?.is_superuser || (userDivs.length >= 4 && allDivNorms.every(req => userDivNorms.includes(req)));
-    if (user && !user.is_superuser && userDivs.length > 0 && !userHasAll) {
-      return userDivs.join(',');
-    }
-    return '';
-  }, [searchParams, user]);
-
   const processedCallIdsRef = useRef(new Set());
 
   useEffect(() => {
@@ -1373,7 +624,7 @@ export default function DisplayBoard() {
 
     async function fetchDisplay() {
       try {
-        const data = await publicApi.getDisplayBoard(officeId, divisionsQueryParam);
+        const data = await publicApi.getDisplayBoard(officeId);
         if (!isMounted) return;
 
         const currentLatestCall = data.latest_called_at || (data.serving?.[0]?.called_at) || null;
@@ -1443,9 +694,7 @@ export default function DisplayBoard() {
               processedCallIdsRef.current.add(event.data.callId);
             }
             if (!event.data.officeId || String(event.data.officeId) === String(officeId)) {
-              const calledCounter = event.data.counter || '';
-              const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivisionRef.current?.(calledCounter);
-              if (!isOtherDivision && soundEnabled) {
+              if (soundEnabled) {
                 announceNowServing({
                   queueNo: event.data.queueNo,
                   counter: event.data.counter,
@@ -1483,9 +732,7 @@ export default function DisplayBoard() {
             processedCallIdsRef.current.add(item.callId);
           }
           if (!item.officeId || String(item.officeId) === String(officeId)) {
-            const calledCounter = item.counter || '';
-            const isOtherDivision = matchDivision(calledCounter) && !findMatchingActiveDivisionRef.current?.(calledCounter);
-            if (!isOtherDivision && soundEnabled) {
+            if (soundEnabled) {
               announceNowServing({
                 queueNo: item.queueNo,
                 counter: item.counter,
@@ -1512,7 +759,7 @@ export default function DisplayBoard() {
       }
       window.removeEventListener('storage', handleStorage);
     };
-  }, [officeId, soundEnabled, divisionsQueryParam]);
+  }, [officeId, soundEnabled]);
 
   const toggleFullScreen = () => {
     if (!document.fullscreenElement) {
@@ -1529,6 +776,11 @@ export default function DisplayBoard() {
       </div>
     );
   }
+
+  const windows = displayData?.windows || [];
+  const sizing = windowGridSizing(windows.length);
+  const nextNumbers = displayData?.next || [];
+  const waitingCount = displayData?.waiting_count ?? nextNumbers.length;
 
   const themeStyles = {
     pageBg: isLight ? '#e5e9f0' : '#0a0f1d',
@@ -1727,383 +979,6 @@ export default function DisplayBoard() {
           >
             🌐 {lang === 'en' ? 'Filipino' : 'English'}
           </button>
-          {(hasAccessToAllDivisions || eligibleDivisions.length > 1) && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', position: 'relative' }} ref={filterDropdownRef}>
-              <button
-                type="button"
-                onClick={() => setShowFilterDropdown(prev => !prev)}
-                className={`staff-custom-select ${isLight ? 'tv-select-light' : 'tv-select-dark'}`}
-                style={{
-                  padding: '0.3rem 0.85rem',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  borderRadius: '6px',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.25)',
-                  backgroundColor: isLight ? '#ffffff' : '#0f172a',
-                  color: isLight ? '#0f172a' : '#ffffff',
-                  boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.08)' : '0 2px 4px rgba(0,0,0,0.3)',
-                  minHeight: '32px',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  whiteSpace: 'nowrap',
-                  userSelect: 'none',
-                }}
-                title="Click to choose divisions or windows with checkboxes"
-              >
-                <span style={{ fontSize: '0.85rem' }}>☑</span>
-                <span>{simultaneousTriggerLabel}</span>
-                <span style={{ fontSize: '0.65rem', opacity: 0.7, transform: showFilterDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}>▼</span>
-              </button>
-
-              {showFilterDropdown && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 8px)',
-                    right: 0,
-                    width: '360px',
-                    maxHeight: '480px',
-                    backgroundColor: isLight ? '#ffffff' : '#0f172a',
-                    border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: '12px',
-                    boxShadow: isLight
-                      ? '0 12px 28px -4px rgba(0, 0, 0, 0.15), 0 8px 10px -4px rgba(0, 0, 0, 0.08)'
-                      : '0 16px 36px -4px rgba(0, 0, 0, 0.7), 0 8px 16px -4px rgba(0, 0, 0, 0.5)',
-                    zIndex: 9999,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {/* Popover Header */}
-                  <div style={{
-                    padding: '0.75rem 1rem 0.6rem',
-                    borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-                    backgroundColor: isLight ? '#f8fafc' : '#1e293b',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                      <div style={{ fontWeight: 800, fontSize: '0.85rem', color: isLight ? '#0f172a' : '#f8fafc' }}>
-                        Simultaneous View Choices
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowFilterDropdown(false)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: isLight ? '#64748b' : '#94a3b8',
-                          cursor: 'pointer',
-                          fontSize: '0.95rem',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                        }}
-                        title="Close"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div style={{ fontSize: '0.73rem', color: isLight ? '#64748b' : '#94a3b8', marginBottom: '0.5rem' }}>
-                      Check which divisions or windows to display together:
-                    </div>
-
-                    {/* Quick Action Badges */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                      <button
-                        type="button"
-                        onClick={handleSelectOperationalOnly}
-                        className="btn btn-xs"
-                        style={{
-                          fontSize: '0.68rem',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '4px',
-                          fontWeight: 700,
-                          backgroundColor: isLight ? '#e0f2fe' : 'rgba(56, 189, 248, 0.15)',
-                          color: isLight ? '#0369a1' : '#38bdf8',
-                          border: isLight ? '1px solid #bae6fd' : '1px solid rgba(56, 189, 248, 0.3)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        All Divisions
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSelectWindowsOnly}
-                        className="btn btn-xs"
-                        style={{
-                          fontSize: '0.68rem',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '4px',
-                          fontWeight: 700,
-                          backgroundColor: isLight ? '#ede9fe' : 'rgba(168, 85, 247, 0.15)',
-                          color: isLight ? '#6d28d9' : '#c084fc',
-                          border: isLight ? '1px solid #ddd6fe' : '1px solid rgba(168, 85, 247, 0.3)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Windows Only
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSelectAllChoices}
-                        className="btn btn-xs"
-                        style={{
-                          fontSize: '0.68rem',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '4px',
-                          fontWeight: 700,
-                          backgroundColor: isLight ? '#dcfce7' : 'rgba(34, 197, 94, 0.15)',
-                          color: isLight ? '#15803d' : '#4ade80',
-                          border: isLight ? '1px solid #bbf7d0' : '1px solid rgba(34, 197, 94, 0.3)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Select All
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleClearAllChoices}
-                        className="btn btn-xs"
-                        style={{
-                          fontSize: '0.68rem',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '4px',
-                          fontWeight: 700,
-                          backgroundColor: isLight ? '#fee2e2' : 'rgba(239, 68, 68, 0.15)',
-                          color: isLight ? '#b91c1c' : '#f87171',
-                          border: isLight ? '1px solid #fecaca' : '1px solid rgba(239, 68, 68, 0.3)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Scrollable Checkbox List */}
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0' }}>
-                    {/* Group 1: Operational Divisions */}
-                    <div style={{
-                      padding: '0.35rem 0.9rem',
-                      fontSize: '0.68rem',
-                      fontWeight: 800,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      color: isLight ? '#64748b' : '#94a3b8',
-                      backgroundColor: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
-                    }}>
-                      Operational Divisions
-                    </div>
-                    {operationalDivisionChoices.map(div => {
-                      const checked = selectedDivisions.some(sd => normalizeDiv(sd) === normalizeDiv(div.key) || matchDivision(sd)?.key === div.key);
-                      return (
-                        <div
-                          key={div.key}
-                          onClick={() => handleToggleDivisionCheckbox(div.key)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '0.45rem 0.9rem',
-                            cursor: 'pointer',
-                            backgroundColor: checked
-                              ? (isLight ? '#eff6ff' : 'rgba(59, 130, 246, 0.12)')
-                              : 'transparent',
-                            transition: 'background-color 0.1s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!checked) e.currentTarget.style.backgroundColor = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!checked) e.currentTarget.style.backgroundColor = 'transparent';
-                          }}
-                        >
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer', minWidth: 0, flex: 1, margin: 0 }}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => {}}
-                              style={{
-                                width: '15px',
-                                height: '15px',
-                                cursor: 'pointer',
-                                accentColor: div.accent || '#3b82f6',
-                              }}
-                            />
-                            <span
-                              style={{
-                                width: '8px',
-                                height: '8px',
-                                borderRadius: '50%',
-                                backgroundColor: div.accent || '#3b82f6',
-                                flexShrink: 0,
-                              }}
-                            />
-                            <div style={{ minWidth: 0 }}>
-                              <span style={{
-                                fontWeight: checked ? 800 : 600,
-                                fontSize: '0.82rem',
-                                color: isLight ? '#0f172a' : '#f8fafc',
-                              }}>
-                                {div.label}
-                              </span>
-                              {div.fullName && (
-                                <span style={{
-                                  marginLeft: '0.35rem',
-                                  fontSize: '0.7rem',
-                                  color: isLight ? '#64748b' : '#94a3b8',
-                                }}>
-                                  ({div.fullName.split('(')[0].trim()})
-                                </span>
-                              )}
-                            </div>
-                          </label>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectOnly(div.key);
-                            }}
-                            style={{
-                              fontSize: '0.65rem',
-                              fontWeight: 700,
-                              padding: '0.1rem 0.35rem',
-                              borderRadius: '4px',
-                              border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.2)',
-                              background: 'transparent',
-                              color: isLight ? '#64748b' : '#94a3b8',
-                              cursor: 'pointer',
-                            }}
-                            title={`Show only ${div.label}`}
-                          >
-                            Only
-                          </button>
-                        </div>
-                      );
-                    })}
-
-                    {/* Group 2: Service Windows & Desks */}
-                    <div style={{
-                      marginTop: '0.5rem',
-                      padding: '0.35rem 0.9rem',
-                      fontSize: '0.68rem',
-                      fontWeight: 800,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      color: isLight ? '#64748b' : '#94a3b8',
-                      backgroundColor: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
-                    }}>
-                      Counters & Service Windows
-                    </div>
-                    {counterWindowChoices.map(counter => {
-                      const checked = selectedDivisions.some(sd => normalizeDiv(sd) === normalizeDiv(counter.key) || matchDivision(sd)?.key === counter.key);
-                      return (
-                        <div
-                          key={counter.key}
-                          onClick={() => handleToggleDivisionCheckbox(counter.key)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '0.45rem 0.9rem',
-                            cursor: 'pointer',
-                            backgroundColor: checked
-                              ? (isLight ? '#eff6ff' : 'rgba(59, 130, 246, 0.12)')
-                              : 'transparent',
-                            transition: 'background-color 0.1s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!checked) e.currentTarget.style.backgroundColor = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!checked) e.currentTarget.style.backgroundColor = 'transparent';
-                          }}
-                        >
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer', minWidth: 0, flex: 1, margin: 0 }}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => {}}
-                              style={{
-                                width: '15px',
-                                height: '15px',
-                                cursor: 'pointer',
-                                accentColor: counter.accent || '#6366f1',
-                              }}
-                            />
-                            <span
-                              style={{
-                                width: '8px',
-                                height: '8px',
-                                borderRadius: '50%',
-                                backgroundColor: counter.accent || '#6366f1',
-                                flexShrink: 0,
-                              }}
-                            />
-                            <span style={{
-                              fontWeight: checked ? 800 : 600,
-                              fontSize: '0.82rem',
-                              color: isLight ? '#0f172a' : '#f8fafc',
-                            }}>
-                              {counter.label}
-                            </span>
-                          </label>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectOnly(counter.key);
-                            }}
-                            style={{
-                              fontSize: '0.65rem',
-                              fontWeight: 700,
-                              padding: '0.1rem 0.35rem',
-                              borderRadius: '4px',
-                              border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.2)',
-                              background: 'transparent',
-                              color: isLight ? '#64748b' : '#94a3b8',
-                              cursor: 'pointer',
-                            }}
-                            title={`Show only ${counter.label}`}
-                          >
-                            Only
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Popover Footer */}
-                  <div style={{
-                    padding: '0.5rem 0.9rem',
-                    borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-                    backgroundColor: isLight ? '#f8fafc' : '#1e293b',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}>
-                    <span style={{ fontSize: '0.72rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
-                      {selectedDivisions.length} selected
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowFilterDropdown(false)}
-                      className="btn btn-primary btn-xs"
-                      style={{
-                        fontSize: '0.72rem',
-                        padding: '0.2rem 0.75rem',
-                        fontWeight: 700,
-                        borderRadius: '6px',
-                      }}
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
           <button
             onClick={toggleFullScreen}
             className="btn btn-outline btn-sm"
@@ -2119,641 +994,127 @@ export default function DisplayBoard() {
         </div>
       </header>
 
-      {/* Main Grid: Serving Counters & Next Queue */}
+      {/* Main Grid: one card per active window, then next in line + ARTA video */}
       <div style={{
         flex: 1,
         display: 'grid',
-        gridTemplateColumns: activeDivisionsToRender.length >= 4 ? '2.5fr 1fr' : '2.2fr 1fr',
-        gap: activeDivisionsToRender.length >= 4 ? '1.25rem' : '2rem',
+        gridTemplateColumns: 'minmax(0, 2.3fr) minmax(300px, 1fr)',
+        gap: '1.75rem',
       }}>
-        {/* Left Side: NOW SERVING */}
-        <section style={{ display: 'flex', flexDirection: 'column' }}>
+        <section style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <div style={{
             fontSize: '1.25rem',
             fontWeight: 800,
             textTransform: 'uppercase',
             letterSpacing: '0.08em',
             color: themeStyles.sectionTitleColor,
-            marginBottom: '0.85rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
+            marginBottom: '1rem',
           }}>
-            <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#10b981', animation: 'pulse 1.5s infinite' }} />
             {t.display_title}
           </div>
 
-          <div style={{
-            flex: 1,
-            display: 'grid',
-            gridTemplateColumns: activeDivisionsToRender.length > 1
-              ? `repeat(${activeDivisionsToRender.length}, minmax(0, 1fr))`
-              : '1fr',
-            gap: activeDivisionsToRender.length >= 4 ? '0.65rem' : (activeDivisionsToRender.length > 1 ? '0.85rem' : '1.25rem'),
-            minHeight: 0,
-          }}>
-            {activeDivisionsToRender.length === 0 ? (
-              <div style={{
-                gridColumn: '1 / -1',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '3rem 2rem',
-                borderRadius: '16px',
-                backgroundColor: themeStyles.cardBg,
-                border: `2px dashed ${isLight ? '#cbd5e1' : 'rgba(255,255,255,0.2)'}`,
-                boxShadow: themeStyles.cardShadow,
-                color: isLight ? '#64748b' : '#94a3b8',
-                textAlign: 'center',
-                gap: '1rem',
-              }}>
-                <span style={{ fontSize: '3rem' }}>🖥️</span>
-                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: themeStyles.titleColor }}>
-                  No Divisions or Windows Selected
-                </div>
-                <div style={{ fontSize: '0.95rem', maxWidth: '440px', lineHeight: 1.5 }}>
-                  Click the <strong>Simultaneous View</strong> button in the header to choose which operational divisions or service windows will appear on this screen.
-                </div>
-                <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={handleSelectOperationalOnly}
-                    className="btn btn-primary btn-sm"
-                    style={{ fontWeight: 700 }}
-                  >
-                    Show Operational Divisions
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSelectWindowsOnly}
-                    className="btn btn-secondary btn-sm"
-                    style={{ fontWeight: 700 }}
-                  >
-                    Show Windows 1–10
-                  </button>
-                </div>
-              </div>
-            ) : (
-              activeDivisionsToRender.map((divName) => {
-              const divMeta = matchDivision(divName);
-              const divItems = servingByDivision[divName] || [];
-              const divUpcoming = nextByDivision[divName] || [];
-              const isSimultaneous = activeDivisionsToRender.length > 1;
-              const isCrowded = activeDivisionsToRender.length >= 4;
-              const scale = getDynamicScaling(divItems.length, activeDivisionsToRender.length);
-
-              const isDraggable = activeDivisionsToRender.length > 1;
-              const isBeingDragged = draggedDiv === divName;
-              const isDropTarget = dragOverDiv === divName && draggedDiv !== divName;
-
-              return (
-                <div
-                  key={divName}
-                  draggable={isDraggable}
-                  onDragStart={(e) => {
-                    if (!isDraggable) return;
-                    e.dataTransfer.setData('text/plain', divName);
-                    e.dataTransfer.effectAllowed = 'move';
-                    setDraggedDiv(divName);
-                  }}
-                  onDragOver={(e) => {
-                    if (!isDraggable) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                    if (draggedDiv && draggedDiv !== divName && dragOverDiv !== divName) {
-                      setDragOverDiv(divName);
-                    }
-                  }}
-                  onDragEnter={(e) => {
-                    if (!isDraggable) return;
-                    e.preventDefault();
-                    if (draggedDiv && draggedDiv !== divName) {
-                      setDragOverDiv(divName);
-                    }
-                  }}
-                  onDragLeave={(e) => {
-                    if (!isDraggable) return;
-                    if (!e.currentTarget.contains(e.relatedTarget)) {
-                      if (dragOverDiv === divName) {
-                        setDragOverDiv(null);
-                      }
-                    }
-                  }}
-                  onDrop={(e) => {
-                    if (!isDraggable) return;
-                    e.preventDefault();
-                    const source = e.dataTransfer.getData('text/plain') || draggedDiv;
-                    if (source && source !== divName) {
-                      handleDropDivision(source, divName);
-                    }
-                    setDraggedDiv(null);
-                    setDragOverDiv(null);
-                  }}
-                  onDragEnd={() => {
-                    setDraggedDiv(null);
-                    setDragOverDiv(null);
-                  }}
-                  style={{
-                    backgroundColor: themeStyles.cardBg,
+          {windows.length === 0 ? (
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              background: themeStyles.emptyServingBg,
+              border: themeStyles.emptyServingBorder,
+              borderRadius: '16px',
+              color: themeStyles.emptyServingColor,
+              fontSize: '1.4rem',
+              padding: '2rem',
+            }}>
+              {t.no_active_serving}
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${sizing.cols}, minmax(0, 1fr))`,
+              gap: '1.1rem',
+              alignContent: 'start',
+            }}>
+              {windows.map(w => {
+                const cur = w.current;
+                const isFresh = cur && cur.called_at && cur.called_at === displayData?.latest_called_at;
+                return (
+                  <div key={w.id} style={{
+                    background: themeStyles.cardBg,
+                    border: cur ? themeStyles.cardBorder : themeStyles.emptyServingBorder,
+                    borderTop: cur
+                      ? `6px solid ${cur.is_priority ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`
+                      : themeStyles.emptyServingBorder,
+                    boxShadow: isFresh ? `0 0 0 4px ${isLight ? 'rgba(217,119,6,0.35)' : 'rgba(255,198,3,0.45)'}` : themeStyles.cardShadow,
                     borderRadius: '16px',
-                    border: isDropTarget
-                      ? `2px dashed ${divMeta?.accent || '#10b981'}`
-                      : `2px solid ${divMeta?.color || (isLight ? '#3b82f6' : 'rgba(3, 5, 186, 0.6)')}`,
-                    boxShadow: isDropTarget
-                      ? `0 0 0 3px ${isLight ? 'rgba(16, 185, 129, 0.25)' : 'rgba(16, 185, 129, 0.4)'}, ${themeStyles.cardShadow}`
-                      : themeStyles.cardShadow,
+                    padding: sizing.pad,
                     display: 'flex',
                     flexDirection: 'column',
-                    overflow: 'hidden',
-                    position: 'relative',
-                    opacity: isBeingDragged ? 0.45 : 1,
-                    transform: isDropTarget ? 'scale(1.015)' : 'none',
-                    transition: 'transform 0.15s ease, opacity 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
-                  }}
-                >
-                  {/* Division Header Banner */}
-                  <div
-                    style={{
-                      cursor: isDraggable ? (isBeingDragged ? 'grabbing' : 'grab') : 'default',
-                      userSelect: 'none',
-                      padding: isCrowded ? '0.55rem 0.75rem' : (isSimultaneous ? '0.65rem 0.9rem' : '0.85rem 1.25rem'),
-                      backgroundColor: isLight ? (divMeta?.bgLight || '#edf2f7') : (divMeta?.bgDark || '#1e293b'),
-                      borderBottom: `2px solid ${divMeta?.color || (isLight ? '#cbd5e1' : 'rgba(255,255,255,0.1)')}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '0.4rem',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: isCrowded ? '0.45rem' : '0.65rem', minWidth: 0, flex: 1 }}>
-                      <span
-                        style={{
-                          width: isCrowded ? '9px' : (isSimultaneous ? '10px' : '12px'),
-                          height: isCrowded ? '9px' : (isSimultaneous ? '10px' : '12px'),
-                          borderRadius: '50%',
-                          backgroundColor: divMeta?.accent || '#10b981',
-                          boxShadow: `0 0 10px ${divMeta?.accent || '#10b981'}`,
-                          animation: 'pulse 1.5s infinite',
-                          flexShrink: 0,
-                        }}
-                      />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <h2
-                          style={{
-                            fontSize: isCrowded ? '1.1rem' : (isSimultaneous ? '1.22rem' : '1.35rem'),
-                            fontWeight: 900,
-                            letterSpacing: '0.03em',
-                            textTransform: 'uppercase',
-                            color: isLight ? (divMeta?.color || '#0f172a') : '#ffffff',
-                            margin: 0,
-                            lineHeight: 1.15,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                          title={divMeta?.label || divName}
-                        >
-                          {divMeta?.label || divName}
-                        </h2>
-                        {divMeta?.fullName && (
-                          <div
-                            style={{
-                              fontSize: isCrowded ? '0.66rem' : (isSimultaneous ? '0.69rem' : '0.72rem'),
-                              color: isLight ? '#475569' : '#94a3b8',
-                              fontWeight: 500,
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              maxWidth: isCrowded ? '135px' : (isSimultaneous ? '180px' : '280px'),
-                              marginTop: '0.1rem',
-                            }}
-                            title={divMeta.fullName}
-                          >
-                            {divMeta.fullName}
-                          </div>
-                        )}
-                      </div>
+                    gap: '0.5rem',
+                    opacity: cur ? 1 : 0.75,
+                    transition: 'box-shadow 0.3s ease',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: sizing.nameFont, fontWeight: 900, color: themeStyles.titleColor, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                        {w.name}
+                      </span>
+                      {cur?.is_priority && (
+                        <span style={{
+                          fontSize: '0.8rem',
+                          fontWeight: 800,
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '9999px',
+                          background: themeStyles.personnelBadgeBg,
+                          border: themeStyles.personnelBadgeBorder,
+                          color: themeStyles.personnelText,
+                        }}>PRIORITY</span>
+                      )}
                     </div>
 
-                    <span
-                      style={{
-                        fontSize: isCrowded ? '0.7rem' : (isSimultaneous ? '0.74rem' : '0.78rem'),
-                        fontWeight: 800,
-                        padding: isCrowded ? '0.12rem 0.45rem' : (isSimultaneous ? '0.16rem 0.55rem' : '0.2rem 0.6rem'),
-                        borderRadius: '9999px',
-                        backgroundColor: divItems.length > 0
-                          ? (isLight ? '#dcfce7' : 'rgba(16, 185, 129, 0.25)')
-                          : (isLight ? '#edf2f7' : 'rgba(255,255,255,0.08)'),
-                        color: divItems.length > 0
-                          ? (isLight ? '#047857' : '#34d399')
-                          : (isLight ? '#64748b' : '#94a3b8'),
-                        border: divItems.length > 0
-                          ? (isLight ? '1px solid #86efac' : '1px solid rgba(16, 185, 129, 0.4)')
-                          : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.1)'),
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: '5px',
-                          height: '5px',
-                          borderRadius: '50%',
-                          backgroundColor: divItems.length > 0 ? '#10b981' : '#94a3b8',
-                        }}
-                      />
-                      <span>{divItems.length > 0 ? `${divItems.length} Serving` : 'Waiting'}</span>
-                    </span>
-                  </div>
-
-                  {/* Division Table / Card Body */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-                    {divItems.length > 0 ? (
-                      isSimultaneous ? (
-                        /* Simultaneous View: Stacked Ticket Cards so Officer & Service have 100% width */
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          {divItems.map((item, idx) => (
-                            <div
-                              key={item.id || idx}
-                              style={{
-                                padding: scale.cardPadding,
-                                borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-                                backgroundColor: idx % 2 === 1
-                                  ? (isLight ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255, 255, 255, 0.02)')
-                                  : 'transparent',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: isCrowded ? '0.35rem' : '0.45rem',
-                              }}
-                            >
-                              {/* Row 1: Queue Number on Left, Counter and Serving Badge on Right */}
-                              <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: '0.4rem',
-                              }}>
-                                {/* Queue Number */}
-                                <div
-                                  className="mono"
-                                  style={{
-                                    fontSize: scale.queueFontSize,
-                                    lineHeight: 1,
-                                    fontWeight: 900,
-                                    color: item.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
-                                    letterSpacing: '-0.02em',
-                                    textShadow: item.is_priority ? (isLight ? 'none' : '0 0 20px rgba(255, 198, 3, 0.35)') : themeStyles.queueNoShadow,
-                                    display: 'flex',
-                                    alignItems: 'baseline',
-                                    gap: '0.25rem',
-                                  }}
-                                >
-                                  <span>{item.queue_no}</span>
-                                  {item.is_priority && (
-                                    <span style={{ fontSize: '0.85rem', color: isLight ? '#b45309' : 'var(--dole-gold)' }} title="Priority Client">
-                                      ★
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Counter and Serving Badge */}
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.15rem' }}>
-                                  <div
-                                    style={{
-                                      fontSize: scale.counterFontSize,
-                                      fontWeight: 800,
-                                      color: isLight ? '#0f172a' : '#f8fafc',
-                                      textTransform: 'uppercase',
-                                      letterSpacing: '0.03em',
-                                      textAlign: 'right',
-                                      whiteSpace: 'nowrap',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      maxWidth: isCrowded ? '115px' : '160px',
-                                    }}
-                                    title={item.counter}
-                                  >
-                                    {item.counter}
-                                  </div>
-                                  <span
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.25rem',
-                                      fontSize: scale.statusFontSize,
-                                      fontWeight: 700,
-                                      padding: scale.badgePadding,
-                                      borderRadius: '9999px',
-                                      backgroundColor: isLight ? '#ecfdf5' : 'rgba(16, 185, 129, 0.2)',
-                                      color: isLight ? '#047857' : '#34d399',
-                                    }}
-                                  >
-                                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                                    <span>Serving</span>
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Row 2: Assigned Personnel / Officer */}
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '0.35rem',
-                                  fontSize: scale.personnelFontSize,
-                                  fontWeight: 700,
-                                  color: isLight ? '#1e3a8a' : '#93c5fd',
-                                  backgroundColor: isLight ? 'rgba(30, 58, 138, 0.05)' : 'rgba(147, 197, 253, 0.08)',
-                                  padding: '0.25rem 0.5rem',
-                                  borderRadius: '6px',
-                                  border: isLight ? '1px solid rgba(30, 58, 138, 0.12)' : '1px solid rgba(147, 197, 253, 0.12)',
-                                  minWidth: 0,
-                                }}
-                              >
-                                <span style={{ fontSize: '0.82rem', flexShrink: 0 }}>👤</span>
-                                <span
-                                  style={{
-                                    wordBreak: 'break-word',
-                                    lineHeight: 1.25,
-                                    overflow: 'hidden',
-                                    display: '-webkit-box',
-                                    WebkitLineClamp: 2,
-                                    WebkitBoxOrient: 'vertical',
-                                  }}
-                                  title={item.assigned_personnel || 'Officer on Duty'}
-                                >
-                                  {item.assigned_personnel || (
-                                    <span style={{ fontStyle: 'italic', fontWeight: 500, color: isLight ? '#64748b' : '#94a3b8' }}>
-                                      Officer on Duty
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-
-                              {/* Row 3: Counter Service Name */}
-                              {item.service_name && (
-                                <div
-                                  style={{
-                                    fontSize: scale.serviceFontSize,
-                                    color: themeStyles.serviceDescColor,
-                                    fontWeight: 500,
-                                    lineHeight: 1.3,
-                                    display: '-webkit-box',
-                                    WebkitLineClamp: 2,
-                                    WebkitBoxOrient: 'vertical',
-                                    overflow: 'hidden',
-                                    padding: '0 0.15rem',
-                                  }}
-                                  title={item.service_name}
-                                >
-                                  <span style={{ fontWeight: 700, color: isLight ? '#475569' : '#cbd5e1' }}>Service: </span>
-                                  {item.service_name}
-                                </div>
-                              )}
-                            </div>
-                          ))}
+                    {cur ? (
+                      <>
+                        <span className="mono" style={{
+                          fontSize: sizing.queueFont,
+                          fontWeight: 900,
+                          lineHeight: 1,
+                          color: cur.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
+                        }}>
+                          {cur.queue_no}
+                        </span>
+                        {cur.personnel && (
+                          <span style={{ fontSize: '1rem', fontWeight: 700, color: themeStyles.personnelName }}>
+                            {cur.personnel}
+                          </span>
+                        )}
+                        <div style={{
+                          background: themeStyles.serviceBoxBg,
+                          border: themeStyles.serviceBoxBorder,
+                          borderRadius: '10px',
+                          padding: '0.5rem 0.7rem',
+                          fontSize: '0.9rem',
+                          fontWeight: 600,
+                          color: themeStyles.serviceNameColor,
+                          lineHeight: 1.35,
+                        }}>
+                          {cur.service_name}
                         </div>
-                      ) : (
-                        /* Single Division View: Wide Table with Word-Wrap */
-                        <table
-                          style={{
-                            width: '100%',
-                            borderCollapse: 'collapse',
-                            textAlign: 'left',
-                            tableLayout: 'fixed',
-                          }}
-                        >
-                          <thead>
-                            <tr
-                              style={{
-                                backgroundColor: isLight ? '#edf2f7' : 'rgba(255, 255, 255, 0.04)',
-                                borderBottom: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.08)',
-                              }}
-                            >
-                              <th style={{ padding: '0.65rem 1rem', fontSize: '0.82rem', fontWeight: 800, color: isLight ? '#334155' : themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '28%' }}>
-                                Queue No.
-                              </th>
-                              <th style={{ padding: '0.65rem 1rem', fontSize: '0.82rem', fontWeight: 800, color: isLight ? '#334155' : themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '26%' }}>
-                                Counter / Window
-                              </th>
-                              <th style={{ padding: '0.65rem 1rem', fontSize: '0.82rem', fontWeight: 800, color: isLight ? '#334155' : themeStyles.counterLabel, textTransform: 'uppercase', letterSpacing: '0.06em', width: '46%' }}>
-                                Officer & Service
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {divItems.map((item, idx) => (
-                              <tr
-                                key={item.id || idx}
-                                style={{
-                                  borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.06)',
-                                  backgroundColor: idx % 2 === 1
-                                    ? (isLight ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255, 255, 255, 0.02)')
-                                    : 'transparent',
-                                }}
-                              >
-                                {/* Queue Number */}
-                                <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
-                                  <div
-                                    className="mono"
-                                    style={{
-                                      fontSize: scale.queueFontSize,
-                                      lineHeight: scale.queueLineHeight,
-                                      fontWeight: 900,
-                                      color: item.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
-                                      letterSpacing: '-0.02em',
-                                      textShadow: item.is_priority ? (isLight ? 'none' : '0 0 20px rgba(255, 198, 3, 0.35)') : themeStyles.queueNoShadow,
-                                      display: 'flex',
-                                      alignItems: 'baseline',
-                                      gap: '0.35rem',
-                                    }}
-                                  >
-                                    <span>{item.queue_no}</span>
-                                    {item.is_priority && (
-                                      <span style={{ fontSize: '0.9rem', color: isLight ? '#b45309' : 'var(--dole-gold)', verticalAlign: 'middle' }} title="Priority Client">
-                                        ★
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-
-                                {/* Counter / Window */}
-                                <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
-                                  <div
-                                    style={{
-                                      fontSize: scale.counterFontSize,
-                                      fontWeight: 800,
-                                      color: isLight ? '#0f172a' : '#f8fafc',
-                                      textTransform: 'uppercase',
-                                      letterSpacing: '0.04em',
-                                    }}
-                                  >
-                                    {item.counter}
-                                  </div>
-                                  <span
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.25rem',
-                                      fontSize: scale.statusFontSize,
-                                      fontWeight: 700,
-                                      padding: scale.badgePadding,
-                                      borderRadius: '9999px',
-                                      backgroundColor: isLight ? '#ecfdf5' : 'rgba(16, 185, 129, 0.2)',
-                                      color: isLight ? '#047857' : '#34d399',
-                                      marginTop: '0.2rem',
-                                    }}
-                                  >
-                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                                    <span>Serving</span>
-                                  </span>
-                                </td>
-
-                                {/* Officer & Service */}
-                                <td style={{ padding: scale.rowPadding, verticalAlign: 'middle' }}>
-                                  {item.assigned_personnel ? (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
-                                      <span style={{ fontSize: '0.95rem' }}>👤</span>
-                                      <span
-                                        style={{
-                                          fontSize: scale.personnelFontSize,
-                                          fontWeight: 700,
-                                          color: isLight ? '#1e3a8a' : '#93c5fd',
-                                          wordBreak: 'break-word',
-                                          lineHeight: 1.25,
-                                        }}
-                                      >
-                                        {item.assigned_personnel}
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.25rem', color: isLight ? '#64748b' : '#94a3b8', fontStyle: 'italic', fontSize: scale.personnelFontSize }}>
-                                      <span>👤</span>
-                                      <span>Officer on Duty</span>
-                                    </div>
-                                  )}
-
-                                  {item.service_name && (
-                                    <div
-                                      style={{
-                                        fontSize: scale.serviceFontSize,
-                                        color: themeStyles.serviceDescColor,
-                                        fontWeight: 500,
-                                        lineHeight: 1.35,
-                                        wordBreak: 'break-word',
-                                      }}
-                                      title={item.service_name}
-                                    >
-                                      <span style={{ fontWeight: 700, color: isLight ? '#475569' : '#cbd5e1' }}>Service: </span>
-                                      {item.service_name}
-                                    </div>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )
+                      </>
                     ) : (
-                      <div
-                        style={{
-                          flex: 1,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: isCrowded ? '1.75rem 0.75rem' : (isSimultaneous ? '2rem 1rem' : '2.5rem 1.5rem'),
-                          color: themeStyles.emptyServingColor,
-                          textAlign: 'center',
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: isCrowded ? '36px' : (isSimultaneous ? '40px' : '44px'),
-                            height: isCrowded ? '36px' : (isSimultaneous ? '40px' : '44px'),
-                            borderRadius: '50%',
-                            backgroundColor: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            marginBottom: '0.6rem',
-                            color: isLight ? '#94a3b8' : '#64748b',
-                          }}
-                        >
-                          <svg width={isCrowded ? "18" : "20"} height={isCrowded ? "18" : "20"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12 6 12 12 16 14"></polyline>
-                          </svg>
-                        </div>
-                        <div style={{ fontSize: isCrowded ? '0.88rem' : (isSimultaneous ? '0.94rem' : '1rem'), fontWeight: 700, color: isLight ? '#475569' : '#cbd5e1' }}>
-                          No Active Serving Queue
-                        </div>
-                        <div style={{ fontSize: isCrowded ? '0.72rem' : '0.8rem', marginTop: '0.2rem', color: themeStyles.emptyServingColor, lineHeight: 1.35, maxWidth: '200px' }}>
-                          Counters are ready for next ticket call at {divMeta?.label || divName}
-                        </div>
-                      </div>
+                      <>
+                        <span style={{ fontSize: '1.6rem', fontWeight: 800, color: themeStyles.emptyServingColor, padding: '0.75rem 0' }}>
+                          —
+                        </span>
+                        <span style={{ fontSize: '0.95rem', color: themeStyles.emptyServingColor }}>
+                          {w.personnel_name ? `${w.personnel_name} · Available` : 'Idle'}
+                        </span>
+                      </>
                     )}
                   </div>
-
-                  {/* Division Upcoming Queue Footer */}
-                  {divUpcoming.length > 0 && (
-                    <div
-                      style={{
-                        padding: isCrowded ? '0.35rem 0.6rem' : (isSimultaneous ? '0.45rem 0.75rem' : '0.5rem 1rem'),
-                        backgroundColor: isLight ? '#edf2f7' : 'rgba(255, 255, 255, 0.03)',
-                        borderTop: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.08)',
-                        fontSize: isCrowded ? '0.72rem' : (isSimultaneous ? '0.75rem' : '0.8rem'),
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                        gap: '0.35rem',
-                      }}
-                    >
-                      <span style={{ fontWeight: 600, color: isLight ? '#64748b' : '#94a3b8' }}>
-                        {isSimultaneous ? 'Next in line:' : `Next in line for ${divMeta?.label || divName}:`}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
-                        {divUpcoming.slice(0, isCrowded ? 3 : 4).map((qNum) => (
-                          <span
-                            key={qNum}
-                            className="mono"
-                            style={{
-                              padding: '0.1rem 0.35rem',
-                              borderRadius: '5px',
-                              fontSize: isCrowded ? '0.75rem' : '0.82rem',
-                              fontWeight: 800,
-                              backgroundColor: qNum.startsWith('P-')
-                                ? (isLight ? '#fef3c7' : 'rgba(245, 158, 11, 0.25)')
-                                : (isLight ? '#dbeafe' : 'rgba(59, 130, 246, 0.2)'),
-                              color: qNum.startsWith('P-')
-                                ? (isLight ? '#b45309' : '#fbbf24')
-                                : (isLight ? '#1e40af' : '#93c5fd'),
-                              border: qNum.startsWith('P-')
-                                ? (isLight ? '1px solid #f59e0b' : '1px solid rgba(245, 158, 11, 0.4)')
-                                : (isLight ? '1px solid #93c5fd' : '1px solid rgba(59, 130, 246, 0.3)'),
-                            }}
-                          >
-                            {qNum}
-                          </span>
-                        ))}
-                        {divUpcoming.length > (isCrowded ? 3 : 4) && (
-                          <span style={{ fontSize: '0.7rem', color: isLight ? '#94a3b8' : '#64748b', fontWeight: 600 }}>
-                            +{divUpcoming.length - (isCrowded ? 3 : 4)} more
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
-          </div>
         </section>
 
         {/* Right Side: NEXT IN LINE & ARTA AWARENESS VIDEO */}
@@ -2768,7 +1129,6 @@ export default function DisplayBoard() {
           gap: '1.25rem',
           overflow: 'hidden',
         }}>
-          {/* Top: Upcoming Queue (NEXT IN LINE) */}
           <div style={{
             display: 'flex',
             flexDirection: 'column',
@@ -2790,17 +1150,17 @@ export default function DisplayBoard() {
               justifyContent: 'space-between',
             }}>
               <span>{t.next_numbers}</span>
-              {filteredNextNumbers.length > 0 && (
+              {waitingCount > 0 && (
                 <span style={{ fontSize: '0.85rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
-                  {filteredNextNumbers.length} in line
+                  {waitingCount} in line
                 </span>
               )}
             </div>
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.65rem', overflowY: 'auto', paddingRight: '4px' }}>
-              {filteredNextNumbers.length > 0 ? (
-                filteredNextNumbers.map((num, idx) => (
-                  <div key={idx} style={{
+              {nextNumbers.length > 0 ? (
+                nextNumbers.map((num, idx) => (
+                  <div key={num} style={{
                     backgroundColor: themeStyles.nextItemBg,
                     border: themeStyles.nextItemBorder,
                     borderRadius: '10px',
@@ -3078,7 +1438,7 @@ export default function DisplayBoard() {
         color: themeStyles.footerColor,
       }}>
         <span>DOLE Client Transaction Monitoring System (CTMS)</span>
-        <span>Display updates automatically every 5 seconds</span>
+        <span>Display updates automatically every few seconds</span>
       </footer>
 
       {/* Hidden File Input for Single/Multiple Video File Selection */}
