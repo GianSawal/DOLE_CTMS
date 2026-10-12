@@ -32,25 +32,31 @@ def profiles_from_legacy_employees(apps):
 
 
 def canonical_divisions(apps, schema_editor):
-    CsmDivision = apps.get_model('ctms', 'CsmDivision')
-    CsmService = apps.get_model('ctms', 'CsmService')
+    # csm_division / csm_service belong to the CSM and their migration state is not the
+    # real schema (csm_service.division_id is missing from it), so they are changed with SQL.
     CtmsStaffDivision = apps.get_model('ctms', 'CtmsStaffDivision')
     DolePersonnel = apps.get_model('ctms', 'DolePersonnel')
     CtmsEmployee = apps.get_model('ctms', 'CtmsEmployee')
 
-    tables = schema_editor.connection.introspection.table_names()
-    if CsmDivision._meta.db_table not in tables or CsmService._meta.db_table not in tables:
+    connection = schema_editor.connection
+    tables = connection.introspection.table_names()
+    if 'csm_division' not in tables or 'csm_service' not in tables:
         return  # CSM tables are absent while a fresh test database migrates
 
-    obsolete = CsmDivision.objects.exclude(name__in=CANONICAL)
-    ids = list(obsolete.values_list('id', flat=True))
-    if not ids:
-        return
-    CsmService.objects.filter(division_id__in=ids).update(division=None)
-    CtmsStaffDivision.objects.filter(division_id__in=ids).delete()
-    DolePersonnel.divisions.through.objects.filter(csmdivision_id__in=ids).delete()
-    CtmsEmployee.divisions.through.objects.filter(csmdivision_id__in=ids).delete()
-    CsmDivision.objects.filter(id__in=ids).delete()
+    with connection.cursor() as cursor:
+        placeholders = ', '.join(['%s'] * len(CANONICAL))
+        cursor.execute(f"SELECT id FROM csm_division WHERE name NOT IN ({placeholders})", list(CANONICAL))
+        ids = [row[0] for row in cursor.fetchall()]
+        if not ids:
+            return
+
+        CtmsStaffDivision.objects.filter(division_id__in=ids).delete()
+        DolePersonnel.divisions.through.objects.filter(csmdivision_id__in=ids).delete()
+        CtmsEmployee.divisions.through.objects.filter(csmdivision_id__in=ids).delete()
+
+        id_list = ', '.join(['%s'] * len(ids))
+        cursor.execute(f"UPDATE csm_service SET division_id = NULL WHERE division_id IN ({id_list})", ids)
+        cursor.execute(f"DELETE FROM csm_division WHERE id IN ({id_list})", ids)
 
 
 def forwards(apps, schema_editor):
