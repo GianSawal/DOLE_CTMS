@@ -5,7 +5,7 @@ import Modal from '../../components/Modal';
 import ReassignModal from '../../components/ReassignModal';
 import TransactionHistoryModal from '../../components/TransactionHistoryModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
-import { PageHeader, Notice } from '../../components/ui';
+import { PageHeader, Notice, NoteField, LatestNote } from '../../components/ui';
 
 const POLL_MS = 5000;
 
@@ -257,6 +257,7 @@ export default function StaffMyClients() {
                         ? `Completed ${formatDateTime(tx.done_at)}${tx.is_surveyed ? ' · CSM answered' : ''}`
                         : `Checked in ${formatDateTime(tx.checked_in_at)}`}
                     </div>
+                    <LatestNote note={tx.latest_note} />
                   </div>
                   {renderActions(tx)}
                 </div>
@@ -280,9 +281,15 @@ export default function StaffMyClients() {
 
       <Modal isOpen={!!pendingTx} onClose={() => setPendingTx(null)} title={pendingTx ? `Move Queue ${pendingTx.queue_no} to Pending` : ''} maxWidth="460px">
         <form onSubmit={submitPending}>
-          <label htmlFor="mc-pending-reason">Reason (optional)</label>
-          <input id="mc-pending-reason" type="text" maxLength={255} value={pendingReason}
-            onChange={(e) => setPendingReason(e.target.value)} placeholder="e.g. Waiting for requirements" />
+          <p style={{ marginTop: 0, color: 'var(--ui-text-2)', lineHeight: 1.5 }}>
+            The client stays with you under Pending until you resume, complete, or reassign them.
+          </p>
+          <NoteField
+            id="mc-pending-reason"
+            value={pendingReason}
+            onChange={setPendingReason}
+            placeholder="Why is this client on pending? e.g. Waiting for the business permit copy"
+          />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.25rem' }}>
             <button type="button" className="btn btn-outline" onClick={() => setPendingTx(null)}>Cancel</button>
             <button type="submit" className="btn btn-primary">Move to Pending</button>

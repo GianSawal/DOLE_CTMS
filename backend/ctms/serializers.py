@@ -335,6 +335,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
     is_surveyed = serializers.ReadOnlyField()
     assigned_to_name = serializers.SerializerMethodField()
     was_transferred = serializers.SerializerMethodField()
+    latest_note = serializers.SerializerMethodField()
     started_at = serializers.SerializerMethodField()
     service_duration_seconds = serializers.ReadOnlyField()
     service_duration_display = serializers.SerializerMethodField()
@@ -362,6 +363,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'assigned_to_name',
             'served_by_name',
             'was_transferred',
+            'latest_note',
             'source',
             'checked_in_at',
             'called_at',
@@ -399,6 +401,23 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
         """Reassigned clients are handled off the TV board (no announcements)."""
         from .models import CtmsAssignmentHistory
         return obj.assignment_history.filter(event=CtmsAssignmentHistory.EVENT_TRANSFERRED).exists()
+
+    def get_latest_note(self, obj):
+        """Most recent note written when the client was reassigned or put on pending."""
+        from .models import CtmsAssignmentHistory
+        event = (obj.assignment_history
+                 .filter(event__in=[CtmsAssignmentHistory.EVENT_TRANSFERRED, CtmsAssignmentHistory.EVENT_PENDING])
+                 .exclude(reason='')
+                 .order_by('-created_at', '-id')
+                 .first())
+        if not event:
+            return None
+        return {
+            'kind': 'reassign' if event.event == CtmsAssignmentHistory.EVENT_TRANSFERRED else 'pending',
+            'text': event.reason,
+            'by': event.actor_name,
+            'at': event.created_at,
+        }
 
     def get_assigned_to_name(self, obj):
         return personnel_display_name(obj.assigned_to) if obj.assigned_to_id else None

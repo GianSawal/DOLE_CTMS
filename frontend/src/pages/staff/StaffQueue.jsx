@@ -7,7 +7,7 @@ import PrintSlip from '../../components/PrintSlip';
 import WalkinModal from '../../components/WalkinModal';
 import ReassignModal from '../../components/ReassignModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
-import { PageHeader, Notice } from '../../components/ui';
+import { PageHeader, Notice, NoteField, LatestNote } from '../../components/ui';
 
 const POLL_MS = 3000;
 
@@ -281,6 +281,7 @@ export default function StaffQueue() {
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
                       {myCurrent.transaction_no} · Claim code {myCurrent.claim_code}
                     </div>
+                    <LatestNote note={myCurrent.latest_note} />
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem', marginTop: '1.1rem' }}>
                       <button className="btn btn-success" disabled={busy}
@@ -330,6 +331,7 @@ export default function StaffQueue() {
                           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{tx.transaction_no}</span>
                         </div>
                         <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}><ClientName tx={tx} /> · {tx.service_name}</div>
+                        <LatestNote note={tx.latest_note} />
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
                           {tx.status === 'transferred' ? (
                             <button className="btn btn-primary btn-sm" disabled={busy || !!myCurrent}
@@ -464,9 +466,12 @@ export default function StaffQueue() {
           <p style={{ marginTop: 0, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
             The client stays with you and appears under My Pending. Resume when they are ready.
           </p>
-          <label htmlFor="pending-reason">Reason (optional)</label>
-          <input id="pending-reason" type="text" maxLength={255} value={pendingReason}
-            onChange={(e) => setPendingReason(e.target.value)} placeholder="e.g. Waiting for requirements" />
+          <NoteField
+            id="pending-reason"
+            value={pendingReason}
+            onChange={setPendingReason}
+            placeholder="Why is this client on pending? e.g. Waiting for the business permit copy"
+          />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.25rem' }}>
             <button type="button" className="btn btn-outline" onClick={() => setPendingTx(null)}>Cancel</button>
             <button type="submit" className="btn btn-primary">Move to Pending</button>

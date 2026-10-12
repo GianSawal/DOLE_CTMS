@@ -1033,6 +1033,16 @@ class Stage4MyClientsAndTransferTestCase(CsmTablesTestCase):
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data['status'], 'serving')
 
+    def test_latest_note_is_shown_on_the_client(self):
+        tx = self._served_by_ana()
+        self._transfer(tx, self.ana, self.ben, reason="Needs OSH specialist")
+        row = self._tab(self.ben, 'ongoing')['results'][0]
+        self.assertEqual(row['latest_note'], {**row['latest_note'], 'kind': 'reassign', 'text': "Needs OSH specialist", 'by': "Ana"})
+
+        self._as(self.ben).post(f'/api/staff/transactions/{tx.id}/pending/', {'reason': 'Waiting for permit copy'}, format='json')
+        row = self._tab(self.ben, 'pending')['results'][0]
+        self.assertEqual((row['latest_note']['kind'], row['latest_note']['text']), ('pending', 'Waiting for permit copy'))
+
     def test_waiting_ticket_cannot_be_transferred(self):
         tx = create_transaction(self.bataan, self.service)
         res = self._transfer(tx, self.ana, self.ben)

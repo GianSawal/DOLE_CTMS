@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { staffApi } from '../api/staff';
 import Modal from './Modal';
+import { NoteField } from './ui';
 
 /**
  * Hands a client over to another personnel in the same office.
@@ -121,15 +122,17 @@ export default function ReassignModal({ tx, onClose, onTransferred }) {
             })}
           </div>
 
-          <label htmlFor="reassign-reason" style={{ marginTop: '1rem' }}>Note for the new handler (optional)</label>
-          <input
-            id="reassign-reason"
-            type="text"
-            maxLength={255}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. Needs labor inspection specialist"
-          />
+          <div style={{ marginTop: '1rem' }}>
+            <NoteField
+              id="reassign-reason"
+              value={reason}
+              onChange={setReason}
+              placeholder="Why are you reassigning this client? e.g. Needs a labor inspection specialist"
+            />
+            <p style={{ margin: '0.35rem 0 0', fontSize: '0.78rem', color: 'var(--ui-muted)' }}>
+              The new handler sees this note on the client and in their notification.
+            </p>
+          </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.25rem' }}>
             <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>

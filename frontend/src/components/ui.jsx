@@ -33,3 +33,46 @@ export function Notice({ notice, onDismiss }) {
     </div>
   );
 }
+
+const NOTE_MAX = 255;
+
+/** Multi-line "Add note" box used when reassigning a client or moving them to pending. */
+export function NoteField({ id, value, onChange, placeholder, label = 'Add note' }) {
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <label htmlFor={id}>{label} <span style={{ fontWeight: 400, color: 'var(--ui-muted)' }}>(optional)</span></label>
+        <span style={{ fontSize: '0.75rem', color: 'var(--ui-muted)' }}>{value.length}/{NOTE_MAX}</span>
+      </div>
+      <textarea
+        id={id}
+        rows={3}
+        maxLength={NOTE_MAX}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{ resize: 'vertical', minHeight: '84px', lineHeight: 1.45 }}
+      />
+    </div>
+  );
+}
+
+/** Shows the latest reassignment or pending note on a client. */
+export function LatestNote({ note }) {
+  if (!note?.text) return null;
+  const label = note.kind === 'reassign' ? 'Reassign note' : 'Pending note';
+  return (
+    <div style={{
+      marginTop: '0.45rem',
+      padding: '0.45rem 0.65rem',
+      borderRadius: '8px',
+      background: note.kind === 'reassign' ? '#fffaeb' : '#f2f4f7',
+      border: `1px solid ${note.kind === 'reassign' ? '#fedf89' : '#e4e7ec'}`,
+      fontSize: '0.82rem',
+      color: 'var(--ui-text-2)',
+      lineHeight: 1.4,
+    }}>
+      <strong style={{ fontWeight: 600 }}>{label}{note.by ? ` from ${note.by}` : ''}:</strong> {note.text}
+    </div>
+  );
+}
