@@ -1102,6 +1102,20 @@ class Stage5DisplayBoardTestCase(CsmTablesTestCase):
         self.assertEqual([o['queue_no'] for o in card['also_serving']], [tx.queue_no])
         self.assertNotIn("Confidential Name", str(self._board()))
 
+    def test_windowless_ticket_without_counter_is_shown_in_origin_window(self):
+        # Tickets saved without a window (before serving-at-origin existed) still join that window's card
+        from .services import transfer_transaction
+        ben = self._ben_without_window()
+        tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
+        transfer_transaction(tx, self.ana, ben)
+        call_transaction(tx, ben)
+        CtmsTransaction.objects.filter(pk=tx.pk).update(counter=None)
+
+        board = self._board()
+        self.assertEqual(len(board['windows']), 4)
+        self.assertEqual(board['windows'][0]['current']['queue_no'], tx.queue_no)
+        self.assertFalse(any(c['kind'] == 'personnel' for c in board['windows']))
+
     def test_personnel_card_when_origin_window_is_gone(self):
         from .services import transfer_transaction, archive_window
         ben = self._ben_without_window()

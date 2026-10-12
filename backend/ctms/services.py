@@ -466,7 +466,7 @@ def _lock_user_window(user, office, required=True):
     return window
 
 
-def _transfer_origin_window(tx):
+def transfer_origin_window(tx):
     """The active window the client was last transferred away from, if any."""
     from .models import CtmsAssignmentHistory
     event = (CtmsAssignmentHistory.objects
@@ -559,7 +559,7 @@ def call_transaction(tx, user):
         if tx.status in (CtmsTransaction.STATUS_PENDING, CtmsTransaction.STATUS_TRANSFERRED):
             _ensure_not_serving_another(user, tx.office, exclude_pk=tx.pk)
             if not window and tx.status == CtmsTransaction.STATUS_TRANSFERRED:
-                window = _transfer_origin_window(tx)
+                window = transfer_origin_window(tx)
             return _start_service(tx, user, window, CtmsAssignmentHistory.EVENT_RESUMED)
 
         raise ValueError(f"Cannot call a transaction with status '{tx.status}'.")

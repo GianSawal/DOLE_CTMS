@@ -344,6 +344,21 @@ class PublicDisplayBoardView(APIView):
                    .order_by('-called_at')):
             serving_by_window.setdefault(tx.counter_id, []).append(tx)
 
+        # Clients served with no window recorded belong to the window they were transferred from.
+        window_ids = {w.id for w in windows}
+        windowless = []
+        for tx in (CtmsTransaction.objects
+                   .filter(office=office, status=CtmsTransaction.STATUS_SERVING, counter__isnull=True)
+                   .filter(models.Q(queue_date=today) | models.Q(called_at__date=today))
+                   .select_related('service', 'assigned_to', 'assigned_to__dole_personnel')):
+            origin = services.transfer_origin_window(tx)
+            if origin and origin.id in window_ids:
+                serving_by_window.setdefault(origin.id, []).append(tx)
+            else:
+                windowless.append(tx)
+        for at_window in serving_by_window.values():
+            at_window.sort(key=lambda t: t.called_at or timezone.now(), reverse=True)
+
         window_cards = []
         serving = []
         for w in windows:
@@ -385,13 +400,7 @@ class PublicDisplayBoardView(APIView):
                 "also_serving": also,
             })
 
-        # Clients served with no window at all (no window to return to after a transfer)
-        # get a card named after the personnel, so the client knows whom to approach.
-        windowless = (CtmsTransaction.objects
-                      .filter(office=office, status=CtmsTransaction.STATUS_SERVING, counter__isnull=True)
-                      .filter(models.Q(queue_date=today) | models.Q(called_at__date=today))
-                      .select_related('service', 'assigned_to', 'assigned_to__dole_personnel')
-                      .order_by('called_at'))
+        # Only clients with no window to return to get a card named after the personnel.
         for tx in windowless:
             service_name = tx.service.name if tx.service_id else ""
             personnel = services.personnel_display_name(tx.assigned_to) if tx.assigned_to_id else (tx.assigned_personnel or "")
