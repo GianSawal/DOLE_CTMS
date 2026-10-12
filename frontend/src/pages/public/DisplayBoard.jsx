@@ -1056,8 +1056,15 @@ export default function DisplayBoard() {
                     transition: 'box-shadow 0.3s ease',
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ fontSize: sizing.nameFont, fontWeight: 900, color: themeStyles.titleColor, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                        {w.name}
+                      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                        {w.kind === 'personnel' && (
+                          <span style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.08em', color: themeStyles.counterLabel }}>
+                            {lang === 'fil' ? 'PUMUNTA KAY' : 'PROCEED TO'}
+                          </span>
+                        )}
+                        <span style={{ fontSize: sizing.nameFont, fontWeight: 900, color: themeStyles.titleColor, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                          {w.name}
+                        </span>
                       </span>
                       {cur?.is_priority && (
                         <span style={{
@@ -1082,7 +1089,7 @@ export default function DisplayBoard() {
                         }}>
                           {cur.queue_no}
                         </span>
-                        {cur.personnel && (
+                        {cur.personnel && w.kind !== 'personnel' && (
                           <span style={{ fontSize: '1rem', fontWeight: 700, color: themeStyles.personnelName }}>
                             {cur.personnel}
                           </span>

@@ -113,12 +113,13 @@ export default function StaffQueue() {
   };
 
   const announce = (tx, action) => {
-    if (!tx || !tx.counter_name) return;
+    if (!tx) return;
     broadcastQueueCall({
       officeId: selectedOffice,
       txId: tx.id,
       queueNo: tx.queue_no,
-      counter: tx.counter_name,
+      // Clients served without a window are announced with the personnel's name
+      counter: tx.counter_name || tx.assigned_to_name || tx.assigned_personnel || '',
       personnel: tx.assigned_to_name || tx.assigned_personnel || '',
       action,
     });
@@ -312,9 +313,7 @@ export default function StaffQueue() {
                         onClick={() => act(myCurrent, 'done', `Queue ${myCurrent.queue_no} completed. The client can now answer the CSM survey.`)}>
                         Done
                       </button>
-                      {myCurrent.counter_name && (
-                        <button className="btn btn-outline" disabled={busy} onClick={() => handleCall(myCurrent, 'recall')}>Recall on TV</button>
-                      )}
+                      <button className="btn btn-outline" disabled={busy} onClick={() => handleCall(myCurrent, 'recall')}>Recall on TV</button>
                       <button className="btn btn-outline" disabled={busy} onClick={() => { setPendingReason(''); setPendingTx(myCurrent); }}>Pending</button>
                       <button className="btn btn-outline" disabled={busy} onClick={() => setReassignTx(myCurrent)}>Reassign</button>
                       <button className="btn btn-outline" disabled={busy}

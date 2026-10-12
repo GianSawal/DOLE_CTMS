@@ -84,17 +84,15 @@ export default function StaffMyClients() {
 
   const startOrResume = (tx) => run(tx, async () => {
     const res = await staffApi.transactionAction(tx.id, 'call');
-    // Clients started without a window are served directly and are not announced on the TV.
-    if (res.counter_name) {
-      broadcastQueueCall({
-        officeId: res.office,
-        txId: res.id,
-        queueNo: res.queue_no,
-        counter: res.counter_name,
-        personnel: res.assigned_to_name || '',
-        action: 'call',
-      });
-    }
+    // Clients started without a window are announced with the personnel's name.
+    broadcastQueueCall({
+      officeId: res.office,
+      txId: res.id,
+      queueNo: res.queue_no,
+      counter: res.counter_name || res.assigned_to_name || '',
+      personnel: res.assigned_to_name || '',
+      action: 'call',
+    });
     return res;
   }, myWindow ? `Queue ${tx.queue_no} called to your window.` : `You are now serving Queue ${tx.queue_no}.`);
 

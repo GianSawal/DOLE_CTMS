@@ -1076,6 +1076,23 @@ class Stage5DisplayBoardTestCase(CsmTablesTestCase):
         self.assertNotIn("Pampanga Window", [w['name'] for w in board['windows']])
         self.assertEqual(board['next'], [])
 
+    def test_client_served_without_window_gets_personnel_card(self):
+        from .services import transfer_transaction
+        ben = User.objects.create_user(username="ben", password="pw", is_staff=True, first_name="Ben", last_name="Cruz")
+        CtmsStaffOffice.objects.create(user=ben, office=self.bataan)
+        tx = call_transaction(create_transaction(self.bataan, self.service, client_name="Confidential Name"), self.ana)
+        transfer_transaction(tx, self.ana, ben)
+        call_transaction(tx, ben)  # Ben has no window
+
+        board = self._board()
+        cards = board['windows']
+        self.assertEqual([c['name'] for c in cards[:4]], ["Window 1", "Window 2", "Window 3", "Window 4"])
+        self.assertEqual(cards[-1]['kind'], 'personnel')
+        self.assertEqual(cards[-1]['name'], "Ben Cruz")
+        self.assertEqual(cards[-1]['current']['queue_no'], tx.queue_no)
+        self.assertEqual(board['latest_called_counter'], "Ben Cruz")
+        self.assertNotIn("Confidential Name", str(board))
+
     def test_next_in_line_is_priority_then_fifo(self):
         create_transaction(self.bataan, self.service)
         create_transaction(self.bataan, self.service, is_priority=True)

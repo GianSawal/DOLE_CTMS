@@ -370,9 +370,46 @@ class PublicDisplayBoardView(APIView):
                 })
             window_cards.append({
                 "id": w.id,
+                "kind": "window",
                 "name": w.name,
                 "personnel_name": services.personnel_display_name(w.assigned_user) if w.assigned_user_id else "",
                 "current": current,
+            })
+
+        # Clients served without a window (e.g. a transfer recipient who has no window)
+        # get a card named after the personnel, so the client knows whom to approach.
+        windowless = (CtmsTransaction.objects
+                      .filter(office=office, status=CtmsTransaction.STATUS_SERVING, counter__isnull=True)
+                      .filter(models.Q(queue_date=today) | models.Q(called_at__date=today))
+                      .select_related('service', 'assigned_to', 'assigned_to__dole_personnel')
+                      .order_by('called_at'))
+        for tx in windowless:
+            service_name = tx.service.name if tx.service_id else ""
+            personnel = services.personnel_display_name(tx.assigned_to) if tx.assigned_to_id else (tx.assigned_personnel or "")
+            called_at = tx.called_at.isoformat() if tx.called_at else None
+            window_cards.append({
+                "id": f"personnel-{tx.id}",
+                "kind": "personnel",
+                "name": personnel or "Personnel",
+                "personnel_name": personnel,
+                "current": {
+                    "id": tx.id,
+                    "queue_no": tx.queue_no,
+                    "is_priority": tx.is_priority,
+                    "service_name": service_name,
+                    "service_description": get_service_description(service_name),
+                    "personnel": personnel,
+                    "called_at": called_at,
+                },
+            })
+            serving.append({
+                "id": tx.id,
+                "counter": personnel or "Personnel",
+                "queue_no": tx.queue_no,
+                "called_at": called_at,
+                "service_name": service_name,
+                "assigned_personnel": personnel,
+                "is_priority": tx.is_priority,
             })
 
         next_qs = CtmsTransaction.objects.filter(
