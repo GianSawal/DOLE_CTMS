@@ -2,18 +2,9 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from ctms.models import CtmsEmployee, CtmsOfficeProfile, CtmsStaffOffice, DolePersonnel
+from ctms.models import CtmsOfficeProfile, CtmsStaffOffice, DolePersonnel
 
 User = get_user_model()
-
-
-def unique_employee_id(wanted):
-    base = (wanted or 'STAFF').strip()[:45] or 'STAFF'
-    candidate, n = base, 1
-    while DolePersonnel.objects.filter(employee_id__iexact=candidate).exists():
-        n += 1
-        candidate = f"{base}-{n}"
-    return candidate
 
 
 class Command(BaseCommand):
@@ -42,8 +33,7 @@ class Command(BaseCommand):
 
             for user in User.objects.filter(is_superuser=True).exclude(pk=admin.pk):
                 profile = DolePersonnel.objects.filter(user=user).select_related('office').first()
-                emp = CtmsEmployee.objects.filter(user=user).select_related('office').first()
-                office = (profile.office if profile else None) or (emp.office if emp else None)
+                office = profile.office if profile else None
 
                 user.is_superuser = False
                 if not office:
@@ -57,15 +47,6 @@ class Command(BaseCommand):
                 regional = CtmsOfficeProfile.objects.filter(
                     office=office, office_type=CtmsOfficeProfile.TYPE_REGIONAL).exists()
                 role = DolePersonnel.ROLE_ADMIN if regional else DolePersonnel.ROLE_PERSONNEL
-                if not profile:
-                    profile = DolePersonnel(
-                        user=user,
-                        employee_id=unique_employee_id(emp.employee_id if emp else user.username),
-                        first_name=(emp.first_name if emp else user.first_name) or user.username,
-                        middle_name=emp.middle_name if emp else '',
-                        last_name=(emp.last_name if emp else user.last_name) or '',
-                        position=emp.position if emp else '',
-                    )
                 profile.office = office
                 profile.role = role
                 profile.is_active = user.is_active

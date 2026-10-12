@@ -23,14 +23,13 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 User = get_user_model()
 
 from .models import (
+    CANONICAL_DIVISIONS,
     CsmDivision,
     CsmOffice,
     CsmService,
     CsmResponse,
     CtmsCounter,
     CtmsStaffOffice,
-    CtmsStaffDivision,
-    CtmsEmployee,
     DolePersonnel,
     DolePosition,
     DEFAULT_DOLE_POSITIONS,
@@ -50,7 +49,6 @@ from .serializers import (
     CtmsCounterSerializer,
     WindowSerializer,
     CtmsStaffOfficeSerializer,
-    DolePersonnelSerializer,
     DolePositionSerializer,
     CtmsUserAccountSerializer,
     CtmsNotificationSerializer,
@@ -118,49 +116,6 @@ def get_staff_offices(user):
         return CsmOffice.objects.filter(is_active=True)
     # Strict RBAC: Staff without an explicit office assignment have access to NONE
     return CsmOffice.objects.none()
-
-
-def get_staff_divisions(user):
-    """
-    Returns queryset of CsmDivision the staff user is allowed to access.
-    Superusers have access to all divisions unless assigned specific divisions.
-    Staff members with assigned divisions have access to their assigned divisions.
-    """
-    if not user or not user.is_authenticated or not user.is_staff:
-        return CsmDivision.objects.none()
-    div_ids = CtmsStaffDivision.objects.filter(user=user).values_list('division_id', flat=True)
-    if div_ids.exists():
-        return CsmDivision.objects.filter(id__in=div_ids).exclude(name__iexact='ALL').order_by('id')
-    if user.is_superuser:
-        return CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
-    try:
-        dole_p = getattr(user, 'dole_personnel', None)
-        if dole_p and dole_p.divisions.exists():
-            return dole_p.divisions.exclude(name__iexact='ALL').order_by('id')
-        profile = getattr(user, 'employee_profile', None)
-        if profile and profile.divisions.exists():
-            return profile.divisions.exclude(name__iexact='ALL').order_by('id')
-    except Exception:
-        pass
-    return CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
-
-
-def has_universal_division_access(user, assigned_divisions=None):
-    """
-    Returns True if user is superuser OR has an assigned division corresponding
-    to Window 1-10 or Front Desk, granting access to all services of all divisions.
-    """
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser:
-        return True
-    if assigned_divisions is None:
-        assigned_divisions = get_staff_divisions(user)
-    for div in assigned_divisions:
-        div_name = getattr(div, 'name', str(div))
-        if services.is_universal_division_name(div_name):
-            return True
-    return False
 
 
 class IsStaffUser(permissions.BasePermission):
@@ -1675,7 +1630,6 @@ class StaffChangePasswordView(APIView):
         user.save()
 
         DolePersonnel.objects.filter(user=user).update(must_change_password=False)
-        CtmsEmployee.objects.filter(user=user).update(must_change_password=False)
 
         return Response({
             "status": "success",
@@ -1812,243 +1766,12 @@ class PublicStreamLocalVideoView(APIView):
 
 
 class CsmDivisionListView(APIView):
-    """
-    Returns list of all active divisions from the csm_division table.
-    """
+    """The service divisions (TSSD 1, TSSD 2, IMSD), used to tag and filter services."""
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        standard_divisions = [
-            'IMSD', 'TSSD 1', 'TSSD 2', 'MALSU',
-            'Front Desk',
-            'Window 1', 'Window 2', 'Window 3', 'Window 4', 'Window 5',
-            'Window 6', 'Window 7', 'Window 8', 'Window 9', 'Window 10',
-        ]
-        for std_div in standard_divisions:
-            if not CsmDivision.objects.filter(name__iexact=std_div).exists():
-                CsmDivision.objects.get_or_create(name=std_div)
-        divisions = CsmDivision.objects.exclude(name__iexact='ALL').order_by('id')
+        divisions = CsmDivision.objects.filter(name__in=CANONICAL_DIVISIONS).order_by('id')
         return Response(CsmDivisionSerializer(divisions, many=True).data)
-
-
-class StaffPersonnelViewSet(viewsets.ModelViewSet):
-    """
-    CRUD ViewSet for managing DOLE personnel directory.
-    - list/retrieve accessible to all authenticated staff (for assigning in queue).
-    - create/update/delete accessible only to superuser administrators.
-    - Creates personnel profiles WITHOUT requiring or creating login user accounts.
-    """
-    serializer_class = DolePersonnelSerializer
-    queryset = DolePersonnel.objects.all().select_related('office').prefetch_related('divisions').order_by('last_name', 'first_name')
-
-    def get_permissions(self):
-        return [IsRegionalAdmin()]
-
-    def get_queryset(self):
-        qs = DolePersonnel.objects.all().select_related('office').prefetch_related('divisions').order_by('last_name', 'first_name')
-
-        active_only = self.request.query_params.get('active_only')
-        if active_only == 'true' or not self.request.user.is_superuser:
-            qs = qs.filter(is_active=True)
-
-        office_id = self.request.query_params.get('office')
-        if office_id:
-            qs = qs.filter(office_id=office_id)
-        elif not self.request.user.is_superuser:
-            staff_offices = get_staff_offices(self.request.user)
-            if staff_offices.exists():
-                qs = qs.filter(office__in=staff_offices)
-
-        division_param = self.request.query_params.get('division')
-        if division_param:
-            div_clean = division_param.strip()
-            names = [div_clean]
-            if div_clean.upper() in ('TSSD1', 'TSSD 1'):
-                names = ['TSSD 1', 'TSSD1']
-            elif div_clean.upper() in ('TSSD2', 'TSSD 2'):
-                names = ['TSSD 2', 'TSSD2']
-            elif div_clean.upper() == 'IMSD':
-                names = ['IMSD']
-            elif div_clean.upper() == 'MALSU':
-                names = ['MALSU']
-            qs = qs.filter(models.Q(divisions__name__in=names) | models.Q(divisions__id__in=[div_clean] if div_clean.isdigit() else []))
-
-        search = self.request.query_params.get('search')
-        if search:
-            qs = qs.filter(
-                models.Q(employee_id__icontains=search) |
-                models.Q(first_name__icontains=search) |
-                models.Q(last_name__icontains=search) |
-                models.Q(position__icontains=search)
-            )
-
-        return qs.distinct()
-
-    @transaction.atomic
-    def create(self, request, *args, **kwargs):
-        data = request.data
-        employee_id = str(data.get('employee_id', '')).strip()
-        first_name = str(data.get('first_name', '')).strip()
-        middle_name = str(data.get('middle_name', '')).strip()
-        last_name = str(data.get('last_name', '')).strip()
-        position = str(data.get('position', '')).strip()
-        office_id = data.get('office')
-        division_ids = data.get('division_ids', [])
-
-        if not employee_id:
-            return Response({"detail": "Employee ID is required."}, status=status.HTTP_400_BAD_REQUEST)
-        if not first_name or not last_name:
-            return Response({"detail": "First name and last name are required."}, status=status.HTTP_400_BAD_REQUEST)
-        if not office_id:
-            return Response({"detail": "DOLE Office is required."}, status=status.HTTP_400_BAD_REQUEST)
-        if not division_ids:
-            return Response({"detail": "At least one division is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if DolePersonnel.objects.filter(employee_id__iexact=employee_id).exists():
-            return Response({"detail": f"Personnel with Employee ID '{employee_id}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
-
-        office = get_object_or_404(CsmOffice, pk=office_id)
-
-        # Create pure Personnel record without user account
-        personnel = DolePersonnel.objects.create(
-            employee_id=employee_id,
-            first_name=first_name,
-            middle_name=middle_name,
-            last_name=last_name,
-            position=position,
-            office=office,
-            is_active=True,
-        )
-
-        # Set divisions
-        if division_ids:
-            id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
-            name_filters = models.Q(name__in=[str(x) for x in division_ids])
-            if 'TSSD1' in division_ids:
-                name_filters |= models.Q(name='TSSD 1')
-            if 'TSSD2' in division_ids:
-                name_filters |= models.Q(name='TSSD 2')
-            matched_divisions = CsmDivision.objects.filter(id_filters | name_filters)
-            personnel.divisions.set(matched_divisions)
-
-        log_audit_event(
-            action='PERSONNEL_CREATE',
-            category=CtmsAuditLog.CATEGORY_PERSONNEL,
-            actor=request.user,
-            request=request,
-            target_type='Personnel',
-            target_id=personnel.id,
-            target_repr=f"{personnel.full_name} ({personnel.employee_id})",
-            office=office,
-            description=f"Created personnel record for '{personnel.full_name}' ({personnel.position or 'Staff'})"
-        )
-
-        return Response(DolePersonnelSerializer(personnel).data, status=status.HTTP_201_CREATED)
-
-    @transaction.atomic
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        data = request.data
-
-        if 'first_name' in data:
-            instance.first_name = str(data['first_name']).strip()
-        if 'middle_name' in data:
-            instance.middle_name = str(data['middle_name']).strip()
-        if 'last_name' in data:
-            instance.last_name = str(data['last_name']).strip()
-        if 'position' in data:
-            instance.position = str(data['position']).strip()
-        if 'office' in data and data['office']:
-            instance.office = get_object_or_404(CsmOffice, pk=data['office'])
-        if 'is_active' in data:
-            instance.is_active = bool(data['is_active'])
-
-        instance.save()
-
-        if 'division_ids' in data:
-            division_ids = data['division_ids']
-            id_filters = models.Q(id__in=[x for x in division_ids if isinstance(x, int) or (isinstance(x, str) and x.isdigit())])
-            name_filters = models.Q(name__in=[str(x) for x in division_ids])
-            if 'TSSD1' in division_ids:
-                name_filters |= models.Q(name='TSSD 1')
-            if 'TSSD2' in division_ids:
-                name_filters |= models.Q(name='TSSD 2')
-            matched_divisions = CsmDivision.objects.filter(id_filters | name_filters)
-            instance.divisions.set(matched_divisions)
-
-        if 'service_ids' in data:
-            service_ids = data['service_ids']
-            services_to_set = list(CsmService.objects.filter(id__in=service_ids).select_related('division'))
-            p_div_names = {d.name.upper() for d in instance.divisions.all()} | {d.name.replace(' ', '').upper() for d in instance.divisions.all()}
-            invalid_svcs = []
-            for svc in services_to_set:
-                if svc.division and svc.division.name.strip().upper() != 'ALL':
-                    s_div = svc.division.name.strip()
-                    if s_div.upper() not in p_div_names and s_div.replace(' ', '').upper() not in p_div_names and 'ALL' not in p_div_names:
-                        invalid_svcs.append(f"{svc.name} ({svc.division.name})")
-            if invalid_svcs:
-                return Response(
-                    {"detail": f"Division mismatch: The following services do not match personnel division(s): {', '.join(invalid_svcs)}."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            instance.services.set(services_to_set)
-
-        log_audit_event(
-            action='PERSONNEL_UPDATE',
-            category=CtmsAuditLog.CATEGORY_PERSONNEL,
-            actor=request.user,
-            request=request,
-            target_type='Personnel',
-            target_id=instance.id,
-            target_repr=f"{instance.full_name} ({instance.employee_id})",
-            office=instance.office,
-            description=f"Updated personnel record for '{instance.full_name}'"
-        )
-
-        return Response(DolePersonnelSerializer(instance).data)
-
-    @transaction.atomic
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        name = instance.full_name
-        emp_id = instance.employee_id
-        office = instance.office
-        instance.delete()
-        log_audit_event(
-            action='PERSONNEL_DELETE',
-            category=CtmsAuditLog.CATEGORY_PERSONNEL,
-            actor=request.user,
-            request=request,
-            target_type='Personnel',
-            target_id=emp_id,
-            target_repr=f"{name} ({emp_id})",
-            office=office,
-            description=f"Deleted personnel record for '{name}'"
-        )
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=True, methods=['post'], url_path='toggle-active')
-    def toggle_active(self, request, pk=None):
-        instance = self.get_object()
-        instance.is_active = not instance.is_active
-        instance.save()
-        log_audit_event(
-            action='PERSONNEL_TOGGLE_ACTIVE',
-            category=CtmsAuditLog.CATEGORY_PERSONNEL,
-            actor=request.user,
-            request=request,
-            target_type='Personnel',
-            target_id=instance.id,
-            target_repr=f"{instance.full_name} ({instance.employee_id})",
-            office=instance.office,
-            description=f"Toggled personnel '{instance.full_name}' status to {'active' if instance.is_active else 'inactive'}"
-        )
-        return Response({
-            "status": "success",
-            "is_active": instance.is_active,
-            "message": f"Personnel status set to {'active' if instance.is_active else 'inactive'}."
-        })
 
 
 class StaffPositionViewSet(viewsets.ModelViewSet):
@@ -2241,246 +1964,57 @@ class StaffAuditLogListView(APIView):
 
 class StaffServiceViewSet(viewsets.ModelViewSet):
     """
-    CRUD/Management ViewSet for services (from csm_service table).
-    Available to all accounts (IsStaffUser covers both staff and admin).
-    - list: list all services from csm_service with division and assigned personnel
-    - retrieve: retrieve single service details
-    - eligible_personnel: get personnel eligible for assignment matching the service division
-    - assign_personnel: assign multiple personnel to the service (strictly division-enforced)
-    - summary: summary counts of services, assigned status, and division breakdown
+    Service catalog (csm_service). Everyone can read it; regional admins may
+    change a service's division tag (TSSD 1, TSSD 2, IMSD, or none).
     """
     serializer_class = StaffServiceSerializer
-    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_permissions(self):
-        # Everyone may read the service catalog; configuring it is a regional admin task.
         if self.action in ('list', 'retrieve', 'summary'):
             return [IsStaffUser()]
         return [IsRegionalAdmin()]
 
     def get_queryset(self):
-        qs = CsmService.objects.all().select_related('division').prefetch_related(
-            'assigned_personnel__office',
-            'assigned_personnel__divisions'
-        ).order_by('sort_order', 'name')
-
-        search = self.request.query_params.get('search')
+        qs = CsmService.objects.all().select_related('division').order_by('sort_order', 'name')
+        search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(name__icontains=search.strip())
-
-        division_param = self.request.query_params.get('division')
-        if division_param:
-            div_clean = division_param.strip()
-            names = [div_clean]
-            if div_clean.upper() in ('TSSD1', 'TSSD 1'):
-                names = ['TSSD 1', 'TSSD1']
-            elif div_clean.upper() in ('TSSD2', 'TSSD 2'):
-                names = ['TSSD 2', 'TSSD2']
-            elif div_clean.upper() == 'IMSD':
-                names = ['IMSD']
-            elif div_clean.upper() == 'MALSU':
-                names = ['MALSU']
-            elif div_clean.upper() == 'ALL':
-                names = ['ALL']
-            qs = qs.filter(
-                models.Q(division__name__in=names) |
-                models.Q(division__id__in=[div_clean] if div_clean.isdigit() else [])
-            )
-
-        active_param = self.request.query_params.get('is_active')
-        if active_param is not None:
-            if active_param.lower() in ('true', '1'):
-                qs = qs.filter(is_active=True)
-            elif active_param.lower() in ('false', '0'):
-                qs = qs.filter(is_active=False)
-
-        assigned_param = self.request.query_params.get('assigned')
-        if assigned_param == 'true':
-            qs = qs.filter(assigned_personnel__isnull=False).distinct()
-        elif assigned_param == 'false':
-            qs = qs.filter(assigned_personnel__isnull=True)
-
+            qs = qs.filter(name__icontains=search)
+        division = (self.request.query_params.get('division') or '').strip()
+        if division == 'none':
+            qs = qs.filter(division__isnull=True)
+        elif division.isdigit():
+            qs = qs.filter(division_id=division)
+        elif division:
+            qs = qs.filter(division__name__iexact=division)
+        active = (self.request.query_params.get('is_active') or '').lower()
+        if active in ('true', '1', 'false', '0'):
+            qs = qs.filter(is_active=active in ('true', '1'))
         return qs
+
+    def perform_update(self, serializer):
+        before = serializer.instance.division.name if serializer.instance.division_id else 'None'
+        service = serializer.save()
+        after = service.division.name if service.division_id else 'None'
+        log_audit_event(
+            action='SERVICE_DIVISION_UPDATE',
+            category=CtmsAuditLog.CATEGORY_CONFIG,
+            request=self.request,
+            target_type='Service',
+            target_id=service.id,
+            target_repr=service.name,
+            description=f"Changed division of '{service.name}' from {before} to {after}",
+        )
 
     @action(detail=False, methods=['get'], url_path='summary')
     def summary(self, request):
-        total = CsmService.objects.count()
-        active = CsmService.objects.filter(is_active=True).count()
-        with_assigned = CsmService.objects.filter(assigned_personnel__isnull=False).distinct().count()
-        unassigned = total - with_assigned
-
-        by_division = {}
-        for div in CsmDivision.objects.all():
-            cnt = CsmService.objects.filter(division=div).count()
-            assigned_cnt = CsmService.objects.filter(division=div, assigned_personnel__isnull=False).distinct().count()
-            by_division[div.name] = {
-                'total': cnt,
-                'assigned': assigned_cnt,
-            }
-
+        qs = CsmService.objects.all()
+        by_division = {name: qs.filter(division__name=name).count() for name in CANONICAL_DIVISIONS}
         return Response({
-            'total_services': total,
-            'active_services': active,
-            'services_with_personnel': with_assigned,
-            'services_unassigned': unassigned,
+            'total_services': qs.count(),
+            'active_services': qs.filter(is_active=True).count(),
+            'untagged_services': qs.filter(division__isnull=True).count(),
             'by_division': by_division,
-        })
-
-    @action(detail=True, methods=['get'], url_path='eligible-personnel')
-    def eligible_personnel(self, request, pk=None):
-        """
-        Returns only personnel whose assigned division matches the service's division.
-        Enforces division restriction on personnel listing.
-        """
-        service = self.get_object()
-        personnel_qs = DolePersonnel.objects.filter(is_active=True)
-
-        if service.division and service.division.name.strip().upper() != 'ALL':
-            div_name = service.division.name.strip()
-            names = [div_name]
-            if div_name.upper() in ('TSSD1', 'TSSD 1'):
-                names = ['TSSD 1', 'TSSD1']
-            elif div_name.upper() in ('TSSD2', 'TSSD 2'):
-                names = ['TSSD 2', 'TSSD2']
-            elif div_name.upper() == 'IMSD':
-                names = ['IMSD']
-            elif div_name.upper() == 'MALSU':
-                names = ['MALSU']
-
-            personnel_qs = personnel_qs.filter(
-                models.Q(divisions=service.division) |
-                models.Q(divisions__name__in=names) |
-                models.Q(divisions__name__iexact='ALL') |
-                models.Q(divisions__name__in=list(services.UNIVERSAL_DIVISION_NAMES))
-            ).distinct()
-
-        office_id = request.query_params.get('office')
-        if office_id:
-            personnel_qs = personnel_qs.filter(office_id=office_id)
-        elif not request.user.is_superuser:
-            staff_offices = get_staff_offices(request.user)
-            if staff_offices.exists():
-                personnel_qs = personnel_qs.filter(office__in=staff_offices)
-
-        search = request.query_params.get('search')
-        if search:
-            search_str = search.strip()
-            personnel_qs = personnel_qs.filter(
-                models.Q(employee_id__icontains=search_str) |
-                models.Q(first_name__icontains=search_str) |
-                models.Q(last_name__icontains=search_str) |
-                models.Q(position__icontains=search_str)
-            )
-
-        personnel_qs = personnel_qs.select_related('office').prefetch_related('divisions').order_by('last_name', 'first_name')
-        assigned_ids = set(service.assigned_personnel.values_list('id', flat=True))
-
-        personnel_data = []
-        for p in personnel_qs:
-            personnel_data.append({
-                'id': p.id,
-                'employee_id': p.employee_id,
-                'full_name': p.full_name,
-                'first_name': p.first_name,
-                'last_name': p.last_name,
-                'position': p.position,
-                'office_id': p.office_id,
-                'office_name': p.office.name if p.office else '',
-                'office_code': p.office.code if p.office else '',
-                'division_names': [d.name for d in p.divisions.all()],
-                'is_active': p.is_active,
-                'is_assigned': p.id in assigned_ids,
-            })
-
-        return Response({
-            'service_id': service.id,
-            'service_name': service.name,
-            'division_id': service.division_id,
-            'division_name': service.division.name if service.division else 'ALL',
-            'total_eligible': len(personnel_data),
-            'assigned_count': len([p for p in personnel_data if p['is_assigned']]),
-            'personnel': personnel_data,
-        })
-
-    @action(detail=True, methods=['post'], url_path='assign-personnel')
-    @transaction.atomic
-    def assign_personnel(self, request, pk=None):
-        """
-        Assigns or updates personnel responsible for handling this service.
-        Strictly enforces division-based restrictions:
-        Personnel whose assigned division does not match the service's division will be rejected.
-        """
-        service = self.get_object()
-        personnel_ids = request.data.get('personnel_ids', [])
-
-        if not isinstance(personnel_ids, list):
-            return Response(
-                {"detail": "'personnel_ids' must be a list of personnel IDs."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        personnel_qs = list(DolePersonnel.objects.filter(id__in=personnel_ids).prefetch_related('divisions'))
-        if len(personnel_qs) != len(set(personnel_ids)):
-            found_ids = {p.id for p in personnel_qs}
-            missing_ids = set(personnel_ids) - found_ids
-            return Response(
-                {"detail": f"One or more personnel IDs not found: {list(missing_ids)}."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Division-based enforcement
-        if service.division and service.division.name.strip().upper() != 'ALL':
-            service_div_name = service.division.name.strip()
-            allowed_divs = {
-                service_div_name.upper(),
-                service_div_name.replace(' ', '').upper(),
-                'ALL'
-            }
-            mismatched = []
-            for p in personnel_qs:
-                p_div_names = {d.name.upper() for d in p.divisions.all()} | {d.name.replace(' ', '').upper() for d in p.divisions.all()}
-                has_universal_p = any(
-                    services.is_universal_division_name(d.name) for d in p.divisions.all()
-                )
-                if not has_universal_p and not (p_div_names & allowed_divs):
-                    p_div_str = ', '.join([d.name for d in p.divisions.all()]) or 'None'
-                    mismatched.append(f"{p.full_name} ({p.employee_id}) [Divisions: {p_div_str}]")
-
-            if mismatched:
-                return Response(
-                    {
-                        "detail": (
-                            f"Division Restriction Error: Personnel can only be assigned to services within their "
-                            f"authorized division. The service '{service.name}' belongs to '{service.division.name}', "
-                            f"but the following personnel are not assigned to this division: {', '.join(mismatched)}."
-                        ),
-                        "mismatched_personnel": mismatched,
-                        "service_division": service.division.name,
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        service.assigned_personnel.set(personnel_qs)
-
-        log_audit_event(
-            action='SERVICE_ASSIGN_PERSONNEL',
-            category=CtmsAuditLog.CATEGORY_PERSONNEL,
-            actor=request.user,
-            request=request,
-            target_type='CsmService',
-            target_id=service.id,
-            target_repr=service.name,
-            description=(
-                f"Assigned {len(personnel_qs)} personnel to service '{service.name}' "
-                f"({service.division.name if service.division else 'All'}): "
-                f"{', '.join([p.full_name for p in personnel_qs]) or 'None'}"
-            )
-        )
-
-        serializer = StaffServiceSerializer(service)
-        return Response({
-            "message": f"Successfully updated assigned personnel for '{service.name}'.",
-            "service": serializer.data,
         })
 
 

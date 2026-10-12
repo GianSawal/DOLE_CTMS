@@ -28,7 +28,6 @@ from .views import (
     PublicDisplayVideoUploadView,
     CsmDivisionListView,
     CsmOfficeListView,
-    StaffPersonnelViewSet,
     StaffPositionViewSet,
     StaffServiceViewSet,
     CtmsCounterViewSet,
@@ -45,7 +44,6 @@ router.register(r'staff/windows', StaffWindowViewSet, basename='staff-windows')
 router.register(r'staff/staff-offices', CtmsStaffOfficeViewSet, basename='staff-offices')
 router.register(r'staff/users', StaffUserAccountViewSet, basename='staff-users')
 router.register(r'staff/employees', StaffUserAccountViewSet, basename='staff-employees')
-router.register(r'staff/personnel', StaffPersonnelViewSet, basename='staff-personnel')
 router.register(r'staff/positions', StaffPositionViewSet, basename='staff-positions')
 router.register(r'staff/services', StaffServiceViewSet, basename='staff-services')
 

@@ -14,6 +14,11 @@ def generate_token(nbytes=16):
     return secrets.token_urlsafe(nbytes)
 
 
+# The only service divisions. Divisions classify services for search and reports;
+# they never decide who can see or call a client.
+CANONICAL_DIVISIONS = ('TSSD 1', 'TSSD 2', 'IMSD')
+
+
 # =====================================================================
 # CSM Shared Models (Read-only / Unmanaged in production)
 # =====================================================================
@@ -168,51 +173,6 @@ class CtmsStaffOffice(models.Model):
         return f"{self.user.username} -> {self.office.name}"
 
 
-class CtmsStaffDivision(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='staff_divisions')
-    division = models.ForeignKey(CsmDivision, on_delete=models.CASCADE, related_name='staff_division_assignments')
-
-    class Meta:
-        db_table = 'ctms_staff_division'
-        verbose_name = 'CTMS Staff Division'
-        verbose_name_plural = 'CTMS Staff Divisions'
-        unique_together = ('user', 'division')
-
-    def __str__(self):
-        return f"{self.user.username} -> {self.division.name}"
-
-
-class CtmsEmployee(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='employee_profile')
-    employee_id = models.CharField(max_length=50, unique=True, db_index=True)
-    first_name = models.CharField(max_length=100)
-    middle_name = models.CharField(max_length=100, blank=True, default='')
-    last_name = models.CharField(max_length=100)
-    position = models.CharField(max_length=150, blank=True, default='')
-    office = models.ForeignKey(CsmOffice, on_delete=models.PROTECT, related_name='employees')
-    divisions = models.ManyToManyField(CsmDivision, blank=True, related_name='employees', db_table='ctms_employee_divisions')
-    is_active = models.BooleanField(default=True)
-    must_change_password = models.BooleanField(default=True, help_text="Requires password change on first login or after reset")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'ctms_employee'
-        verbose_name = 'CTMS Employee'
-        verbose_name_plural = 'CTMS Employees'
-        ordering = ['last_name', 'first_name']
-
-    def __str__(self):
-        return f"{self.employee_id} - {self.last_name}, {self.first_name}"
-
-    @property
-    def full_name(self):
-        mid = f" {self.middle_name}" if self.middle_name else ""
-        return f"{self.first_name}{mid} {self.last_name}"
-
-
 class DolePersonnel(models.Model):
     """
     Canonical personnel profile of a staff login account (one-to-one with User):
@@ -240,8 +200,6 @@ class DolePersonnel(models.Model):
     last_name = models.CharField(max_length=100)
     position = models.CharField(max_length=150, blank=True, default='')
     office = models.ForeignKey(CsmOffice, on_delete=models.PROTECT, related_name='dole_personnel')
-    divisions = models.ManyToManyField(CsmDivision, blank=True, related_name='dole_personnel', db_table='ctms_dole_personnel_divisions')
-    services = models.ManyToManyField(CsmService, blank=True, related_name='assigned_personnel', db_table='ctms_dole_personnel_services')
     is_active = models.BooleanField(default=True)
     must_change_password = models.BooleanField(default=False, help_text="Requires password change on next login")
     role = models.CharField(
@@ -381,29 +339,6 @@ class CtmsOfficeQrConfig(models.Model):
     def __str__(self):
         status = "Enabled" if self.is_qr_enabled else "Disabled"
         return f"{self.office.name} - QR {status}"
-
-
-class CtmsServiceDefaultOfficer(models.Model):
-    """
-    Stores designated default officers per service and office.
-    Used to automatically determine the default officer when assigning a client.
-    """
-    id = models.BigAutoField(primary_key=True)
-    office = models.ForeignKey(CsmOffice, on_delete=models.CASCADE, null=True, blank=True, related_name='service_default_officers')
-    service = models.ForeignKey(CsmService, on_delete=models.CASCADE, related_name='default_officers')
-    officer_name = models.CharField(max_length=200, help_text="Full name of the default officer")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'ctms_service_default_officer'
-        verbose_name = 'CTMS Service Default Officer'
-        verbose_name_plural = 'CTMS Service Default Officers'
-        unique_together = ('office', 'service')
-
-    def __str__(self):
-        return f"{self.service.name} -> {self.officer_name}"
-
 
 
 class CtmsTransaction(models.Model):

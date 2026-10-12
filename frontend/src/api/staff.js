@@ -83,7 +83,7 @@ export const staffApi = {
     body: JSON.stringify({ office: officeId, arta_video_url: '', clear_file: true, is_active: false }),
   }),
 
-  // Services Management & Personnel Assignment (Accessible to all accounts)
+  // Service catalog (everyone reads; regional admins tag divisions)
   getServices: (filters = {}) => {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => {
@@ -94,19 +94,9 @@ export const staffApi = {
 
   getServicesSummary: () => apiRequest('/staff/services/summary/'),
 
-  getService: (id) => apiRequest(`/staff/services/${id}/`),
-
-  getServiceEligiblePersonnel: (id, filters = {}) => {
-    const params = new URLSearchParams();
-    Object.entries(filters).forEach(([k, v]) => {
-      if (v !== '' && v !== null && v !== undefined) params.append(k, v);
-    });
-    return apiRequest(`/staff/services/${id}/eligible-personnel/?${params.toString()}`);
-  },
-
-  assignServicePersonnel: (id, personnelIds) => apiRequest(`/staff/services/${id}/assign-personnel/`, {
-    method: 'POST',
-    body: JSON.stringify({ personnel_ids: personnelIds }),
+  setServiceDivision: (id, divisionId) => apiRequest(`/staff/services/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify({ division: divisionId }),
   }),
 
   // User Management (regional administrators)

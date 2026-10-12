@@ -6,10 +6,8 @@ from .models import (
     CsmResponse,
     CtmsCounter,
     CtmsStaffOffice,
-    CtmsEmployee,
     CtmsDisplayConfig,
     CtmsOfficeQrConfig,
-    CtmsServiceDefaultOfficer,
     CtmsTransaction,
     CtmsAuditLog,
     DolePosition,
@@ -51,12 +49,6 @@ class CsmServiceAdmin(admin.ModelAdmin):
     ordering = ('sort_order', 'name')
 
 
-@admin.register(CtmsServiceDefaultOfficer)
-class CtmsServiceDefaultOfficerAdmin(admin.ModelAdmin):
-    list_display = ('id', 'service', 'officer_name', 'office', 'updated_at')
-    search_fields = ('service__name', 'officer_name', 'office__name')
-    list_filter = ('office', 'service__division')
-
 @admin.register(CtmsCounter)
 class CtmsCounterAdmin(admin.ModelAdmin):
     list_display = ('id', 'office', 'name', 'is_active')
@@ -69,21 +61,6 @@ class CtmsStaffOfficeAdmin(admin.ModelAdmin):
     list_filter = ('office',)
     search_fields = ('user__username', 'office__name')
 
-
-@admin.register(CtmsEmployee)
-class CtmsEmployeeAdmin(admin.ModelAdmin):
-    list_display = ('employee_id', 'last_name', 'first_name', 'position', 'office', 'get_divisions', 'is_active', 'created_at')
-    search_fields = ('employee_id', 'first_name', 'last_name', 'position', 'office__name')
-    list_filter = ('office', 'divisions', 'user__is_active')
-    filter_horizontal = ('divisions',)
-
-    def is_active(self, obj):
-        return obj.user.is_active
-    is_active.boolean = True
-
-    def get_divisions(self, obj):
-        return ", ".join([d.name for d in obj.divisions.all()])
-    get_divisions.short_description = 'Divisions'
 
 @admin.register(CtmsTransaction)
 class CtmsTransactionAdmin(admin.ModelAdmin):
@@ -140,4 +117,3 @@ class DolePositionAdmin(admin.ModelAdmin):
     search_fields = ('title',)
     list_filter = ('is_custom',)
     ordering = ('title',)
-

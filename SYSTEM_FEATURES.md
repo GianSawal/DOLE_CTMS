@@ -64,264 +64,154 @@ The CTMS serves as the **front door** of all client visits and the **strict prer
 ## 3. Database Schema & Data Models
 
 The database contains two distinct groups of models:
-1. **CSM Shared Tables (Unmanaged):** Read-only tables maintained primarily by the CSM system.
+1. **CSM Shared Tables (Unmanaged):** Tables owned by the CSM system. The CTMS reads them (and tags service divisions).
 2. **CTMS Tables (Managed):** Dedicated tables prefixed with `ctms_` owned by this codebase.
 
 ### 3.1 CSM Shared Models (`managed = False`)
 * **`CsmOffice` (`csm_office`):** Regional, Field, and Satellite Offices (e.g. Pampanga, Bulacan, Bataan, Clark, Regional Office III).
   * Fields: `id`, `name`, `code` (e.g. `CRK`, `BUL`, `PAM`), `is_active`, `qr_issued_at`.
-* **`CsmDivision` (`csm_division`):** DOLE administrative divisions and units (e.g. `IMSD`, `TSSD 1`, `TSSD 2`, `MALSU`).
-* **`CsmService` (`csm_service`):** DOLE public services (e.g. SEnA, AEP, Rule 1020, SPES, TUPAD, DILP). Linked to `CsmDivision`.
+* **`CsmDivision` (`csm_division`):** The only service divisions: **`TSSD 1`, `TSSD 2`, `IMSD`** (`CANONICAL_DIVISIONS` in `ctms/models.py`). Divisions **classify services only**; they never decide who can see, call, or serve a client.
+* **`CsmService` (`csm_service`):** DOLE public services (e.g. SEnA, AEP, Rule 1020, SPES, TUPAD, DILP). Tagged with one division or none.
 * **`CsmResponse` (`csm_csmresponse`):** Completed client feedback surveys.
-  * Fields: `id`, `ctms_transaction_id` (Unique foreign key reference to `ctms_transaction.id`), `created_at`.
+  * Fields: `id`, `ctms_transaction_id` (Unique reference to `ctms_transaction.id`), `created_at`.
+* **`auth_user`:** Django accounts, **shared with the CSM** (same logins). Staff = `is_staff`.
 
 ### 3.2 CTMS Managed Models (`managed = True`)
 * **`CtmsTransaction` (`ctms_transaction`):** Core queue lifecycle entity.
   * `transaction_no`: Unique human-readable code (e.g. `CRK-261012-0001`).
   * `queue_no`: Short queue identifier (e.g. `001` or `P-001` for priority).
-  * `status`: `waiting` | `serving` | `pending` | `done` | `no_show` | `cancelled`.
+  * `status`: `waiting` | `serving` | `transferred` | `pending` | `done` | `no_show` | `cancelled` (allowed changes are defined once in `ALLOWED_TRANSITIONS`, `ctms/services.py`). The CSM only unlocks the survey on `done`.
+  * `assigned_to`: The personnel account that currently owns the client (set when called; changed by transfers).
+  * `counter`: The window the client is being served at (null while waiting, after a transfer, or when served without a window).
+  * `served_by` / `served_by_name`: Who pressed Done, and the **name of the final handler** for CSM attribution.
+  * `assigned_personnel`: Legacy free-text handler name, kept for history.
   * `source`: `qr` (Self scan) | `kiosk` (Self-service terminal) | `staff` (PACD walk-in).
   * `is_priority`: Boolean (Senior Citizens, PWDs, Pregnant Women under RA 9994 / RA 7277).
-  * `client_name`: Client name (optional during check-in, required for walk-in slips).
-  * `group_member_names`: JSON array for multi-member group registrations.
-  * `ticket_token`: Unique URL token for the live mobile ticket (`/t/:ticketToken`).
-  * `survey_token`: Unique secret token for the CSM survey link (`/survey/t/:surveyToken`).
-  * `claim_code`: 4-character uppercase alphanumeric code (excluding ambiguous `0/O/1/I/L`).
+  * `client_name`, `group_member_names`, `ticket_token`, `survey_token`, `claim_code` (4 characters, no ambiguous `0/O/1/I/L`).
   * Timestamps: `checked_in_at`, `called_at`, `started_at`, `done_at`, `closed_at`.
-* **`CtmsCounter` (`ctms_counter`):** Office service windows/counters (e.g. Window 1, Window 2, Helpdesk).
-* **`CtmsStaffOffice` (`ctms_staff_office`):** Many-to-many office assignment bridge for Django `User` accounts.
-* **`CtmsStaffDivision` (`ctms_staff_division`):** Division queue scoping bridge for staff user accounts.
-* **`DolePersonnel` (`ctms_dole_personnel`):** Pure employee directory for action officers. *Does not have login credentials or passwords.*
-* **`DolePosition` (`ctms_dole_position`):** Configurable employee position directory (pre-loaded with standard DOLE plantilla/job order designations).
-* **`CtmsEmployee` (`ctms_employee`):** Legacy profile extension linking a `User` to personal details and forced password reset flags.
-* **`CtmsServiceDefaultOfficer` (`ctms_service_default_officer`):** Designated default personnel assigned per service and office.
-* **`CtmsDisplayConfig` (`ctms_display_config`):** Office TV configuration (ARTA MP4 uploads, YouTube video links, display toggles).
+* **`CtmsAssignmentHistory` (`ctms_assignment_history`):** Immutable event log per transaction (called, transferred, pending, resumed, completed, reopened, requeued, no-show, cancelled) with from/to user, window, status, actor, reason, and name snapshots.
+* **`CtmsCounter` (`ctms_counter`):** A **service window** of one office. `assigned_user` (unique: one person per window, one window per person), `assigned_at`, `is_active`, `archived_at` (soft delete), `sort_order`.
+* **`CtmsOfficeProfile` (`ctms_office_profile`):** Office type `REGIONAL` (RO3) or `PROVINCIAL`.
+* **`DolePersonnel` (`ctms_dole_personnel`):** The **personnel profile of a login account** (one-to-one with `User`): personnel ID, names, office, position, `role` (`PERSONNEL` / `ADMIN`), `must_change_password`.
+* **`CtmsStaffOffice` (`ctms_staff_office`):** The account's office (one per account; the system admin may have several).
+* **`DolePosition` (`ctms_dole_position`):** Position catalog used by the account form (pre-loaded with DOLE plantilla/job order designations).
+* **`CtmsDisplayConfig` (`ctms_display_config`):** Office TV configuration (ARTA MP4 uploads, YouTube video links).
 * **`CtmsOfficeQrConfig` (`ctms_office_qr_config`):** Office-level check-in gating (enable/disable QR registration during off-hours, custom notices).
-* **`CtmsAuditLog` (`ctms_audit_log`):** Government compliance audit trail tracking logins, calls, status mutations, deletions, and user modifications with actor IP address.
-* **`CtmsNotification` (`ctms_notification`):** In-app notification queue alerting officers when clients are assigned or transferred to them.
+* **`CtmsAuditLog` (`ctms_audit_log`):** Audit trail of logins, calls, status changes, transfers, window and account changes, with actor IP address.
+* **`CtmsNotification` (`ctms_notification`):** In-app notifications, e.g. when a client is transferred to someone.
 
 ### 3.3 Alternative / Local Queueing App Models (`queueing/models.py`)
-Used for processing cycle time (PCT) tracking and Citizen's Charter benchmarks:
-* **`Office` / `Unit` / `Service`:** Standalone models containing Citizen's Charter standards (`pct_minutes`, `classification`: Simple ≤3 days, Complex ≤7 days, Highly Technical ≤20 days).
+A separate, older server-rendered queue (`/q/<office>/`, `/front-desk/`) used for processing cycle time (PCT) tracking. Not part of the CTMS workflow below.
+* **`Office` / `Unit` / `Service`:** Citizen's Charter standards (`pct_minutes`, `classification`: Simple ≤3 days, Complex ≤7 days, Highly Technical ≤20 days).
 * **`QueueTicket` / `TicketItem`:** Multi-unit ticket model tracking step-by-step routing across units.
 
 ---
 
-## 4. End-to-End System Features & Modules
+## 4. End-to-End Workflow & Modules
 
-### 4.1 Module 1: Public Client Self Check-In & Mobile Ticket
+```
+Office → Service selection → Shared office queue → Call from a window → Serve
+       → (Pending / Transfer) → Done → CSM survey
+```
 
-#### 1. QR Code Check-In (`/checkin/office/:officeId`)
-* **Office Locked Scoping:** Bound to the specific office represented by the QR code.
-* **Office Hours Enforcement:** If an administrator disables QR registration via `CtmsOfficeQrConfig`, the page displays a branded notice informing clients of operating hours (Monday to Friday, 8:00 AM - 5:00 PM).
-* **Service Selection:** Displays active services grouped by division in official DOLE CSF Form No. 3 order.
-* **Priority Lane Integration (RA 9994 / RA 7277):**
-  * Checkbox for Senior Citizens, Persons with Disabilities (PWD), and Pregnant Women.
-  * Issues a priority ticket number prefixed with `P-` (e.g. `P-001`) which is prioritized in the staff queue.
-* **Group Check-In Support:** Supports registering a group (e.g., union delegations, company representatives) by recording individual member names in `group_member_names`.
-* **Rate Limiting:** Guarded by `CheckinThrottle` (10 requests/minute per IP) to prevent spam.
+### 4.1 Roles & Access
 
-#### 2. Live Ticket Screen (`/t/:ticketToken`)
-* **Zero App Install:** Operates entirely in mobile web browsers after scanning the check-in QR.
-* **Real-time Status Polling:** Polls every 5 seconds for status updates.
-* **Key Visual Elements:**
-  * Prominent Queue Number (`042` or `P-007`).
-  * Unique Transaction Code (`CRK-261012-0042`) and 4-digit Claim Code.
-  * Dynamic Wait Position ("3 clients ahead of you").
-  * Active Service Window Callout ("Now Serving at Window 2 — Officer: Juan Dela Cruz").
-* **Instant Survey Handoff:**
-  * As soon as staff marks the transaction **Done**, the ticket dynamically morphs into a vibrant **"Rate Our Service"** button.
-  * Directs clients to `{CSM_SURVEY_BASE_URL}/survey/t/{survey_token}`.
-  * If the client has completed the survey, the ticket displays **"Feedback Submitted — Thank you for helping DOLE serve you better"**.
+| Account | Sees |
+| :--- | :--- |
+| **System Admin** (the only superuser; set with `manage.py set_system_admin <username> --apply`) | Everything |
+| **Regional Administrator** (`role = ADMIN` **and** a `REGIONAL` office) | Queue, Windows, My Clients, Transactions, QR, plus **User Management, Services, Reports, Audit Log**, with oversight of **all offices** |
+| **Everyone else** (all provincial accounts, regional personnel) | Queue, Windows, My Clients, Transactions (own office), Check-in QR |
 
----
+Rules live in `ctms/permissions.py` and are enforced on every endpoint; the sidebar only mirrors them. An `ADMIN` role on a provincial account grants nothing extra.
 
-### 4.2 Module 2: Office TV Display Board (`/display/office/:officeId`)
+### 4.2 Public Client Self Check-In & Mobile Ticket
+* **QR Check-In (`/checkin/office/:officeId`):** office-locked; services grouped by division; priority lane (`P-` numbers); group registration; office-hours gating via `CtmsOfficeQrConfig`; throttled (10/min per IP).
+* **Tickets enter the office's shared waiting queue unassigned.** Nobody is pre-assigned.
+* **Live Ticket (`/t/:ticketToken`):** polls every 5 seconds; queue number, transaction code, claim code, position, window when called; turns into the **Rate Our Service** button when Done, then shows "Feedback Submitted".
 
-A high-contrast, responsive full-screen display designed for wall-mounted TV monitors in DOLE waiting lounges:
+### 4.3 Windows (`/staff/windows`)
+* Card per window of the office: status (Available / Occupied / Your Window / Inactive), occupant, client being served.
+* Any staff member of the office can **add, rename, activate/deactivate, and archive** windows (archived names are restored on re-create).
+* **Assign Myself / Release:** one window per person, one person per window (row locks + unique column). Inactive or archived windows cannot be taken; busy windows cannot be archived or deactivated.
 
-* **Dual-Pane Layout:**
-  * **Left Pane (Queue Operations):**
-    * **"Now Serving" Grid:** Live tiles for each active window/counter displaying the serving queue number, client name, service, and assigned officer.
-    * **Priority Badges:** High-visibility gold/amber badges for priority lane tickets.
-    * **"Next in Line" Waiting Carousel:** Upcoming ticket numbers queued for service.
-  * **Right Pane (Public Information & ARTA Video):**
-    * Continuous video loop for ARTA (Anti-Red Tape Authority), Citizen's Charter, or DOLE information videos.
-    * Supports direct MP4 uploads (stored under `/media/arta_videos/`) or embedded YouTube video URLs.
-* **Audio Voice Chime & Text-to-Speech:**
-  * Configurable two-tone ding-dong chime.
-  * Web Speech API synthesis: Announcing in English or Filipino: *"Now calling Ticket Number 042, please proceed to Window 1"*.
-* **Marquee Announcement Ticker:** Scrolling bottom text banner for official office advisories.
-* **Privacy Compliance:** In accordance with Philippine Data Privacy Act (RA 10173), ticket displays can be configured to show queue numbers only, omitting client full names.
+### 4.4 Queue (`/staff/queue`)
+* **One shared waiting line per office**, priority first then first-come-first-served. Division is only a label.
+* **Call Next / Call:** requires the caller's active window in that office; the row is locked so each ticket gets exactly one caller; a person serves one client at a time. The caller becomes the owner (`assigned_to`).
+* **My Current Client:** Done, Recall on TV, Pending (with reason), Reassign, Return to Queue (back to the shared line, unassigned), No-show.
+* **Owner only:** only the person handling a client can update it (system admin excepted).
+* Waiting tickets: Call, Cancel, Delete (waiting tickets only).
+* **Walk-in Registration** with a printable 80mm slip.
 
----
+### 4.5 My Clients (`/staff/my-clients`)
+* **Ongoing:** clients you are serving, plus clients transferred to you ("Transferred – not started"), any date.
+* **Pending:** clients you paused; they stay yours.
+* **Done:** your latest 200 completed transactions with CSM status.
+* **View:** ticket details and full handling history.
+* **Reassign:** to active staff of the same office. The client leaves your lists and window immediately, the recipient is notified, and you can no longer change it. The recipient presses **Start**:
+  * at their own window if they have one;
+  * otherwise at the **window the client was transferred from** (shown and announced there on the TV);
+  * with a "Proceed to <name>" TV card only if that window no longer exists.
 
-### 4.3 Module 3: Staff Queue Operations Console (`/staff/queue`)
+### 4.6 TV Display Board (`/display/office/:officeId`)
+* **One card per active window** of the office, in Windows-page order; cards resize to fit. No hardcoded windows or divisions.
+* Each card: window name, queue number being served (or Idle / "<name> · Available"), personnel name, service. The latest call is highlighted; extra clients at the same window are listed as **Also serving**.
+* Next in line (priority first), ARTA / Citizen's Charter video, chime + voice announcement (English/Filipino), light/dark mode.
+* **Privacy (RA 10173):** queue numbers only, never client names.
 
-The operational hub for DOLE front-line officers and counter staff:
+### 4.7 User Management (`/staff/users`, regional admins)
+* **One account = login + personnel profile**, created and edited in a single form: username, email, temporary password + confirmation, role; first/middle/last name, personnel ID, office (one), position.
+* New accounts and admin-set passwords require a password change at next login.
+* Cannot change office or deactivate while the person has active clients; accounts that handled transactions are deactivated, not deleted; no self-deactivation or self-demotion.
 
-#### 1. Counter & Office Selection
-* Remembers the staff member's selected office and counter in `localStorage`.
-* Restricts access strictly to offices assigned to the user in `CtmsStaffOffice` (Superusers have global access).
+### 4.8 Services (`/staff/services`, regional admins)
+* Catalog with a division tag per service (TSSD 1, TSSD 2, IMSD, or none). Service names and availability are managed in the CSM.
 
-#### 2. Queue Dispatch Operations
-* **Queue Priority Order:** Automatically sorts tickets so that **Priority lane clients (RA 9994/7277) are called first**, followed by standard tickets in First-In, First-Out (FIFO) chronological sequence.
-* **Call Next:** Immediately advances the highest-priority waiting ticket to `serving`, assigns the staff member's window, and triggers the TV chime.
-* **Recall:** Re-announces the currently served client on the TV display board without altering ticket status.
-* **Start Service:** Records the exact `started_at` timestamp to benchmark actual service duration against Citizen's Charter standards.
-* **Complete / Done:**
-  * Marks the transaction `done`, sets `done_at`, and calculates `service_duration_seconds`.
-  * **Immediately unlocks the CSM survey** for the client's mobile ticket.
-* **Undo Done:** Reverts an accidental completion back to `serving` (available only if the client has not yet submitted a CSM survey).
-* **Hold / Multi-Day Pending:**
-  * Moves the transaction to `pending` status for services requiring inspection, legal review, or document compliance across multiple days.
-  * Preserves ticket history without distorting same-day waiting queue metrics.
-* **No-Show:** Marks the ticket as `no_show` if the client fails to report to the window after multiple calls.
-* **Cancel:** Cancels an erroneous or duplicate check-in.
-* **Return to Queue (Requeue):** Returns a serving ticket back to the waiting queue if a client temporarily steps away.
+### 4.9 Transactions, Reports, QR, Audit Log
+* **Transactions (`/staff/transactions`):** history with filters and CSV export; own office, or all offices for regional admins.
+* **Reports (`/staff/reports`, regional admins):** volumes, wait/service times, no-show rate, CSM conversion.
+* **Check-in QR (`/staff/qr`):** printable A4 poster and open/close check-in switch.
+* **Audit Log (`/staff/audit-logs`, regional admins):** all queue, window, account, and configuration actions.
+* **PCT report (`/reports/pct/`, legacy `queueing` app):** Citizen's Charter processing cycle time compliance.
 
-#### 3. PACD / Front Desk Walk-in Registration
-* Allows counter staff or Public Assistance and Complaints Desk (PACD) officers to register clients who lack smartphones or QR scanners.
-* Generates a printable **80mm thermal receipt slip** containing:
-  * Official DOLE Seal & Office Header.
-  * Large Queue Number and Transaction Barcode / QR Code.
-  * Direct survey URL and Claim Code.
-
-#### 4. Action Officer Assignment & Live Push Notifications
-* Staff can assign or transfer any ticket to a specific `DolePersonnel` record.
-* Automatically creates a `CtmsNotification` for the recipient officer's account.
+### 4.10 CSM Integration
+* The CSM reads `ctms_transaction` (`id, transaction_no, office_id, service_id, status, done_at, survey_token, claim_code`) and unlocks the survey only when `status = 'done'`.
+* **Personnel attribution:** `ctms_transaction.served_by_name` holds the final handler's name (earlier handlers stay in `ctms_assignment_history`). The CSM can show it by adding that column to its read-only model.
 
 ---
 
-### 4.4 Module 4: Staff User & Role-Based Access Control (RBAC) (`/staff/users`)
-
-Accessible exclusively to superuser administrators:
-
-* **Two Distinct Account Entities:**
-  1. **Login Accounts (`User`):** Staff accounts used to authenticate via `/staff/login`.
-  2. **Personnel Directory (`DolePersonnel`):** Directory of DOLE officers who provide services. Users can be linked to a personnel record to receive assignments and queue dispatches.
-* **Office Scoping (Strict Isolation):**
-  * Admin accounts can be granted access to **All Offices** or a custom subset.
-  * Field Office staff are restricted strictly to their assigned Field Office (e.g., Bataan staff cannot see or modify Pampanga transactions).
-* **Division Queue Permissions:**
-  * Staff accounts can be scoped to specific operational divisions (`IMSD`, `TSSD 1`, `TSSD 2`, `MALSU`) or universal front-desk counters (Window 1 to 10).
-* **Password Lifecycle & Security:**
-  * Supports creating initial temporary passwords (defaults to username if omitted).
-  * Enforces **`must_change_password`** upon first login or following an administrative password reset.
-
----
-
-### 4.5 Module 5: DOLE Personnel & Plantilla Directory (`/staff/personnel`)
-
-* **Comprehensive Personnel Database:** Manages employee ID numbers, full legal names, assigned office, and affiliated divisions.
-* **Dynamic Position Management (`/api/staff/positions/`):**
-  * Pre-loaded with 40+ official DOLE government positions (e.g., *Labor and Employment Officer I/II/III*, *Supervising LEO*, *Attorney III/IV*, *Mediator-Arbiter*, *Director*, *GIP*, *Job Order*).
-  * Administrators can create and manage custom positions on the fly without database migrations.
-* **Service Specialization:** Maps personnel to the specific CSM public services they are certified to handle.
-
----
-
-### 4.6 Module 6: Transaction History & Monitoring (`/staff/transactions`)
-
-* **Filterable Historical Ledger:** Filter by Office, Division, Service, Transaction Status, Date Range, Priority Type, or Client Name.
-* **Survey Audit Tracking:** Real-time indicator displaying whether the client has submitted their CSM survey (`Yes (Surveyed)` vs `Pending Survey`).
-* **Multi-Day Status Tracking:** Highlights pending transactions that have remained open across business days.
-* **CSV Export:** Comprehensive export for administrative reports and COA / ARTA submissions.
-
----
-
-### 4.7 Module 7: Processing Cycle Time (PCT) Compliance & ARTA Report
-
-Located under `backend/queueing/templates/queueing/pct_report.html` and `/reports/pct/`:
-
-* **Citizen's Charter & ARTA (RA 11032) Performance Analytics:**
-  * Evaluates agency compliance with prescribed Processing Cycle Times.
-  * Categorizes services by complexity:
-    * **Simple Transactions:** ≤ 3 business days.
-    * **Complex Transactions:** ≤ 7 business days.
-    * **Highly Technical Transactions:** ≤ 20 business days.
-* **Key Analytical Metrics:**
-  * **Prescribed PCT (Target):** Standard turnaround time defined in the Citizen's Charter.
-  * **Actual PCT (Achieved):** Elapsed time from `started_at` to `done_at`.
-  * **Average Waiting Time:** Elapsed time from `checked_in_at` to `called_at`.
-  * **Compliance Rate (%):** Proportion of transactions completed strictly within the prescribed Citizen's Charter benchmark.
-* **Interactive Filtering & Export:** Date range pickers, office filter, unit filter, and single-click CSV export (`DOLE_RO3_PCT_Report_YYYY-MM-DD.csv`).
-
----
-
-### 4.8 Module 8: General CTMS Summary Reports (`/staff/reports`)
-
-* **Executive Dashboard Metrics:**
-  * Total Checked-in vs Total Served.
-  * No-show Rate and Cancellation Rate.
-  * Average Queue Wait Time (Minutes).
-  * Average Transaction Service Time (Minutes).
-  * **CSM Survey Conversion Rate (%):** Total Completed Surveys ÷ Total Done Transactions.
-* **Visual Breakdown:** Volume breakdown per service and per counter window.
-
----
-
-### 4.9 Module 9: QR Poster Generation & Office Hours Control (`/staff/qr`)
-
-* **Printable A4 Check-In Poster:**
-  * Official DOLE Region III layout with logo, instructions, and high-resolution QR code.
-  * Encodes direct check-in URL: `{CTMS_BASE_URL}/checkin/office/{officeId}`.
-* **Office Check-In Switch (Open / Close):**
-  * Instant toggle switch allowing administrators to enable or disable client check-ins.
-  * Configurable off-hours notice message shown to clients when scanning outside official hours.
-
----
-
-### 4.10 Module 10: Security, Throttling & Government Audit Logs (`/staff/audit-logs`)
-
-* **Comprehensive Audit Trail:** Logs all critical actions to `CtmsAuditLog`:
-  * `LOGIN`: User authentication events.
-  * `CALL_CLIENT` / `RECALL_CLIENT`: Queue dispatch calls.
-  * `COMPLETE_SERVICE`: Marking transactions as Done.
-  * `REQUEUE_TICKET` / `HOLD_PENDING`: Queue adjustments.
-  * `CREATE_WALKIN` / `DELETE_TICKET`: Ticket creation/deletion.
-  * `USER_CREATE` / `USER_UPDATE`: Staff account provisioning.
-  * `ASSIGN_OFFICER`: Personnel assignment.
-* **Metadata Captured:** Actor username, role, client IP address (`X-Forwarded-For`), target ID, office name, human-readable summary, and structured JSON details.
-* **Built-in Rate Limiting (Throttling):**
-  * `LOGIN_THROTTLE_RATE = 5/min`: Prevents brute-force authentication attempts.
-  * `CHECKIN_THROTTLE_RATE = 10/min`: Prevents automated ticket generation spam.
-
----
-
-## 5. Complete REST API Reference
+## 5. REST API Reference
 
 | Endpoint | Method | Permissions | Purpose |
 | :--- | :---: | :--- | :--- |
-| **`/api/health/`** | `GET` | AllowAny | Service health check & database ping |
-| **`/api/public/offices/<id>/`** | `GET` | AllowAny | Office details, active services, and QR status |
-| **`/api/public/checkin/`** | `POST` | AllowAny (Throttled) | Creates new client transaction ticket |
-| **`/api/public/tickets/<token>/`** | `GET` | AllowAny | Polling endpoint for client live ticket |
-| **`/api/public/display/<office_id>/`** | `GET` | AllowAny | Polling endpoint for office TV display board |
-| **`/api/public/display-video-upload/<id>/`** | `POST` | AllowAny / Admin | Upload MP4 video file for office display |
-| **`/api/public/stream-video/`** | `GET` | AllowAny | Range-based HTTP media streaming for videos |
-| **`/api/staff/auth/login/`** | `POST` | AllowAny (Throttled) | Authenticate staff and issue SimpleJWT tokens |
-| **`/api/staff/auth/refresh/`** | `POST` | AllowAny | Refresh expired JWT access token |
-| **`/api/staff/auth/me/`** | `GET` | IsAuthenticated (Staff) | Current user profile, offices, and divisions |
-| **`/api/staff/auth/change-password/`** | `POST` | IsAuthenticated | Update staff password & clear `must_change_password` |
-| **`/api/staff/queue/`** | `GET` | IsAuthenticated (Staff) | Live queue list (waiting, serving, pending) |
-| **`/api/staff/call-next/`** | `POST` | IsAuthenticated (Staff) | Call highest priority waiting ticket |
-| **`/api/staff/transactions/walkin/`** | `POST` | IsAuthenticated (Staff) | Register walk-in client ticket at front desk |
-| **`/api/staff/transactions/<id>/<action>/`** | `POST` | IsAuthenticated (Staff) | Perform action (`call`, `recall`, `start`, `done`, `undo_done`, `no_show`, `cancel`, `hold_pending`, `requeue`, `assign`, `delete`) |
-| **`/api/staff/transactions/`** | `GET` | IsAuthenticated (Staff) | Search & filter transaction history ledger |
-| **`/api/staff/reports/summary/`** | `GET` | IsAuthenticated (Staff) | Statistical queue & survey performance metrics |
-| **`/api/staff/qr/<office_id>/`** | `GET` | IsAuthenticated (Staff) | Returns QR code PNG / SVG for office |
-| **`/api/staff/qr-config/<office_id>/`** | `GET`/`POST` | IsAuthenticated (Staff) | Get or update office check-in enable/disable flag |
-| **`/api/staff/display-video/<office_id>/`** | `GET`/`POST` | IsAuthenticated (Staff) | Get or configure display board video sources |
-| **`/api/staff/offices/`** | `GET` | IsAuthenticated (Staff) | List active DOLE offices |
-| **`/api/staff/divisions/`** | `GET` | IsAuthenticated (Staff) | List DOLE divisions (`IMSD`, `TSSD 1`, etc.) |
-| **`/api/staff/counters/`** | `GET`/`POST` | IsAuthenticated (Staff) | CRUD service window counters |
-| **`/api/staff/users/`** | `GET`/`POST`/`PATCH` | IsAdminUser (Superuser) | CRUD staff user login accounts |
-| **`/api/staff/personnel/`** | `GET`/`POST`/`PATCH` | IsAdminUser (Superuser) | CRUD action personnel directory |
-| **`/api/staff/positions/`** | `GET`/`POST`/`DELETE` | IsAdminUser (Superuser) | Manage DOLE position titles |
-| **`/api/staff/services/`** | `GET`/`POST` | IsAuthenticated (Staff) | View services and assign default officers |
-| **`/api/staff/audit-logs/`** | `GET` | IsAdminUser (Superuser) | Query government compliance audit logs |
-| **`/api/staff/notifications/`** | `GET`/`POST` | IsAuthenticated (Staff) | Real-time dispatch notification alerts |
+| `/api/health/` | `GET` | AllowAny | Health check |
+| `/api/public/offices/<id>/` | `GET` | AllowAny | Office details, active services, QR status |
+| `/api/public/checkin/` | `POST` | AllowAny (Throttled) | Create a ticket |
+| `/api/public/tickets/<token>/` | `GET` | AllowAny | Live ticket polling |
+| `/api/public/display/<office_id>/` | `GET` | AllowAny | TV board: window cards, next in line, latest call |
+| `/api/staff/auth/login/` | `POST` | AllowAny (Throttled) | JWT login; returns the session summary |
+| `/api/staff/auth/refresh/` | `POST` | AllowAny | Refresh access token |
+| `/api/staff/auth/me/` | `GET` | Staff | Session summary: role, office type, permissions, oversight offices, window |
+| `/api/staff/auth/change-password/` | `POST` | Authenticated | Change password, clears `must_change_password` |
+| `/api/staff/queue/` | `GET` | Staff | Shared queue: waiting, serving, my pending/transferred, my window, my current client |
+| `/api/staff/call-next/` | `POST` | Staff (at a window) | Call the next client to the caller's window |
+| `/api/staff/transactions/<id>/<action>/` | `POST` | Staff (owner for owned tickets) | `call`, `recall`, `done`, `undo-done`, `pending`, `requeue`, `transfer`, `no-show`, `cancel`, `delete` |
+| `/api/staff/transactions/<id>/history/` | `GET` | Staff | Assignment history of one transaction |
+| `/api/staff/transactions/<id>/transfer-recipients/` | `GET` | Staff | Same-office personnel who can take the client |
+| `/api/staff/my-clients/?tab=ongoing\|pending\|done` | `GET` | Staff | The caller's workload |
+| `/api/staff/windows/` (+ `<id>/`, `<id>/assign-me/`, `<id>/release/`) | `GET`/`POST`/`PATCH`/`DELETE` | Staff of the office | Window management and self-assignment |
+| `/api/staff/transactions/` | `GET` | Staff | History ledger (own office; all offices for regional admins) |
+| `/api/staff/transactions/walkin/` | `POST` | Staff | Walk-in registration |
+| `/api/staff/users/` (+ `reset-password/`, `toggle-active/`) | `GET`/`POST`/`PATCH`/`DELETE` | Regional admin | Unified accounts |
+| `/api/staff/services/` (+ `summary/`) | `GET` / `PATCH` | Staff / Regional admin | Service catalog; PATCH changes only `division` |
+| `/api/staff/divisions/` | `GET` | Authenticated | TSSD 1, TSSD 2, IMSD |
+| `/api/staff/positions/` | `GET`/`POST`/`DELETE` | Regional admin | Position catalog |
+| `/api/staff/reports/summary/` | `GET` | Regional admin | Queue and survey metrics |
+| `/api/staff/audit-logs/` | `GET` | Regional admin | Audit log |
+| `/api/staff/offices/` | `GET` | Authenticated | Active offices with office type |
+| `/api/staff/qr/<office_id>/`, `/api/staff/qr-config/` | `GET`/`POST` | Staff | Check-in QR and open/close switch |
+| `/api/staff/notifications/` | `GET`/`POST` | Authenticated | Notifications |
+| `/api/staff/counters/` | `GET` | Staff | Read-only window list (use `/staff/windows/`) |
+| `/api/staff/staff-offices/` | CRUD | System admin | Raw office assignments |
 
 ---
 
@@ -349,6 +239,10 @@ CSM_SURVEY_WINDOW_DAYS=3
 # Rate Limiting
 CHECKIN_THROTTLE_RATE=10/min
 LOGIN_THROTTLE_RATE=5/min
+
+# Docker/Coolify only: sample offices, admin/admin123, staff_* accounts, sample tickets.
+# Leave False on any real database.
+CTMS_SEED_DEV_DATA=False
 ```
 
 ### 6.2 Running Locally
@@ -362,32 +256,24 @@ cd frontend
 npm run dev
 ```
 
-### 6.3 Default Seed Credentials
-* **System Superuser:** `admin` / `admin123`
-* **General Staff:** `staff` / `staff123`
-* **Dedicated Field Office Accounts:** Password for all is `staff123`
-  * `staff_aur` (Aurora Field Office)
-  * `staff_bat` (Bataan Field Office)
-  * `staff_bul` (Bulacan Field Office)
-  * `staff_crk` (Clark Satellite Office)
-  * `staff_ne`  (Nueva Ecija Field Office)
-  * `staff_pam` (Pampanga Field Office)
-  * `staff_ro3` (Regional Office III)
-  * `staff_tar` (Tarlac Field Office)
-  * `staff_zam` (Zambales Field Office)
+### 6.3 Accounts
+* **System admin:** the single superuser. Make an account the only one with `python manage.py set_system_admin <username>` (dry run) and `--apply`.
+* **Everyone else** is created in **User Management** by a regional administrator; new accounts must change their temporary password at first login.
+* **Development seed data** (`seed_ctms_dev`: `admin` / `admin123`, `staff_*` / `staff123`, sample tickets) runs only when `CTMS_SEED_DEV_DATA=True`. Never enable it on a live database.
+
+### 6.4 Every Office's First Steps
+1. Open **Windows** and add one window per counter (e.g. Window 1, Window 2).
+2. Each staff member presses **Assign Myself** on their window before calling clients.
+3. Open the TV page `/display/office/<officeId>`; it shows the office's active windows automatically.
 
 ---
 
 ## 7. Common Troubleshooting Guidelines for AI Agents & Developers
 
-1. **"Cannot login on any account / Failed to fetch":**
-   * Ensure backend is running specifically on **port 8001** (`python manage.py runserver 8001`), as Vite's proxy forwards `/api` to `127.0.0.1:8001`.
-2. **"Request was throttled":**
-   * Triggered if more than 5 login attempts occur within 1 minute. Wait 60 seconds or increase `LOGIN_THROTTLE_RATE` in `.env`.
-3. **Inactive Accounts:**
-   * Inactive accounts (`is_active = False`) like `staff_imsd` or `staff_tssd1` cannot authenticate until updated via Django ORM:
-     ```python
-     User.objects.filter(username='staff_imsd').update(is_active=True)
-     ```
-4. **Database Connectivity:**
-   * If MySQL host `10.6.8.96:3311` is unreachable due to office network disconnection, toggle `USE_SQLITE_DEV=True` in `.env` to fallback to local `db.sqlite3`.
+1. **"Cannot login on any account / Failed to fetch" (local):** the backend must run on **port 8001** (`python manage.py runserver 8001`); Vite proxies `/api` to `127.0.0.1:8001`.
+2. **"No active account found with the given credentials" (Coolify):** check that the backend's `DB_*` variables point at the shared MySQL database; otherwise it uses the empty bundled `db` container. The startup log prints `Waiting for database at <host>:<port>`.
+3. **"Request was throttled":** more than 5 login attempts in a minute. Wait 60 seconds or raise `LOGIN_THROTTLE_RATE`.
+4. **"Take a window on the Windows page before calling clients":** the user has no active window in that office. Assign one on **Windows**.
+5. **"Queue #… is handled by …":** only the client's current handler can update it; reassign instead.
+6. **Database connectivity:** if MySQL `10.6.8.96:3311` is unreachable, set `USE_SQLITE_DEV=True` in `.env` to use local `db.sqlite3`.
+7. **Local `.env` points at production.** Migrations and shell commands run from a developer PC change the live database. Back up first.

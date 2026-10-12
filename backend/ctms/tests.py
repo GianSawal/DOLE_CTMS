@@ -11,9 +11,7 @@ from .models import (
     CsmResponse,
     CtmsCounter,
     CtmsStaffOffice,
-    CtmsStaffDivision,
     CtmsTransaction,
-    CtmsServiceDefaultOfficer,
     DolePersonnel,
     DolePosition,
     CtmsAuditLog,
@@ -27,9 +25,6 @@ from .services import (
     mark_done,
     undo_done,
     requeue_transaction,
-    get_default_officer_for_service,
-    validate_personnel_office_assignment,
-    DIVISION_OFFICER_POOLS,
 )
 from .serializers import StaffTransactionSerializer
 
@@ -615,7 +610,9 @@ class Stage1DataFoundationTestCase(CsmTablesTestCase):
         from types import SimpleNamespace
         from django.db import connection
         backfill = importlib.import_module('ctms.migrations.0019_stage1_backfill')
-        backfill.forwards(apps, SimpleNamespace(connection=connection))
+        editor = SimpleNamespace(connection=connection)
+        backfill.backfill_office_profiles(apps, editor)
+        backfill.backfill_transactions(apps, editor)
 
     def _tx(self, **kwargs):
         tx = create_transaction(self.bataan, self.service)
@@ -772,16 +769,14 @@ class Stage3SharedQueueTestCase(CsmTablesTestCase):
         self.svc_tssd1 = CsmService.objects.create(name="Rule 1020", division=self.tssd1, is_active=True, sort_order=1)
         self.svc_tssd2 = CsmService.objects.create(name="TUPAD", division=self.tssd2, is_active=True, sort_order=2)
 
-        self.ana = self._staff("ana", self.bataan, window="Window 1", division=self.tssd2)
+        self.ana = self._staff("ana", self.bataan, window="Window 1")
         self.ben = self._staff("ben", self.bataan, window="Window 2")
         self.pam = self._staff("pam", self.pampanga, window="Window 1")
         self.client = APIClient()
 
-    def _staff(self, username, office, window=None, division=None):
+    def _staff(self, username, office, window=None):
         user = User.objects.create_user(username=username, password="pw", is_staff=True)
         CtmsStaffOffice.objects.create(user=user, office=office)
-        if division:
-            CtmsStaffDivision.objects.create(user=user, division=division)
         if window:
             CtmsCounter.objects.create(office=office, name=window, assigned_user=user)
         return user
@@ -801,7 +796,7 @@ class Stage3SharedQueueTestCase(CsmTablesTestCase):
 
     def test_division_does_not_restrict_queue_or_calling(self):
         tx = create_transaction(self.bataan, self.svc_tssd1)
-        # Ana is tagged TSSD 2 but still sees and calls a TSSD 1 ticket
+        # Any window sees and calls a ticket whatever its service division
         waiting = self._as(self.ana).get(f'/api/staff/queue/?office={self.bataan.id}').data['waiting']
         self.assertEqual([w['id'] for w in waiting], [tx.id])
         res = self._call_next(self.ana)
@@ -1236,7 +1231,6 @@ class Stage6UnifiedAccountsTestCase(CsmTablesTestCase):
             self.assertEqual(c.get('/api/staff/users/').status_code, 403, user.username)
             self.assertEqual(c.get('/api/staff/reports/summary/').status_code, 403, user.username)
             self.assertEqual(c.get('/api/staff/audit-logs/').status_code, 403, user.username)
-            self.assertEqual(c.get('/api/staff/personnel/').status_code, 403, user.username)
             self.assertEqual(c.post('/api/staff/positions/', {'title': 'X'}, format='json').status_code, 403, user.username)
             # Operational features remain available
             self.assertEqual(c.get('/api/staff/queue/').status_code, 200, user.username)
@@ -1288,29 +1282,51 @@ class Stage6UnifiedAccountsTestCase(CsmTablesTestCase):
         self.assertFalse(stray.is_active)
         self.assertEqual(DolePersonnel.objects.get(user=regional_super).role, 'ADMIN')
 
-    def test_migration_links_existing_personnel_instead_of_duplicating(self):
-        import importlib
-        from django.apps import apps
-        from .models import CtmsEmployee
-        unify = importlib.import_module('ctms.migrations.0022_stage6_unify_accounts')
 
-        # Account with a typo in its surname, plus that person's unlinked personnel record
-        account = User.objects.create_user(username="MARJORIE_RUSTIA", password="pw", is_staff=True,
-                                           first_name="MARJORIE", last_name="RUSITA")
-        CtmsStaffOffice.objects.create(user=account, office=self.bataan)
-        CtmsEmployee.objects.create(user=account, employee_id="MARJORIE_RUSTIA", first_name="MARJORIE",
-                                    last_name="RUSITA", office=self.bataan)
-        record = DolePersonnel.objects.create(employee_id="MPR-1", first_name="MARJORIE", last_name="RUSTIA", office=self.bataan)
-        # Personnel with no account at all
-        DolePersonnel.objects.create(employee_id="JO-NEW-1", first_name="Joshua", last_name="Tizon", office=self.bataan)
+class Stage7DivisionsAndCatalogTestCase(CsmTablesTestCase):
+    """Stage 7: TSSD 1, TSSD 2 and IMSD are the only divisions; they only tag services."""
 
-        unify.forwards(apps, None)
+    def setUp(self):
+        from .models import CtmsOfficeProfile
+        self.ro3 = CsmOffice.objects.create(name="DOLE Regional Office III", code="RO3", is_active=True)
+        CtmsOfficeProfile.objects.create(office=self.ro3, office_type=CtmsOfficeProfile.TYPE_REGIONAL)
+        self.tssd1 = CsmDivision.objects.create(name="TSSD 1")
+        self.tssd2 = CsmDivision.objects.create(name="TSSD 2")
+        self.imsd = CsmDivision.objects.create(name="IMSD")
+        self.malsu = CsmDivision.objects.create(name="MALSU")
+        self.service = CsmService.objects.create(name="Sugar Workers' Death Benefit", is_active=True, sort_order=1)
 
-        record.refresh_from_db()
-        self.assertEqual(record.user, account)
-        self.assertEqual(DolePersonnel.objects.filter(first_name="MARJORIE").count(), 1)
-        self.assertFalse(User.objects.filter(username="MPR-1").exists())
-        new_login = User.objects.get(username="JO-NEW-1")
-        self.assertTrue(new_login.check_password("JO-NEW-1"))
-        self.assertTrue(new_login.dole_personnel.must_change_password)
-        self.assertEqual(list(new_login.staff_offices.values_list('office__code', flat=True)), ["BAT"])
+        self.admin = User.objects.create_user(username="kim", password="pw", is_staff=True)
+        CtmsStaffOffice.objects.create(user=self.admin, office=self.ro3)
+        DolePersonnel.objects.create(user=self.admin, employee_id="KIM", first_name="Kim", last_name="D",
+                                     office=self.ro3, role='ADMIN')
+        self.staff = User.objects.create_user(username="ro3staff", password="pw", is_staff=True)
+        CtmsStaffOffice.objects.create(user=self.staff, office=self.ro3)
+        self.client = APIClient()
+
+    def test_divisions_endpoint_lists_only_canonical_and_creates_nothing(self):
+        self.client.force_authenticate(user=self.staff)
+        names = [d['name'] for d in self.client.get('/api/staff/divisions/').data]
+        self.assertEqual(names, ["TSSD 1", "TSSD 2", "IMSD"])
+        self.assertFalse(CsmDivision.objects.filter(name__startswith="Window").exists())
+
+    def test_regional_admin_tags_service_division(self):
+        self.client.force_authenticate(user=self.admin)
+        url = f'/api/staff/services/{self.service.id}/'
+        res = self.client.patch(url, {'division': self.tssd2.id}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['division_name'], "TSSD 2")
+        self.assertEqual(self.client.patch(url, {'division': self.malsu.id}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(url, {'division': None}, format='json').data['division'], None)
+        # Only the division tag can change
+        self.client.patch(url, {'name': 'Renamed', 'is_active': False}, format='json')
+        self.service.refresh_from_db()
+        self.assertEqual((self.service.name, self.service.is_active), ("Sugar Workers' Death Benefit", True))
+
+    def test_staff_can_read_catalog_but_not_tag(self):
+        self.client.force_authenticate(user=self.staff)
+        self.assertEqual(self.client.get('/api/staff/services/').status_code, 200)
+        summary = self.client.get('/api/staff/services/summary/').data
+        self.assertEqual(summary['untagged_services'], 1)
+        res = self.client.patch(f'/api/staff/services/{self.service.id}/', {'division': self.tssd1.id}, format='json')
+        self.assertEqual(res.status_code, 403)
