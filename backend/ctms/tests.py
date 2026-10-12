@@ -1508,13 +1508,60 @@ class CtmsCoreTestCase(TestCase):
         self.assertFalse(DolePosition.objects.filter(id=pos_id).exists())
 
 
+class SeedOfficeStaffTestCase(TestCase):
+    """seed_office_staff runs on every container start and must not clobber existing accounts."""
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS csm_office (
+                    id integer PRIMARY KEY AUTOINCREMENT,
+                    name varchar(200) NOT NULL UNIQUE,
+                    code varchar(10) NOT NULL UNIQUE,
+                    is_active bool NOT NULL,
+                    qr_issued_at datetime NULL
+                );
+            """)
 
+    @classmethod
+    def tearDownClass(cls):
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("DROP TABLE IF EXISTS csm_office;")
+        super().tearDownClass()
 
+    def setUp(self):
+        CsmOffice.objects.create(name="Clark Satellite Office", code="CRK", is_active=True)
 
+    def test_existing_staff_password_and_status_are_preserved(self):
+        from django.core.management import call_command
 
+        call_command('seed_office_staff', verbosity=0)
+        user = User.objects.get(username='staff_crk')
+        self.assertTrue(user.check_password('staff123'))
 
+        user.set_password('changed-by-admin')
+        user.is_active = False
+        user.save()
 
+        call_command('seed_office_staff', verbosity=0)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('changed-by-admin'))
+        self.assertFalse(user.is_active)
 
+    def test_reset_passwords_flag_restores_defaults(self):
+        from django.core.management import call_command
 
+        call_command('seed_office_staff', verbosity=0)
+        user = User.objects.get(username='staff_crk')
+        user.set_password('changed-by-admin')
+        user.is_active = False
+        user.save()
 
+        call_command('seed_office_staff', reset_passwords=True, verbosity=0)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('staff123'))
+        self.assertTrue(user.is_active)

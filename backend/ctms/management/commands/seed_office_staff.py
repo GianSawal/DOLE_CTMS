@@ -12,11 +12,17 @@ class Command(BaseCommand):
             '--password',
             type=str,
             default='staff123',
-            help='Default password for the staff accounts (default: staff123)'
+            help='Default password for newly created staff accounts (default: staff123)'
+        )
+        parser.add_argument(
+            '--reset-passwords',
+            action='store_true',
+            help='Also reset passwords and re-activate existing staff accounts'
         )
 
     def handle(self, *args, **options):
         password = options['password']
+        reset_passwords = options['reset_passwords']
         self.stdout.write("Creating one dedicated staff account per office...")
 
         offices = CsmOffice.objects.filter(is_active=True).order_by('name')
@@ -42,11 +48,14 @@ class Command(BaseCommand):
                 }
             )
 
-            # Ensure credentials and flags
-            user.is_staff = True
-            user.is_active = True
-            user.set_password(password)
-            user.save()
+            # Only set credentials on new accounts (or when explicitly requested).
+            # This command runs on every container start, so it must never
+            # overwrite passwords or re-enable accounts that admins changed.
+            if created or reset_passwords:
+                user.is_staff = True
+                user.is_active = True
+                user.set_password(password)
+                user.save()
 
             # Strict RBAC: Staff account can ONLY access their own assigned office
             CtmsStaffOffice.objects.filter(user=user).exclude(office=office).delete()
@@ -65,5 +74,5 @@ class Command(BaseCommand):
                 self.stdout.write(f"  * Updated: {username} -> {office.name} ({office.code})")
 
         self.stdout.write(self.style.SUCCESS(
-            f"Successfully processed {len(offices)} offices ({created_count} created, {updated_count} updated). Default password: '{password}'"
+            f"Successfully processed {len(offices)} offices ({created_count} created, {updated_count} updated). Default password for new accounts: '{password}'"
         ))
