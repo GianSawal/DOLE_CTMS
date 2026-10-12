@@ -22,15 +22,15 @@ import {
   pickFolderNative,
 } from '../../utils/localVideoPlaylist';
 
-// Cards fill the screen width; columns and type shrink as an office adds windows.
-function windowGridSizing(count) {
-  if (count <= 1) return { cols: 1, queueFont: '9rem', nameFont: '2.2rem', pad: '2.25rem' };
-  if (count <= 2) return { cols: 2, queueFont: '7.5rem', nameFont: '2rem', pad: '2rem' };
-  if (count <= 3) return { cols: 3, queueFont: '6rem', nameFont: '1.75rem', pad: '1.75rem' };
-  if (count <= 4) return { cols: 4, queueFont: '4.75rem', nameFont: '1.5rem', pad: '1.5rem' };
-  if (count <= 6) return { cols: 3, queueFont: '4.25rem', nameFont: '1.35rem', pad: '1.25rem' };
-  if (count <= 8) return { cols: 4, queueFont: '3.5rem', nameFont: '1.2rem', pad: '1.1rem' };
-  return { cols: 5, queueFont: '2.8rem', nameFont: '1.05rem', pad: '0.9rem' };
+// Now Serving: a grid of cards. As an office adds windows the grid gains columns and
+// the type shrinks, so every window stays visible and readable.
+function windowCardSizing(count) {
+  if (count <= 1) return { cols: 1, queueFont: '6.5rem', nameFont: '1.9rem', detailFont: '1.05rem', pad: '1.25rem 1.6rem', gap: '1rem' };
+  if (count <= 2) return { cols: 1, queueFont: '4.5rem', nameFont: '1.5rem', detailFont: '1rem', pad: '1rem 1.35rem', gap: '0.9rem' };
+  if (count <= 4) return { cols: 2, queueFont: '3.5rem', nameFont: '1.3rem', detailFont: '0.9rem', pad: '0.9rem 1.15rem', gap: '0.8rem' };
+  if (count <= 6) return { cols: 2, queueFont: '2.75rem', nameFont: '1.1rem', detailFont: '0.82rem', pad: '0.65rem 0.95rem', gap: '0.65rem' };
+  if (count <= 9) return { cols: 2, queueFont: '2.1rem', nameFont: '0.95rem', detailFont: '0.72rem', pad: '0.5rem 0.8rem', gap: '0.5rem', compact: true };
+  return { cols: 3, queueFont: '1.6rem', nameFont: '0.82rem', detailFont: '0.65rem', pad: '0.35rem 0.65rem', gap: '0.4rem', compact: true };
 }
 
 export default function DisplayBoard() {
@@ -771,7 +771,6 @@ export default function DisplayBoard() {
   }
 
   const windows = displayData?.windows || [];
-  const sizing = windowGridSizing(windows.length);
   const nextNumbers = displayData?.next || [];
   const waitingCount = displayData?.waiting_count ?? nextNumbers.length;
 
@@ -813,13 +812,7 @@ export default function DisplayBoard() {
     btnBorder: isLight ? '#cbd5e1' : 'rgba(255, 255, 255, 0.2)',
   };
 
-  // Up to 6 windows fit as compact rows beside the video; more need the full-width cards.
-  const sideLayout = windows.length <= 6;
-  const rowSizing = windows.length <= 2
-    ? { queueFont: '4.75rem', nameFont: '1.6rem', pad: '1.1rem 1.4rem' }
-    : windows.length <= 4
-      ? { queueFont: '3.75rem', nameFont: '1.35rem', pad: '0.85rem 1.2rem' }
-      : { queueFont: '3rem', nameFont: '1.15rem', pad: '0.65rem 1rem' };
+  const cardSizing = windowCardSizing(windows.length);
 
   const nowServingTitle = (
           <div style={{
@@ -833,179 +826,32 @@ export default function DisplayBoard() {
           </div>
   );
 
-  const windowCards = (
-windows.length === 0 ? (
-            <div style={{
-              minHeight: '160px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              textAlign: 'center',
-              background: themeStyles.emptyServingBg,
-              border: themeStyles.emptyServingBorder,
-              borderRadius: '16px',
-              color: themeStyles.emptyServingColor,
-              fontSize: '1.4rem',
-              padding: '2rem',
-            }}>
-              {t.no_active_serving}
-            </div>
-          ) : (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${sizing.cols}, minmax(0, 1fr))`,
-              gap: '1.1rem',
-              alignContent: 'start',
-              flexShrink: 0,
-            }}>
-              {windows.map(w => {
-                const clients = w.clients || (w.current ? [w.current] : []);
-                const cur = clients[0] || null;
-                const isFresh = cur && cur.called_at && cur.called_at === displayData?.latest_called_at;
-                return (
-                  <div key={w.id} style={{
-                    background: themeStyles.cardBg,
-                    border: cur ? themeStyles.cardBorder : themeStyles.emptyServingBorder,
-                    borderTop: cur
-                      ? `6px solid ${cur.is_priority ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`
-                      : themeStyles.emptyServingBorder,
-                    boxShadow: isFresh ? `0 0 0 4px ${isLight ? 'rgba(217,119,6,0.35)' : 'rgba(255,198,3,0.45)'}` : themeStyles.cardShadow,
-                    borderRadius: '16px',
-                    padding: sizing.pad,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.5rem',
-                    opacity: cur ? 1 : 0.75,
-                    transition: 'box-shadow 0.3s ease',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                        {w.kind === 'personnel' && (
-                          <span style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.08em', color: themeStyles.counterLabel }}>
-                            {lang === 'fil' ? 'PUMUNTA KAY' : 'PROCEED TO'}
-                          </span>
-                        )}
-                        <span style={{ fontSize: sizing.nameFont, fontWeight: 900, color: themeStyles.titleColor, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                          {w.name}
-                        </span>
-                      </span>
-                      {cur?.is_priority && clients.length === 1 && (
-                        <span style={{
-                          fontSize: '0.8rem',
-                          fontWeight: 800,
-                          padding: '0.2rem 0.6rem',
-                          borderRadius: '9999px',
-                          background: themeStyles.personnelBadgeBg,
-                          border: themeStyles.personnelBadgeBorder,
-                          color: themeStyles.personnelText,
-                        }}>PRIORITY</span>
-                      )}
-                    </div>
-
-                    {cur && clients.length === 1 && !cur.reassigned ? (
-                      <>
-                        <span className="mono" style={{
-                          fontSize: sizing.queueFont,
-                          fontWeight: 900,
-                          lineHeight: 1,
-                          color: cur.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
-                        }}>
-                          {cur.queue_no}
-                        </span>
-                        {cur.personnel && w.kind !== 'personnel' && (
-                          <span style={{ fontSize: '1rem', fontWeight: 700, color: themeStyles.personnelName }}>
-                            {cur.personnel}
-                          </span>
-                        )}
-                        <div style={{
-                          background: themeStyles.serviceBoxBg,
-                          border: themeStyles.serviceBoxBorder,
-                          borderRadius: '10px',
-                          padding: '0.5rem 0.7rem',
-                          fontSize: '0.9rem',
-                          fontWeight: 600,
-                          color: themeStyles.serviceNameColor,
-                          lineHeight: 1.35,
-                        }}>
-                          {cur.service_name}
-                        </div>
-                      </>
-                    ) : cur ? (
-                      // Several clients at this window (e.g. reassigned ones): one equal row each
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                        {clients.map(c => (
-                          <div key={c.id} style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'auto minmax(0, 1fr)',
-                            gap: '0.75rem',
-                            alignItems: 'center',
-                            background: themeStyles.serviceBoxBg,
-                            border: themeStyles.serviceBoxBorder,
-                            borderLeft: `4px solid ${c.reassigned ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`,
-                            borderRadius: '10px',
-                            padding: '0.5rem 0.7rem',
-                          }}>
-                            <span className="mono" style={{
-                              fontSize: `min(${sizing.queueFont}, 2.6rem)`,
-                              fontWeight: 900,
-                              lineHeight: 1,
-                              color: c.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
-                            }}>
-                              {c.queue_no}
-                            </span>
-                            <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '0.15rem' }}>
-                              {c.reassigned ? (
-                                <span style={{ fontSize: '0.78rem', fontWeight: 800, letterSpacing: '0.04em', color: themeStyles.personnelText }}>
-                                  {lang === 'fil' ? 'INILIPAT KAY' : 'REASSIGNED TO'} {c.personnel}
-                                </span>
-                              ) : (
-                                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: themeStyles.personnelName }}>
-                                  {c.personnel}{c.is_priority ? ' · PRIORITY' : ''}
-                                </span>
-                              )}
-                              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: themeStyles.serviceNameColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {c.service_name}
-                              </span>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <>
-                        <span style={{ fontSize: '1.6rem', fontWeight: 800, color: themeStyles.emptyServingColor, padding: '0.75rem 0' }}>
-                          —
-                        </span>
-                        <span style={{ fontSize: '0.95rem', color: themeStyles.emptyServingColor }}>
-                          {w.personnel_name ? `${w.personnel_name} · Available` : 'Idle'}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )
-  );
-
-  // Compact rows for the side column: window, staff and service on the left; number on the right
-  const windowRows = windows.length === 0 ? (
+  // Now Serving: one card per window, filling the column as a grid
+  const windowCards = windows.length === 0 ? (
     <div style={{
-      minHeight: '120px',
+      flex: 1,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       textAlign: 'center',
       background: themeStyles.emptyServingBg,
       border: themeStyles.emptyServingBorder,
-      borderRadius: '14px',
+      borderRadius: '16px',
       color: themeStyles.emptyServingColor,
-      fontSize: '1.2rem',
-      padding: '1.5rem',
+      fontSize: '1.4rem',
+      padding: '2rem',
     }}>
       {t.no_active_serving}
     </div>
   ) : (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+    <div style={{
+      flex: '1 1 0',
+      minHeight: 0,
+      display: 'grid',
+      gridTemplateColumns: `repeat(${cardSizing.cols}, minmax(0, 1fr))`,
+      gridAutoRows: 'minmax(0, 1fr)',
+      gap: cardSizing.gap,
+    }}>
       {windows.map(w => {
         const clients = w.clients || (w.current ? [w.current] : []);
         const cur = clients[0] || null;
@@ -1013,94 +859,103 @@ windows.length === 0 ? (
         const single = cur && clients.length === 1 && !cur.reassigned;
         const accent = cur?.is_priority ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6');
         const numberColor = (c) => (c.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor);
+        const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
         return (
           <div key={w.id} style={{
             background: themeStyles.cardBg,
             border: cur ? themeStyles.cardBorder : themeStyles.emptyServingBorder,
-            borderLeft: cur ? `6px solid ${accent}` : themeStyles.emptyServingBorder,
+            borderTop: cur ? `6px solid ${accent}` : themeStyles.emptyServingBorder,
             boxShadow: isFresh ? `0 0 0 4px ${isLight ? 'rgba(217,119,6,0.35)' : 'rgba(255,198,3,0.45)'}` : themeStyles.cardShadow,
-            borderRadius: '14px',
-            padding: rowSizing.pad,
+            borderRadius: '16px',
+            padding: cardSizing.pad,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: cardSizing.compact ? '0.15rem' : '0.35rem',
+            minHeight: 0,
+            minWidth: 0,
+            overflow: 'hidden',
             opacity: cur ? 1 : 0.75,
             transition: 'box-shadow 0.3s ease',
           }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center', gap: '1rem' }}>
-              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '0.2rem' }}>
-                <span style={{ fontSize: rowSizing.nameFont, fontWeight: 900, color: themeStyles.titleColor, textTransform: 'uppercase', letterSpacing: '0.03em', lineHeight: 1.1 }}>
-                  {w.name}
-                  {cur?.is_priority && single && (
-                    <span style={{
-                      marginLeft: '0.5rem',
-                      verticalAlign: 'middle',
-                      fontSize: '0.7rem',
-                      fontWeight: 800,
-                      padding: '0.15rem 0.5rem',
-                      borderRadius: '9999px',
-                      background: themeStyles.personnelBadgeBg,
-                      border: themeStyles.personnelBadgeBorder,
-                      color: themeStyles.personnelText,
-                    }}>PRIORITY</span>
-                  )}
-                </span>
-                {single ? (
-                  <>
-                    {cur.personnel && (
-                      <span style={{ fontSize: '0.95rem', fontWeight: 700, color: themeStyles.personnelName }}>{cur.personnel}</span>
-                    )}
-                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: themeStyles.serviceDescColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {cur.service_name}
-                    </span>
-                  </>
-                ) : !cur && (
-                  <span style={{ fontSize: '0.9rem', color: themeStyles.emptyServingColor }}>
-                    {w.personnel_name ? `${w.personnel_name} · Available` : 'Idle'}
-                  </span>
-                )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+              <span style={{ fontSize: cardSizing.nameFont, fontWeight: 900, color: themeStyles.titleColor, textTransform: 'uppercase', letterSpacing: '0.03em', lineHeight: 1.1, ...ellipsis }}>
+                {w.name}
               </span>
-              {single ? (
-                <span className="mono" style={{ fontSize: rowSizing.queueFont, fontWeight: 900, lineHeight: 1, color: numberColor(cur) }}>
-                  {cur.queue_no}
-                </span>
-              ) : !cur && (
-                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: themeStyles.emptyServingColor }}>—</span>
+              {cur?.is_priority && single && !cardSizing.compact && (
+                <span style={{
+                  flexShrink: 0,
+                  fontSize: `calc(${cardSizing.detailFont} * 0.85)`,
+                  fontWeight: 800,
+                  padding: '0.15rem 0.6rem',
+                  borderRadius: '9999px',
+                  background: themeStyles.personnelBadgeBg,
+                  border: themeStyles.personnelBadgeBorder,
+                  color: themeStyles.personnelText,
+                }}>PRIORITY</span>
               )}
             </div>
 
-            {cur && !single && (
+            {single ? (
+              <>
+                <span className="mono" style={{ fontSize: cardSizing.queueFont, fontWeight: 900, lineHeight: 1, color: numberColor(cur) }}>
+                  {cur.queue_no}
+                </span>
+                {cur.personnel && (
+                  <span style={{ fontSize: `calc(${cardSizing.detailFont} + 0.1rem)`, fontWeight: 700, color: themeStyles.personnelName, ...ellipsis }}>
+                    {cur.personnel}
+                  </span>
+                )}
+                {!cardSizing.compact && (
+                  <span style={{ fontSize: cardSizing.detailFont, fontWeight: 600, color: themeStyles.serviceDescColor, ...ellipsis }}>
+                    {cur.service_name}
+                  </span>
+                )}
+              </>
+            ) : cur ? (
               // Several clients at this window (e.g. reassigned ones): one line each
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', minHeight: 0 }}>
                 {clients.map(c => (
                   <div key={c.id} style={{
                     display: 'grid',
                     gridTemplateColumns: 'auto minmax(0, 1fr)',
-                    gap: '0.75rem',
+                    gap: '0.6rem',
                     alignItems: 'center',
                     background: themeStyles.serviceBoxBg,
                     border: themeStyles.serviceBoxBorder,
                     borderLeft: `4px solid ${c.reassigned ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`,
                     borderRadius: '10px',
-                    padding: '0.4rem 0.65rem',
+                    padding: '0.35rem 0.6rem',
                   }}>
-                    <span className="mono" style={{ fontSize: '2rem', fontWeight: 900, lineHeight: 1, color: numberColor(c) }}>
+                    <span className="mono" style={{ fontSize: `min(${cardSizing.queueFont}, 2.2rem)`, fontWeight: 900, lineHeight: 1, color: numberColor(c) }}>
                       {c.queue_no}
                     </span>
                     <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '0.1rem' }}>
                       {c.reassigned ? (
-                        <span style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.04em', color: themeStyles.personnelText }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.04em', color: themeStyles.personnelText, ...ellipsis }}>
                           {lang === 'fil' ? 'INILIPAT KAY' : 'REASSIGNED TO'} {c.personnel}
                         </span>
                       ) : (
-                        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: themeStyles.personnelName }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: themeStyles.personnelName, ...ellipsis }}>
                           {c.personnel}{c.is_priority ? ' · PRIORITY' : ''}
                         </span>
                       )}
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: themeStyles.serviceNameColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {c.service_name}
-                      </span>
+                      {!cardSizing.compact && (
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: themeStyles.serviceNameColor, ...ellipsis }}>
+                          {c.service_name}
+                        </span>
+                      )}
                     </span>
                   </div>
                 ))}
               </div>
+            ) : (
+              <>
+                <span style={{ fontSize: `min(${cardSizing.queueFont}, 2.3rem)`, fontWeight: 800, lineHeight: 1, color: themeStyles.emptyServingColor }}>—</span>
+                <span style={{ fontSize: cardSizing.detailFont, color: themeStyles.emptyServingColor, ...ellipsis }}>
+                  {w.personnel_name ? `${w.personnel_name} · Available` : 'Idle'}
+                </span>
+              </>
             )}
           </div>
         );
@@ -1191,7 +1046,7 @@ windows.length === 0 ? (
             padding: '0.85rem',
             display: 'flex',
             flexDirection: 'column',
-            flex: '1 1 0',
+            flex: 1,
             minHeight: 0,
           }}>
             <div style={{
@@ -1250,7 +1105,7 @@ windows.length === 0 ? (
               </div>
             </div>
 
-            {/* Video Player: the largest 16:9 box that fits the space left */}
+            {/* Video Player: the largest 16:9 box that fits the space, centered */}
             <div style={{ flex: '1 1 0', minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{
               position: 'relative',
@@ -1639,49 +1494,21 @@ windows.length === 0 ? (
         </div>
       </header>
 
-      {sideLayout ? (
-        /* Up to 6 windows: large ARTA video on the left; now serving + upcoming queue on the right */
-        <div style={{
-          flex: 1,
-          minHeight: 0,
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.7fr) minmax(400px, 1fr)',
-          gap: '1.75rem',
-        }}>
-          {artaVideoPanel}
-          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, gap: '1.25rem' }}>
-            <section style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: '0.75rem' }}>
-              {nowServingTitle}
-              {windowRows}
-            </section>
-            {upcomingQueue}
-          </div>
-        </div>
-      ) : (
-        /* Many windows: cards across the top; ARTA video beside the upcoming queue below */
-        <div style={{
-          flex: 1,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1.5rem',
-        }}>
-          <section style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flexShrink: 0, gap: '1rem' }}>
-            {nowServingTitle}
-            {windowCards}
-          </section>
-          <div style={{
-            flex: '1 1 0',
-            minHeight: 0,
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.9fr) minmax(320px, 1fr)',
-            gap: '1.75rem',
-          }}>
-            {artaVideoPanel}
-            {upcomingQueue}
-          </div>
-        </div>
-      )}
+      {/* Three equal full-height columns: upcoming queue, ARTA video, now serving */}
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'grid',
+        gridTemplateColumns: 'minmax(220px, 0.65fr) minmax(0, 1.2fr) minmax(340px, 1.2fr)',
+        gap: '1.5rem',
+      }}>
+        {upcomingQueue}
+        {artaVideoPanel}
+        <section style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, gap: '0.6rem' }}>
+          {nowServingTitle}
+          {windowCards}
+        </section>
+      </div>
 
       <footer style={{
         marginTop: '1.5rem',
