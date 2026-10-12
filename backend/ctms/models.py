@@ -99,11 +99,48 @@ class CsmResponse(models.Model):
 # CTMS Core Models
 # =====================================================================
 
+class CtmsOfficeProfile(models.Model):
+    """
+    CTMS-owned attributes of a CSM office. csm_office belongs to the CSM system,
+    so office type lives here instead of as a column on that table.
+    """
+    TYPE_REGIONAL = 'REGIONAL'
+    TYPE_PROVINCIAL = 'PROVINCIAL'
+    TYPE_CHOICES = (
+        (TYPE_REGIONAL, 'Regional Office'),
+        (TYPE_PROVINCIAL, 'Provincial / Field Office'),
+    )
+
+    id = models.BigAutoField(primary_key=True)
+    office = models.OneToOneField(CsmOffice, on_delete=models.CASCADE, related_name='ctms_profile')
+    office_type = models.CharField(max_length=12, choices=TYPE_CHOICES, default=TYPE_PROVINCIAL, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ctms_office_profile'
+        verbose_name = 'CTMS Office Profile'
+        verbose_name_plural = 'CTMS Office Profiles'
+
+    def __str__(self):
+        return f"{self.office.name} ({self.office_type})"
+
+
 class CtmsCounter(models.Model):
     id = models.BigAutoField(primary_key=True)
     office = models.ForeignKey(CsmOffice, on_delete=models.PROTECT, related_name='counters')
     name = models.CharField(max_length=50, help_text="e.g. Window 1, Window 2")
     is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    # One occupant per window and one window per user, enforced by the unique column.
+    assigned_user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='occupied_window',
+    )
+    assigned_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True, help_text="Soft-deleted windows keep historical references valid")
 
     class Meta:
         db_table = 'ctms_counter'
@@ -200,6 +237,7 @@ class DolePersonnel(models.Model):
     divisions = models.ManyToManyField(CsmDivision, blank=True, related_name='dole_personnel', db_table='ctms_dole_personnel_divisions')
     services = models.ManyToManyField(CsmService, blank=True, related_name='assigned_personnel', db_table='ctms_dole_personnel_services')
     is_active = models.BooleanField(default=True)
+    must_change_password = models.BooleanField(default=False, help_text="Requires password change on next login")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -361,6 +399,7 @@ class CtmsServiceDefaultOfficer(models.Model):
 class CtmsTransaction(models.Model):
     STATUS_WAITING = 'waiting'
     STATUS_SERVING = 'serving'
+    STATUS_TRANSFERRED = 'transferred'
     STATUS_PENDING = 'pending'
     STATUS_DONE = 'done'
     STATUS_NO_SHOW = 'no_show'
@@ -369,6 +408,7 @@ class CtmsTransaction(models.Model):
     STATUS_CHOICES = (
         (STATUS_WAITING, 'Waiting'),
         (STATUS_SERVING, 'Serving'),
+        (STATUS_TRANSFERRED, 'Transferred (not yet started)'),
         (STATUS_PENDING, 'Pending'),
         (STATUS_DONE, 'Done'),
         (STATUS_NO_SHOW, 'No-show'),
@@ -401,7 +441,15 @@ class CtmsTransaction(models.Model):
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_WAITING, db_index=True)
     counter = models.ForeignKey(CtmsCounter, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default=SOURCE_QR)
-    assigned_personnel = models.CharField(max_length=200, null=True, blank=True, help_text="Designated personnel / officer")
+    assigned_personnel = models.CharField(max_length=200, null=True, blank=True, help_text="Legacy free-text handler name (kept for history)")
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_transactions',
+        help_text="Personnel account currently responsible for this transaction",
+    )
     
     checked_in_at = models.DateTimeField(db_index=True)
     called_at = models.DateTimeField(null=True, blank=True)
@@ -409,6 +457,7 @@ class CtmsTransaction(models.Model):
     done_at = models.DateTimeField(null=True, blank=True, db_index=True, help_text="Timestamp when transaction was completed")
     closed_at = models.DateTimeField(null=True, blank=True)
     served_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='served_transactions')
+    served_by_name = models.CharField(max_length=200, blank=True, default='', help_text="Snapshot of the final handler's name for CSM attribution")
     
     ticket_token = models.CharField(max_length=32, unique=True, db_index=True)
     survey_token = models.CharField(max_length=32, unique=True, db_index=True)
@@ -455,6 +504,64 @@ class CtmsTransaction(models.Model):
             base = settings.CSM_SURVEY_BASE_URL.rstrip('/')
             return f"{base}/survey/t/{self.survey_token}"
         return None
+
+
+class CtmsAssignmentHistory(models.Model):
+    """
+    Immutable record of every ownership, window, or status change on a transaction.
+    Name snapshots keep the history readable after accounts or windows change.
+    """
+    EVENT_CALLED = 'CALLED'
+    EVENT_TRANSFERRED = 'TRANSFERRED'
+    EVENT_PENDING = 'PENDING'
+    EVENT_RESUMED = 'RESUMED'
+    EVENT_COMPLETED = 'COMPLETED'
+    EVENT_REOPENED = 'REOPENED'
+    EVENT_REQUEUED = 'REQUEUED'
+    EVENT_NO_SHOW = 'NO_SHOW'
+    EVENT_CANCELLED = 'CANCELLED'
+
+    EVENT_CHOICES = (
+        (EVENT_CALLED, 'Called'),
+        (EVENT_TRANSFERRED, 'Transferred'),
+        (EVENT_PENDING, 'Moved to Pending'),
+        (EVENT_RESUMED, 'Resumed'),
+        (EVENT_COMPLETED, 'Completed'),
+        (EVENT_REOPENED, 'Reopened (Undo Done)'),
+        (EVENT_REQUEUED, 'Returned to Queue'),
+        (EVENT_NO_SHOW, 'No-show'),
+        (EVENT_CANCELLED, 'Cancelled'),
+    )
+
+    id = models.BigAutoField(primary_key=True)
+    transaction = models.ForeignKey(CtmsTransaction, on_delete=models.CASCADE, related_name='assignment_history')
+    event = models.CharField(max_length=20, choices=EVENT_CHOICES, db_index=True)
+    from_status = models.CharField(max_length=12, blank=True, default='')
+    to_status = models.CharField(max_length=12, blank=True, default='')
+    from_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    from_user_name = models.CharField(max_length=200, blank=True, default='')
+    to_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    to_user_name = models.CharField(max_length=200, blank=True, default='')
+    from_counter = models.ForeignKey(CtmsCounter, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    from_counter_name = models.CharField(max_length=50, blank=True, default='')
+    to_counter = models.ForeignKey(CtmsCounter, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    to_counter_name = models.CharField(max_length=50, blank=True, default='')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    actor_name = models.CharField(max_length=200, blank=True, default='')
+    reason = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = 'ctms_assignment_history'
+        verbose_name = 'CTMS Assignment History'
+        verbose_name_plural = 'CTMS Assignment History'
+        ordering = ['created_at', 'id']
+        indexes = [
+            models.Index(fields=['transaction', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.transaction_id} {self.event} {self.from_user_name} -> {self.to_user_name}"
 
 
 # =====================================================================

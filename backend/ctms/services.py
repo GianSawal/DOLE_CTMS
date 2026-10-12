@@ -144,6 +144,22 @@ def find_personnel_by_name_or_id(name_or_id, office=None):
     return None
 
 
+def personnel_display_name(user):
+    """Canonical display name for a personnel account: personnel profile name, then account name, then username."""
+    if not user:
+        return ''
+    profile = getattr(user, 'dole_personnel', None)
+    if profile:
+        return profile.full_name.strip()
+    return user.get_full_name().strip() or user.username
+
+
+def resolve_personnel_user(personnel_name_or_id, office=None):
+    """Maps a legacy free-text handler name to its user account, or None."""
+    personnel = find_personnel_by_name_or_id(personnel_name_or_id, office=office)
+    return getattr(personnel, 'user', None) if personnel else None
+
+
 def validate_personnel_office_assignment(office, personnel_name_or_id):
     """
     Enforces office restriction:
@@ -379,6 +395,7 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
             status=CtmsTransaction.STATUS_WAITING,
             source=source,
             assigned_personnel=assigned_personnel,
+            assigned_to=resolve_personnel_user(assigned_personnel, office=office) if assigned_personnel else None,
             checked_in_at=now,
             ticket_token=ticket_token,
             survey_token=survey_token,
@@ -487,7 +504,8 @@ def assign_personnel_to_transaction(tx, personnel):
 
     old_officer = tx.assigned_personnel
     tx.assigned_personnel = clean_personnel
-    tx.save(update_fields=['assigned_personnel'])
+    tx.assigned_to = resolve_personnel_user(clean_personnel, office=tx.office) if clean_personnel else None
+    tx.save(update_fields=['assigned_personnel', 'assigned_to'])
     if tx.assigned_personnel:
         is_reassign = bool(old_officer and old_officer.strip().lower() != tx.assigned_personnel.lower())
         notify_assigned_personnel(tx, is_reassignment=is_reassign, previous_officer=old_officer)
@@ -545,7 +563,8 @@ def call_next_transaction(office, counter, personnel=None):
         tx.called_at = now
         if not tx.started_at:
             tx.started_at = now
-        tx.save(update_fields=['status', 'counter', 'called_at', 'started_at', 'assigned_personnel'])
+        tx.assigned_to = resolve_personnel_user(tx.assigned_personnel, office=tx.office)
+        tx.save(update_fields=['status', 'counter', 'called_at', 'started_at', 'assigned_personnel', 'assigned_to'])
         return tx
 
 
@@ -594,7 +613,8 @@ def call_specific_transaction(tx, counter=None, personnel=None):
     tx.called_at = now
     if not tx.started_at:
         tx.started_at = now
-    tx.save(update_fields=['status', 'counter', 'called_at', 'started_at', 'assigned_personnel'])
+    tx.assigned_to = resolve_personnel_user(tx.assigned_personnel, office=tx.office)
+    tx.save(update_fields=['status', 'counter', 'called_at', 'started_at', 'assigned_personnel', 'assigned_to'])
     return tx
 
 
@@ -619,7 +639,13 @@ def mark_done(tx, staff_user):
     if not tx.started_at:
         tx.started_at = tx.called_at or now
     tx.served_by = staff_user
-    tx.save(update_fields=['status', 'done_at', 'started_at', 'served_by'])
+    # CSM attribution: the officer who handled the client, falling back to whoever pressed Done.
+    if tx.assigned_to:
+        handler_name = personnel_display_name(tx.assigned_to)
+    else:
+        handler_name = (tx.assigned_personnel or '').strip() or personnel_display_name(staff_user)
+    tx.served_by_name = handler_name[:200]
+    tx.save(update_fields=['status', 'done_at', 'started_at', 'served_by', 'served_by_name'])
     return tx
 
 

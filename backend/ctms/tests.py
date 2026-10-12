@@ -35,7 +35,9 @@ from .serializers import StaffTransactionSerializer
 
 User = get_user_model()
 
-class CtmsCoreTestCase(TestCase):
+class CsmTablesTestCase(TestCase):
+    """Creates the CSM-owned (unmanaged) tables that the test database does not migrate."""
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -83,6 +85,8 @@ class CtmsCoreTestCase(TestCase):
             cursor.execute("DROP TABLE IF EXISTS csm_division;")
         super().tearDownClass()
 
+
+class CtmsCoreTestCase(CsmTablesTestCase):
     def setUp(self):
         self.client = APIClient()
         self.office = CsmOffice.objects.create(name="DOLE Pampanga Field Office", code="CRK", is_active=True)
@@ -1508,30 +1512,8 @@ class CtmsCoreTestCase(TestCase):
         self.assertFalse(DolePosition.objects.filter(id=pos_id).exists())
 
 
-class SeedOfficeStaffTestCase(TestCase):
+class SeedOfficeStaffTestCase(CsmTablesTestCase):
     """seed_office_staff runs on every container start and must not clobber existing accounts."""
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        from django.db import connection
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS csm_office (
-                    id integer PRIMARY KEY AUTOINCREMENT,
-                    name varchar(200) NOT NULL UNIQUE,
-                    code varchar(10) NOT NULL UNIQUE,
-                    is_active bool NOT NULL,
-                    qr_issued_at datetime NULL
-                );
-            """)
-
-    @classmethod
-    def tearDownClass(cls):
-        from django.db import connection
-        with connection.cursor() as cursor:
-            cursor.execute("DROP TABLE IF EXISTS csm_office;")
-        super().tearDownClass()
 
     def setUp(self):
         CsmOffice.objects.create(name="Clark Satellite Office", code="CRK", is_active=True)
@@ -1565,3 +1547,76 @@ class SeedOfficeStaffTestCase(TestCase):
         user.refresh_from_db()
         self.assertTrue(user.check_password('staff123'))
         self.assertTrue(user.is_active)
+
+
+class Stage1DataFoundationTestCase(CsmTablesTestCase):
+    """Stage 1: new ownership/window/history columns and the backfill migration."""
+
+    def setUp(self):
+        self.ro3 = CsmOffice.objects.create(name="DOLE Regional Office III", code="RO3", is_active=True)
+        self.bataan = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.service = CsmService.objects.create(name="SEnA Assistance", is_active=True, sort_order=1)
+        self.officer = User.objects.create_user(username="JUAN_CRUZ", password="pw", is_staff=True)
+        DolePersonnel.objects.create(
+            user=self.officer, employee_id="EMP-001", first_name="Juan", last_name="Cruz", office=self.bataan
+        )
+
+    def _backfill(self):
+        import importlib
+        from django.apps import apps
+        from types import SimpleNamespace
+        from django.db import connection
+        backfill = importlib.import_module('ctms.migrations.0019_stage1_backfill')
+        backfill.forwards(apps, SimpleNamespace(connection=connection))
+
+    def _tx(self, **kwargs):
+        tx = create_transaction(self.bataan, self.service)
+        CtmsTransaction.objects.filter(pk=tx.pk).update(**kwargs)
+        tx.refresh_from_db()
+        return tx
+
+    def test_backfill_sets_office_types(self):
+        from .models import CtmsOfficeProfile
+        self._backfill()
+        self.assertEqual(CtmsOfficeProfile.objects.get(office=self.ro3).office_type, CtmsOfficeProfile.TYPE_REGIONAL)
+        self.assertEqual(CtmsOfficeProfile.objects.get(office=self.bataan).office_type, CtmsOfficeProfile.TYPE_PROVINCIAL)
+
+    def test_backfill_links_legacy_handler_names_to_accounts(self):
+        matched = self._tx(assigned_personnel="juan cruz", assigned_to=None)
+        unmatched = self._tx(assigned_personnel="Somebody Unknown", assigned_to=None)
+        self._backfill()
+        matched.refresh_from_db()
+        unmatched.refresh_from_db()
+        self.assertEqual(matched.assigned_to, self.officer)
+        self.assertIsNone(unmatched.assigned_to)
+        self.assertEqual(unmatched.assigned_personnel, "Somebody Unknown")
+
+    def test_backfill_sets_csm_attribution_name_for_done_transactions(self):
+        done = self._tx(assigned_personnel="EMP-001", assigned_to=None, status=CtmsTransaction.STATUS_DONE)
+        self._backfill()
+        done.refresh_from_db()
+        self.assertEqual(done.served_by_name, "Juan Cruz")
+
+    def test_window_holds_one_occupant_and_user_holds_one_window(self):
+        from django.db import IntegrityError, transaction as db_tx
+        w1 = CtmsCounter.objects.create(office=self.bataan, name="Window 1", assigned_user=self.officer)
+        w2 = CtmsCounter.objects.create(office=self.bataan, name="Window 2")
+        w2.assigned_user = self.officer
+        with self.assertRaises(IntegrityError), db_tx.atomic():
+            w2.save()
+        self.assertEqual(User.objects.get(pk=self.officer.pk).occupied_window, w1)
+
+    def test_legacy_flows_keep_new_columns_in_sync(self):
+        from .services import assign_personnel_to_transaction
+        tx = create_transaction(self.bataan, self.service)
+        assign_personnel_to_transaction(tx, "Juan Cruz")
+        tx.refresh_from_db()
+        self.assertEqual(tx.assigned_to, self.officer)
+
+        counter = CtmsCounter.objects.create(office=self.bataan, name="Window 1")
+        call_specific_transaction(tx, counter=counter)
+        clicker = User.objects.create_user(username="dispatcher", password="pw", is_staff=True)
+        mark_done(tx, clicker)
+        tx.refresh_from_db()
+        self.assertEqual(tx.served_by, clicker)
+        self.assertEqual(tx.served_by_name, "Juan Cruz")
