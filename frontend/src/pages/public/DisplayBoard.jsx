@@ -813,9 +813,624 @@ export default function DisplayBoard() {
     btnBorder: isLight ? '#cbd5e1' : 'rgba(255, 255, 255, 0.2)',
   };
 
+  // Up to 6 windows fit as compact rows beside the video; more need the full-width cards.
+  const sideLayout = windows.length <= 6;
+  const rowSizing = windows.length <= 2
+    ? { queueFont: '4.75rem', nameFont: '1.6rem', pad: '1.1rem 1.4rem' }
+    : windows.length <= 4
+      ? { queueFont: '3.75rem', nameFont: '1.35rem', pad: '0.85rem 1.2rem' }
+      : { queueFont: '3rem', nameFont: '1.15rem', pad: '0.65rem 1rem' };
+
+  const nowServingTitle = (
+          <div style={{
+            fontSize: '1.25rem',
+            fontWeight: 800,
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            color: themeStyles.sectionTitleColor,
+          }}>
+            {t.display_title}
+          </div>
+  );
+
+  const windowCards = (
+windows.length === 0 ? (
+            <div style={{
+              minHeight: '160px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              background: themeStyles.emptyServingBg,
+              border: themeStyles.emptyServingBorder,
+              borderRadius: '16px',
+              color: themeStyles.emptyServingColor,
+              fontSize: '1.4rem',
+              padding: '2rem',
+            }}>
+              {t.no_active_serving}
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${sizing.cols}, minmax(0, 1fr))`,
+              gap: '1.1rem',
+              alignContent: 'start',
+              flexShrink: 0,
+            }}>
+              {windows.map(w => {
+                const clients = w.clients || (w.current ? [w.current] : []);
+                const cur = clients[0] || null;
+                const isFresh = cur && cur.called_at && cur.called_at === displayData?.latest_called_at;
+                return (
+                  <div key={w.id} style={{
+                    background: themeStyles.cardBg,
+                    border: cur ? themeStyles.cardBorder : themeStyles.emptyServingBorder,
+                    borderTop: cur
+                      ? `6px solid ${cur.is_priority ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`
+                      : themeStyles.emptyServingBorder,
+                    boxShadow: isFresh ? `0 0 0 4px ${isLight ? 'rgba(217,119,6,0.35)' : 'rgba(255,198,3,0.45)'}` : themeStyles.cardShadow,
+                    borderRadius: '16px',
+                    padding: sizing.pad,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                    opacity: cur ? 1 : 0.75,
+                    transition: 'box-shadow 0.3s ease',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                        {w.kind === 'personnel' && (
+                          <span style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.08em', color: themeStyles.counterLabel }}>
+                            {lang === 'fil' ? 'PUMUNTA KAY' : 'PROCEED TO'}
+                          </span>
+                        )}
+                        <span style={{ fontSize: sizing.nameFont, fontWeight: 900, color: themeStyles.titleColor, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                          {w.name}
+                        </span>
+                      </span>
+                      {cur?.is_priority && clients.length === 1 && (
+                        <span style={{
+                          fontSize: '0.8rem',
+                          fontWeight: 800,
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '9999px',
+                          background: themeStyles.personnelBadgeBg,
+                          border: themeStyles.personnelBadgeBorder,
+                          color: themeStyles.personnelText,
+                        }}>PRIORITY</span>
+                      )}
+                    </div>
+
+                    {cur && clients.length === 1 && !cur.reassigned ? (
+                      <>
+                        <span className="mono" style={{
+                          fontSize: sizing.queueFont,
+                          fontWeight: 900,
+                          lineHeight: 1,
+                          color: cur.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
+                        }}>
+                          {cur.queue_no}
+                        </span>
+                        {cur.personnel && w.kind !== 'personnel' && (
+                          <span style={{ fontSize: '1rem', fontWeight: 700, color: themeStyles.personnelName }}>
+                            {cur.personnel}
+                          </span>
+                        )}
+                        <div style={{
+                          background: themeStyles.serviceBoxBg,
+                          border: themeStyles.serviceBoxBorder,
+                          borderRadius: '10px',
+                          padding: '0.5rem 0.7rem',
+                          fontSize: '0.9rem',
+                          fontWeight: 600,
+                          color: themeStyles.serviceNameColor,
+                          lineHeight: 1.35,
+                        }}>
+                          {cur.service_name}
+                        </div>
+                      </>
+                    ) : cur ? (
+                      // Several clients at this window (e.g. reassigned ones): one equal row each
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                        {clients.map(c => (
+                          <div key={c.id} style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'auto minmax(0, 1fr)',
+                            gap: '0.75rem',
+                            alignItems: 'center',
+                            background: themeStyles.serviceBoxBg,
+                            border: themeStyles.serviceBoxBorder,
+                            borderLeft: `4px solid ${c.reassigned ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`,
+                            borderRadius: '10px',
+                            padding: '0.5rem 0.7rem',
+                          }}>
+                            <span className="mono" style={{
+                              fontSize: `min(${sizing.queueFont}, 2.6rem)`,
+                              fontWeight: 900,
+                              lineHeight: 1,
+                              color: c.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
+                            }}>
+                              {c.queue_no}
+                            </span>
+                            <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '0.15rem' }}>
+                              {c.reassigned ? (
+                                <span style={{ fontSize: '0.78rem', fontWeight: 800, letterSpacing: '0.04em', color: themeStyles.personnelText }}>
+                                  {lang === 'fil' ? 'INILIPAT KAY' : 'REASSIGNED TO'} {c.personnel}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: themeStyles.personnelName }}>
+                                  {c.personnel}{c.is_priority ? ' · PRIORITY' : ''}
+                                </span>
+                              )}
+                              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: themeStyles.serviceNameColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {c.service_name}
+                              </span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: '1.6rem', fontWeight: 800, color: themeStyles.emptyServingColor, padding: '0.75rem 0' }}>
+                          —
+                        </span>
+                        <span style={{ fontSize: '0.95rem', color: themeStyles.emptyServingColor }}>
+                          {w.personnel_name ? `${w.personnel_name} · Available` : 'Idle'}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+  );
+
+  // Compact rows for the side column: window, staff and service on the left; number on the right
+  const windowRows = windows.length === 0 ? (
+    <div style={{
+      minHeight: '120px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      textAlign: 'center',
+      background: themeStyles.emptyServingBg,
+      border: themeStyles.emptyServingBorder,
+      borderRadius: '14px',
+      color: themeStyles.emptyServingColor,
+      fontSize: '1.2rem',
+      padding: '1.5rem',
+    }}>
+      {t.no_active_serving}
+    </div>
+  ) : (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+      {windows.map(w => {
+        const clients = w.clients || (w.current ? [w.current] : []);
+        const cur = clients[0] || null;
+        const isFresh = cur && cur.called_at && cur.called_at === displayData?.latest_called_at;
+        const single = cur && clients.length === 1 && !cur.reassigned;
+        const accent = cur?.is_priority ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6');
+        const numberColor = (c) => (c.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor);
+        return (
+          <div key={w.id} style={{
+            background: themeStyles.cardBg,
+            border: cur ? themeStyles.cardBorder : themeStyles.emptyServingBorder,
+            borderLeft: cur ? `6px solid ${accent}` : themeStyles.emptyServingBorder,
+            boxShadow: isFresh ? `0 0 0 4px ${isLight ? 'rgba(217,119,6,0.35)' : 'rgba(255,198,3,0.45)'}` : themeStyles.cardShadow,
+            borderRadius: '14px',
+            padding: rowSizing.pad,
+            opacity: cur ? 1 : 0.75,
+            transition: 'box-shadow 0.3s ease',
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center', gap: '1rem' }}>
+              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '0.2rem' }}>
+                <span style={{ fontSize: rowSizing.nameFont, fontWeight: 900, color: themeStyles.titleColor, textTransform: 'uppercase', letterSpacing: '0.03em', lineHeight: 1.1 }}>
+                  {w.name}
+                  {cur?.is_priority && single && (
+                    <span style={{
+                      marginLeft: '0.5rem',
+                      verticalAlign: 'middle',
+                      fontSize: '0.7rem',
+                      fontWeight: 800,
+                      padding: '0.15rem 0.5rem',
+                      borderRadius: '9999px',
+                      background: themeStyles.personnelBadgeBg,
+                      border: themeStyles.personnelBadgeBorder,
+                      color: themeStyles.personnelText,
+                    }}>PRIORITY</span>
+                  )}
+                </span>
+                {single ? (
+                  <>
+                    {cur.personnel && (
+                      <span style={{ fontSize: '0.95rem', fontWeight: 700, color: themeStyles.personnelName }}>{cur.personnel}</span>
+                    )}
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: themeStyles.serviceDescColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {cur.service_name}
+                    </span>
+                  </>
+                ) : !cur && (
+                  <span style={{ fontSize: '0.9rem', color: themeStyles.emptyServingColor }}>
+                    {w.personnel_name ? `${w.personnel_name} · Available` : 'Idle'}
+                  </span>
+                )}
+              </span>
+              {single ? (
+                <span className="mono" style={{ fontSize: rowSizing.queueFont, fontWeight: 900, lineHeight: 1, color: numberColor(cur) }}>
+                  {cur.queue_no}
+                </span>
+              ) : !cur && (
+                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: themeStyles.emptyServingColor }}>—</span>
+              )}
+            </div>
+
+            {cur && !single && (
+              // Several clients at this window (e.g. reassigned ones): one line each
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+                {clients.map(c => (
+                  <div key={c.id} style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'auto minmax(0, 1fr)',
+                    gap: '0.75rem',
+                    alignItems: 'center',
+                    background: themeStyles.serviceBoxBg,
+                    border: themeStyles.serviceBoxBorder,
+                    borderLeft: `4px solid ${c.reassigned ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`,
+                    borderRadius: '10px',
+                    padding: '0.4rem 0.65rem',
+                  }}>
+                    <span className="mono" style={{ fontSize: '2rem', fontWeight: 900, lineHeight: 1, color: numberColor(c) }}>
+                      {c.queue_no}
+                    </span>
+                    <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '0.1rem' }}>
+                      {c.reassigned ? (
+                        <span style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.04em', color: themeStyles.personnelText }}>
+                          {lang === 'fil' ? 'INILIPAT KAY' : 'REASSIGNED TO'} {c.personnel}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: themeStyles.personnelName }}>
+                          {c.personnel}{c.is_priority ? ' · PRIORITY' : ''}
+                        </span>
+                      )}
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: themeStyles.serviceNameColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {c.service_name}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const upcomingQueue = (
+        <section style={{
+          backgroundColor: themeStyles.rightSectionBg,
+          borderRadius: '16px',
+          border: themeStyles.rightSectionBorder,
+          boxShadow: themeStyles.rightSectionShadow,
+          padding: '1.25rem 1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1.25rem',
+          overflow: 'hidden',
+          minHeight: 0,
+          flex: '1 1 0',
+        }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: '1 1 0',
+            minHeight: 0,
+          }}>
+            <div style={{
+              fontSize: '1.25rem',
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              color: themeStyles.nextTitleColor,
+              marginBottom: '0.75rem',
+              borderBottom: themeStyles.nextTitleBorder,
+              paddingBottom: '0.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <span>{t.next_numbers}</span>
+              {waitingCount > 0 && (
+                <span style={{ fontSize: '0.85rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
+                  {waitingCount} in line
+                </span>
+              )}
+            </div>
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.65rem', overflowY: 'auto', paddingRight: '4px' }}>
+              {nextNumbers.length > 0 ? (
+                nextNumbers.map((num, idx) => (
+                  <div key={num} style={{
+                    backgroundColor: themeStyles.nextItemBg,
+                    border: themeStyles.nextItemBorder,
+                    borderRadius: '10px',
+                    padding: '0.75rem 1.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderLeft: num.startsWith('P-') ? (isLight ? '5px solid #d97706' : '5px solid var(--dole-gold)') : (isLight ? '5px solid #1e40af' : '5px solid #3b82f6'),
+                  }}>
+                    <span style={{ fontSize: '1rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
+                      #{idx + 1}
+                    </span>
+                    <span className="mono" style={{ fontSize: '1.85rem', fontWeight: 800, color: num.startsWith('P-') ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.nextItemNumber }}>
+                      {num}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div style={{ textAlign: 'center', color: themeStyles.emptyServingColor, marginTop: '1.5rem', fontSize: '1.1rem' }}>
+                  {t.waiting_empty}
+                </div>
+              )}
+            </div>
+          </div>
+
+        </section>
+  );
+
+  // ARTA video: the largest 16:9 player that fits its area
+  const artaVideoPanel = (
+          <div style={{
+            backgroundColor: '#0b1120',
+            borderRadius: '14px',
+            border: '1px solid rgba(217, 119, 6, 0.45)',
+            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.5)',
+            padding: '0.85rem',
+            display: 'flex',
+            flexDirection: 'column',
+            flex: '1 1 0',
+            minHeight: 0,
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '0.5rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              paddingBottom: '0.4rem',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <span style={{ fontSize: '1.25rem' }}>🎥</span>
+                <span style={{
+                  fontSize: '1.05rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: 'var(--dole-gold)',
+                }}>
+                  ARTA · Citizen's Charter
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowFolderModal(true)}
+                  title="Configure Local Video Folder or Link for ARTA Display"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '9999px',
+                    color: '#93c5fd',
+                    padding: '0.15rem 0.6rem',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                  }}
+                >
+                  <span>🎬</span>
+                  <span>{playlist.length > 0 ? (activeFolderName || 'Video Options') : 'Choose Video'}</span>
+                </button>
+                <span style={{
+                  fontSize: '0.7rem',
+                  padding: '0.15rem 0.5rem',
+                  borderRadius: '9999px',
+                  backgroundColor: 'rgba(217, 119, 6, 0.25)',
+                  color: '#fef08a',
+                  fontWeight: 700,
+                  border: '1px solid rgba(255, 198, 3, 0.4)',
+                }}>
+                  R.A. 11032
+                </span>
+              </div>
+            </div>
+
+            {/* Video Player: the largest 16:9 box that fits the space left */}
+            <div style={{ flex: '1 1 0', minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{
+              position: 'relative',
+              height: '100%',
+              aspectRatio: '16 / 9',
+              maxWidth: '100%',
+              backgroundColor: '#000000',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: '1px solid rgba(255,255,255,0.1)',
+            }}>
+              {isLocalPlaylistLoading ? (
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#0b1120',
+                  color: '#94a3b8',
+                  gap: '0.65rem',
+                }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    border: '3px solid rgba(59, 130, 246, 0.2)',
+                    borderTop: '3px solid #3b82f6',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                  }} />
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Loading Video...</span>
+                </div>
+              ) : artaEmbed ? (
+                artaEmbed.type === 'youtube' || artaEmbed.type === 'embed' ? (
+                  <iframe
+                    ref={iframeRef}
+                    key={artaEmbed.url}
+                    src={artaEmbed.url}
+                    title="ARTA Awareness Video"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                    }}
+                  />
+                ) : (
+                  <video
+                    ref={videoRef}
+                    key={artaEmbed.url}
+                    src={artaEmbed.url}
+                    autoPlay
+                    loop={playlist.length <= 1}
+                    playsInline
+                    controls
+                    muted={!audioUnlocked}
+                    onPlay={() => {
+                      isUserPausedRef.current = false;
+                    }}
+                    onPause={(e) => {
+                      if (!e.target.ended) {
+                        isUserPausedRef.current = true;
+                      }
+                    }}
+                    onCanPlay={handleVideoCanPlay}
+                    onEnded={playlist.length > 1 ? handleVideoEnded : undefined}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                    }}
+                  />
+                )
+              ) : (
+                <div
+                  onClick={handleSelectFileClick}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    padding: '1.25rem',
+                    textAlign: 'center',
+                    backgroundColor: '#0b1120',
+                  }}
+                >
+                  <span style={{ fontSize: '2.5rem', marginBottom: '0.4rem' }}>🎬</span>
+                  <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--dole-gold)', marginBottom: '0.25rem' }}>
+                    Click to Upload or Select ARTA Video
+                  </span>
+                  <span style={{ fontSize: '0.76rem', color: '#cbd5e1', maxWidth: '320px', lineHeight: 1.35, marginBottom: '0.75rem' }}>
+                    Choose a video file (.mp4, .webm, .mov) or folder to play on this screen.
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectFileClick();
+                      }}
+                      style={{
+                        backgroundColor: '#10b981',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '0.4rem 0.85rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🎬 Choose File...
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectFolderClick();
+                      }}
+                      style={{
+                        backgroundColor: '#2563eb',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '0.4rem 0.85rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      📂 Choose Folder...
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+
+            <div style={{
+              marginTop: '0.4rem',
+              fontSize: '0.72rem',
+              color: '#94a3b8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
+                {playlist.length > 1
+                  ? `Video ${currentIndex + 1}/${playlist.length}: ${currentVideoItem?.name || 'Local Video'}`
+                  : (currentVideoItem?.name || (artaEmbed ? "ARTA Video" : "No Video Uploaded"))}
+              </span>
+              <span style={{ color: artaEmbed ? '#10b981' : '#64748b', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: artaEmbed ? '#10b981' : '#475569' }} />
+                {artaEmbed ? (playlist.length > 1 ? `Looping (${playlist.length})` : 'Playing') : 'Idle'}
+              </span>
+            </div>
+          </div>
+  );
+
   return (
     <div style={{
-      minHeight: '100vh',
+      height: '100vh',
+      overflow: 'hidden',
       backgroundColor: themeStyles.pageBg,
       color: themeStyles.pageColor,
       display: 'flex',
@@ -1024,487 +1639,49 @@ export default function DisplayBoard() {
         </div>
       </header>
 
-      {/* Main Grid: one card per active window, then next in line + ARTA video */}
-      <div style={{
-        flex: 1,
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 2.3fr) minmax(300px, 1fr)',
-        gap: '1.75rem',
-      }}>
-        <section style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <div style={{
-            fontSize: '1.25rem',
-            fontWeight: 800,
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            color: themeStyles.sectionTitleColor,
-            marginBottom: '1rem',
-          }}>
-            {t.display_title}
+      {sideLayout ? (
+        /* Up to 6 windows: large ARTA video on the left; now serving + upcoming queue on the right */
+        <div style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1.7fr) minmax(400px, 1fr)',
+          gap: '1.75rem',
+        }}>
+          {artaVideoPanel}
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, gap: '1.25rem' }}>
+            <section style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: '0.75rem' }}>
+              {nowServingTitle}
+              {windowRows}
+            </section>
+            {upcomingQueue}
           </div>
-
-          {windows.length === 0 ? (
-            <div style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              textAlign: 'center',
-              background: themeStyles.emptyServingBg,
-              border: themeStyles.emptyServingBorder,
-              borderRadius: '16px',
-              color: themeStyles.emptyServingColor,
-              fontSize: '1.4rem',
-              padding: '2rem',
-            }}>
-              {t.no_active_serving}
-            </div>
-          ) : (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${sizing.cols}, minmax(0, 1fr))`,
-              gap: '1.1rem',
-              alignContent: 'start',
-            }}>
-              {windows.map(w => {
-                const clients = w.clients || (w.current ? [w.current] : []);
-                const cur = clients[0] || null;
-                const isFresh = cur && cur.called_at && cur.called_at === displayData?.latest_called_at;
-                return (
-                  <div key={w.id} style={{
-                    background: themeStyles.cardBg,
-                    border: cur ? themeStyles.cardBorder : themeStyles.emptyServingBorder,
-                    borderTop: cur
-                      ? `6px solid ${cur.is_priority ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`
-                      : themeStyles.emptyServingBorder,
-                    boxShadow: isFresh ? `0 0 0 4px ${isLight ? 'rgba(217,119,6,0.35)' : 'rgba(255,198,3,0.45)'}` : themeStyles.cardShadow,
-                    borderRadius: '16px',
-                    padding: sizing.pad,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.5rem',
-                    opacity: cur ? 1 : 0.75,
-                    transition: 'box-shadow 0.3s ease',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                        {w.kind === 'personnel' && (
-                          <span style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.08em', color: themeStyles.counterLabel }}>
-                            {lang === 'fil' ? 'PUMUNTA KAY' : 'PROCEED TO'}
-                          </span>
-                        )}
-                        <span style={{ fontSize: sizing.nameFont, fontWeight: 900, color: themeStyles.titleColor, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                          {w.name}
-                        </span>
-                      </span>
-                      {cur?.is_priority && clients.length === 1 && (
-                        <span style={{
-                          fontSize: '0.8rem',
-                          fontWeight: 800,
-                          padding: '0.2rem 0.6rem',
-                          borderRadius: '9999px',
-                          background: themeStyles.personnelBadgeBg,
-                          border: themeStyles.personnelBadgeBorder,
-                          color: themeStyles.personnelText,
-                        }}>PRIORITY</span>
-                      )}
-                    </div>
-
-                    {cur && clients.length === 1 && !cur.reassigned ? (
-                      <>
-                        <span className="mono" style={{
-                          fontSize: sizing.queueFont,
-                          fontWeight: 900,
-                          lineHeight: 1,
-                          color: cur.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
-                        }}>
-                          {cur.queue_no}
-                        </span>
-                        {cur.personnel && w.kind !== 'personnel' && (
-                          <span style={{ fontSize: '1rem', fontWeight: 700, color: themeStyles.personnelName }}>
-                            {cur.personnel}
-                          </span>
-                        )}
-                        <div style={{
-                          background: themeStyles.serviceBoxBg,
-                          border: themeStyles.serviceBoxBorder,
-                          borderRadius: '10px',
-                          padding: '0.5rem 0.7rem',
-                          fontSize: '0.9rem',
-                          fontWeight: 600,
-                          color: themeStyles.serviceNameColor,
-                          lineHeight: 1.35,
-                        }}>
-                          {cur.service_name}
-                        </div>
-                      </>
-                    ) : cur ? (
-                      // Several clients at this window (e.g. reassigned ones): one equal row each
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                        {clients.map(c => (
-                          <div key={c.id} style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'auto minmax(0, 1fr)',
-                            gap: '0.75rem',
-                            alignItems: 'center',
-                            background: themeStyles.serviceBoxBg,
-                            border: themeStyles.serviceBoxBorder,
-                            borderLeft: `4px solid ${c.reassigned ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`,
-                            borderRadius: '10px',
-                            padding: '0.5rem 0.7rem',
-                          }}>
-                            <span className="mono" style={{
-                              fontSize: `min(${sizing.queueFont}, 2.6rem)`,
-                              fontWeight: 900,
-                              lineHeight: 1,
-                              color: c.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
-                            }}>
-                              {c.queue_no}
-                            </span>
-                            <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '0.15rem' }}>
-                              {c.reassigned ? (
-                                <span style={{ fontSize: '0.78rem', fontWeight: 800, letterSpacing: '0.04em', color: themeStyles.personnelText }}>
-                                  {lang === 'fil' ? 'INILIPAT KAY' : 'REASSIGNED TO'} {c.personnel}
-                                </span>
-                              ) : (
-                                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: themeStyles.personnelName }}>
-                                  {c.personnel}{c.is_priority ? ' · PRIORITY' : ''}
-                                </span>
-                              )}
-                              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: themeStyles.serviceNameColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {c.service_name}
-                              </span>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <>
-                        <span style={{ fontSize: '1.6rem', fontWeight: 800, color: themeStyles.emptyServingColor, padding: '0.75rem 0' }}>
-                          —
-                        </span>
-                        <span style={{ fontSize: '0.95rem', color: themeStyles.emptyServingColor }}>
-                          {w.personnel_name ? `${w.personnel_name} · Available` : 'Idle'}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* Right Side: NEXT IN LINE & ARTA AWARENESS VIDEO */}
-        <section style={{
-          backgroundColor: themeStyles.rightSectionBg,
-          borderRadius: '16px',
-          border: themeStyles.rightSectionBorder,
-          boxShadow: themeStyles.rightSectionShadow,
-          padding: '1.25rem 1.5rem',
+        </div>
+      ) : (
+        /* Many windows: cards across the top; ARTA video beside the upcoming queue below */
+        <div style={{
+          flex: 1,
+          minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
-          gap: '1.25rem',
-          overflow: 'hidden',
+          gap: '1.5rem',
         }}>
+          <section style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flexShrink: 0, gap: '1rem' }}>
+            {nowServingTitle}
+            {windowCards}
+          </section>
           <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            flex: '1 1 auto',
+            flex: '1 1 0',
             minHeight: 0,
-            maxHeight: '320px',
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.9fr) minmax(320px, 1fr)',
+            gap: '1.75rem',
           }}>
-            <div style={{
-              fontSize: '1.25rem',
-              fontWeight: 800,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              color: themeStyles.nextTitleColor,
-              marginBottom: '0.75rem',
-              borderBottom: themeStyles.nextTitleBorder,
-              paddingBottom: '0.5rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-              <span>{t.next_numbers}</span>
-              {waitingCount > 0 && (
-                <span style={{ fontSize: '0.85rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
-                  {waitingCount} in line
-                </span>
-              )}
-            </div>
-
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.65rem', overflowY: 'auto', paddingRight: '4px' }}>
-              {nextNumbers.length > 0 ? (
-                nextNumbers.map((num, idx) => (
-                  <div key={num} style={{
-                    backgroundColor: themeStyles.nextItemBg,
-                    border: themeStyles.nextItemBorder,
-                    borderRadius: '10px',
-                    padding: '0.75rem 1.25rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    borderLeft: num.startsWith('P-') ? (isLight ? '5px solid #d97706' : '5px solid var(--dole-gold)') : (isLight ? '5px solid #1e40af' : '5px solid #3b82f6'),
-                  }}>
-                    <span style={{ fontSize: '1rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: 600 }}>
-                      #{idx + 1}
-                    </span>
-                    <span className="mono" style={{ fontSize: '1.85rem', fontWeight: 800, color: num.startsWith('P-') ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.nextItemNumber }}>
-                      {num}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div style={{ textAlign: 'center', color: themeStyles.emptyServingColor, marginTop: '1.5rem', fontSize: '1.1rem' }}>
-                  {t.waiting_empty}
-                </div>
-              )}
-            </div>
+            {artaVideoPanel}
+            {upcomingQueue}
           </div>
-
-          {/* Under Upcoming Queue: ARTA Citizen's Charter Video Player */}
-          <div style={{
-            backgroundColor: '#0b1120',
-            borderRadius: '14px',
-            border: '1px solid rgba(217, 119, 6, 0.45)',
-            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.5)',
-            padding: '0.85rem',
-            display: 'flex',
-            flexDirection: 'column',
-            flexShrink: 0,
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '0.5rem',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              paddingBottom: '0.4rem',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <span style={{ fontSize: '1.1rem' }}>🎥</span>
-                <span style={{
-                  fontSize: '0.85rem',
-                  fontWeight: 800,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                  color: 'var(--dole-gold)',
-                }}>
-                  ARTA · Citizen's Charter
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowFolderModal(true)}
-                  title="Configure Local Video Folder or Link for ARTA Display"
-                  style={{
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: '9999px',
-                    color: '#93c5fd',
-                    padding: '0.15rem 0.6rem',
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                  }}
-                >
-                  <span>🎬</span>
-                  <span>{playlist.length > 0 ? (activeFolderName || 'Video Options') : 'Choose Video'}</span>
-                </button>
-                <span style={{
-                  fontSize: '0.7rem',
-                  padding: '0.15rem 0.5rem',
-                  borderRadius: '9999px',
-                  backgroundColor: 'rgba(217, 119, 6, 0.25)',
-                  color: '#fef08a',
-                  fontWeight: 700,
-                  border: '1px solid rgba(255, 198, 3, 0.4)',
-                }}>
-                  R.A. 11032
-                </span>
-              </div>
-            </div>
-
-            {/* Video Player 16:9 */}
-            <div style={{
-              position: 'relative',
-              width: '100%',
-              paddingTop: '56.25%',
-              backgroundColor: '#000000',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              border: '1px solid rgba(255,255,255,0.1)',
-            }}>
-              {isLocalPlaylistLoading ? (
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: '#0b1120',
-                  color: '#94a3b8',
-                  gap: '0.65rem',
-                }}>
-                  <div style={{
-                    width: '32px',
-                    height: '32px',
-                    border: '3px solid rgba(59, 130, 246, 0.2)',
-                    borderTop: '3px solid #3b82f6',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
-                  }} />
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Loading Video...</span>
-                </div>
-              ) : artaEmbed ? (
-                artaEmbed.type === 'youtube' || artaEmbed.type === 'embed' ? (
-                  <iframe
-                    ref={iframeRef}
-                    key={artaEmbed.url}
-                    src={artaEmbed.url}
-                    title="ARTA Awareness Video"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      height: '100%',
-                      border: 'none',
-                    }}
-                  />
-                ) : (
-                  <video
-                    ref={videoRef}
-                    key={artaEmbed.url}
-                    src={artaEmbed.url}
-                    autoPlay
-                    loop={playlist.length <= 1}
-                    playsInline
-                    controls
-                    muted={!audioUnlocked}
-                    onPlay={() => {
-                      isUserPausedRef.current = false;
-                    }}
-                    onPause={(e) => {
-                      if (!e.target.ended) {
-                        isUserPausedRef.current = true;
-                      }
-                    }}
-                    onCanPlay={handleVideoCanPlay}
-                    onEnded={playlist.length > 1 ? handleVideoEnded : undefined}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'contain',
-                    }}
-                  />
-                )
-              ) : (
-                <div
-                  onClick={handleSelectFileClick}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    padding: '1.25rem',
-                    textAlign: 'center',
-                    backgroundColor: '#0b1120',
-                  }}
-                >
-                  <span style={{ fontSize: '2.5rem', marginBottom: '0.4rem' }}>🎬</span>
-                  <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--dole-gold)', marginBottom: '0.25rem' }}>
-                    Click to Upload or Select ARTA Video
-                  </span>
-                  <span style={{ fontSize: '0.76rem', color: '#cbd5e1', maxWidth: '320px', lineHeight: 1.35, marginBottom: '0.75rem' }}>
-                    Choose a video file (.mp4, .webm, .mov) or folder to play on this screen.
-                  </span>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectFileClick();
-                      }}
-                      style={{
-                        backgroundColor: '#10b981',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '0.4rem 0.85rem',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      🎬 Choose File...
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectFolderClick();
-                      }}
-                      style={{
-                        backgroundColor: '#2563eb',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '0.4rem 0.85rem',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      📂 Choose Folder...
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div style={{
-              marginTop: '0.4rem',
-              fontSize: '0.72rem',
-              color: '#94a3b8',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
-                {playlist.length > 1
-                  ? `Video ${currentIndex + 1}/${playlist.length}: ${currentVideoItem?.name || 'Local Video'}`
-                  : (currentVideoItem?.name || (artaEmbed ? "ARTA Video" : "No Video Uploaded"))}
-              </span>
-              <span style={{ color: artaEmbed ? '#10b981' : '#64748b', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: artaEmbed ? '#10b981' : '#475569' }} />
-                {artaEmbed ? (playlist.length > 1 ? `Looping (${playlist.length})` : 'Playing') : 'Idle'}
-              </span>
-            </div>
-          </div>
-        </section>
-      </div>
+        </div>
+      )}
 
       <footer style={{
         marginTop: '1.5rem',
