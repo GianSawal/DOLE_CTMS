@@ -1111,6 +1111,19 @@ class Stage5DisplayBoardTestCase(CsmTablesTestCase):
         self.assertEqual(board['windows'][0]['current']['queue_no'], tx.queue_no)
         self.assertFalse(any(c['kind'] == 'personnel' for c in board['windows']))
 
+    def test_reassigned_client_stays_on_window_until_started(self):
+        from .services import transfer_transaction
+        ben = self._ben_without_window()
+        tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
+        transfer_transaction(tx, self.ana, ben)
+        nxt = call_transaction(create_transaction(self.bataan, self.service), self.ana)
+
+        card = self._board()['windows'][0]
+        rows = [(c['queue_no'], c['reassigned'], c['personnel']) for c in card['clients']]
+        # Being served first, then the reassigned client waiting for Ben
+        self.assertEqual(rows, [(nxt.queue_no, False, "Ana Reyes"), (tx.queue_no, True, "Ben Cruz")])
+        self.assertEqual(self._board()['latest_called_queue_no'], nxt.queue_no)
+
     def test_personnel_card_when_origin_window_is_gone(self):
         from .services import transfer_transaction, archive_window
         ben = self._ben_without_window()

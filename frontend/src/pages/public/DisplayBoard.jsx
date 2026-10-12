@@ -1037,7 +1037,8 @@ export default function DisplayBoard() {
               alignContent: 'start',
             }}>
               {windows.map(w => {
-                const cur = w.current;
+                const clients = w.clients || (w.current ? [w.current] : []);
+                const cur = clients[0] || null;
                 const isFresh = cur && cur.called_at && cur.called_at === displayData?.latest_called_at;
                 return (
                   <div key={w.id} style={{
@@ -1066,7 +1067,7 @@ export default function DisplayBoard() {
                           {w.name}
                         </span>
                       </span>
-                      {cur?.is_priority && (
+                      {cur?.is_priority && clients.length === 1 && (
                         <span style={{
                           fontSize: '0.8rem',
                           fontWeight: 800,
@@ -1079,7 +1080,7 @@ export default function DisplayBoard() {
                       )}
                     </div>
 
-                    {cur ? (
+                    {cur && clients.length === 1 && !cur.reassigned ? (
                       <>
                         <span className="mono" style={{
                           fontSize: sizing.queueFont,
@@ -1106,23 +1107,47 @@ export default function DisplayBoard() {
                         }}>
                           {cur.service_name}
                         </div>
-                        {w.also_serving?.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'baseline' }}>
-                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: themeStyles.counterLabel }}>
-                              {lang === 'fil' ? 'Pinagsisilbihan din:' : 'Also serving:'}
-                            </span>
-                            {w.also_serving.map(o => (
-                              <span key={o.queue_no} className="mono" style={{
-                                fontSize: '1.15rem',
-                                fontWeight: 800,
-                                color: o.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
-                              }} title={o.personnel}>
-                                {o.queue_no}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </>
+                    ) : cur ? (
+                      // Several clients at this window (e.g. reassigned ones): one equal row each
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                        {clients.map(c => (
+                          <div key={c.id} style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'auto minmax(0, 1fr)',
+                            gap: '0.75rem',
+                            alignItems: 'center',
+                            background: themeStyles.serviceBoxBg,
+                            border: themeStyles.serviceBoxBorder,
+                            borderLeft: `4px solid ${c.reassigned ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6')}`,
+                            borderRadius: '10px',
+                            padding: '0.5rem 0.7rem',
+                          }}>
+                            <span className="mono" style={{
+                              fontSize: `min(${sizing.queueFont}, 2.6rem)`,
+                              fontWeight: 900,
+                              lineHeight: 1,
+                              color: c.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor,
+                            }}>
+                              {c.queue_no}
+                            </span>
+                            <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '0.15rem' }}>
+                              {c.reassigned ? (
+                                <span style={{ fontSize: '0.78rem', fontWeight: 800, letterSpacing: '0.04em', color: themeStyles.personnelText }}>
+                                  {lang === 'fil' ? 'INILIPAT KAY' : 'REASSIGNED TO'} {c.personnel}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: themeStyles.personnelName }}>
+                                  {c.personnel}{c.is_priority ? ' · PRIORITY' : ''}
+                                </span>
+                              )}
+                              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: themeStyles.serviceNameColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {c.service_name}
+                              </span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     ) : (
                       <>
                         <span style={{ fontSize: '1.6rem', fontWeight: 800, color: themeStyles.emptyServingColor, padding: '0.75rem 0' }}>
