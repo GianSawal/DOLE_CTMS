@@ -4,6 +4,18 @@ import { publicApi } from '../../api/public';
 import Header from '../../components/Header';
 import { translations } from '../../locales/translations';
 
+// The office's CSM survey page, carrying the client's SURVEY CODE (?code=T2TW) so the
+// CSM can pre-fill it instead of making the client type it.
+function surveyLink(ticket) {
+  try {
+    const url = new URL(ticket.office_survey_url);
+    if (ticket.claim_code) url.searchParams.set('code', ticket.claim_code);
+    return url.toString();
+  } catch {
+    return ticket.office_survey_url;
+  }
+}
+
 export default function Ticket() {
   const { ticketToken } = useParams();
   const [lang, setLang] = useState('en');
@@ -253,7 +265,7 @@ export default function Ticket() {
                 {t.rate_prompt}
               </p>
               <a
-                href={ticket.office_survey_url}
+                href={surveyLink(ticket)}
                 className="btn btn-gold btn-lg w-full"
                 style={{ fontSize: '1.1rem', boxShadow: 'var(--shadow-md)' }}
               >
