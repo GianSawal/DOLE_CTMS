@@ -50,6 +50,17 @@ function DivisionTag({ name }) {
   );
 }
 
+const WAITING_FILTER_KEY = 'ctms_waiting_filter';
+
+function loadWaitingFilter() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WAITING_FILTER_KEY) || '{}');
+    return { division: saved.division || '', service: saved.service || '' };
+  } catch {
+    return { division: '', service: '' };
+  }
+}
+
 function ClientName({ tx }) {
   return (
     <span style={{ color: tx.client_name ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
@@ -75,6 +86,10 @@ export default function StaffQueue() {
   const [pendingTx, setPendingTx] = useState(null);
   const [pendingReason, setPendingReason] = useState('');
   const [reassignTx, setReassignTx] = useState(null);
+  // View-only filter for the waiting list; remembered on this computer
+  const [waitingFilter, setWaitingFilter] = useState(loadWaitingFilter);
+  const [divisions, setDivisions] = useState([]);
+  const [services, setServices] = useState([]);
 
   useEffect(() => {
     if (offices.length > 0 && !offices.some(o => String(o.id) === String(selectedOffice))) {
@@ -100,6 +115,19 @@ export default function StaffQueue() {
     const timer = setInterval(fetchQueue, POLL_MS);
     return () => clearInterval(timer);
   }, [fetchQueue]);
+
+  useEffect(() => {
+    staffApi.getDivisions().then(d => setDivisions(Array.isArray(d) ? d : [])).catch(() => {});
+    staffApi.getServices().then(d => {
+      const list = Array.isArray(d) ? d : (d?.results || []);
+      setServices(list.filter(svc => svc.is_active));
+    }).catch(() => {});
+  }, []);
+
+  const updateWaitingFilter = (next) => {
+    setWaitingFilter(next);
+    try { localStorage.setItem(WAITING_FILTER_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+  };
 
   // Keep "waiting for N min" labels fresh between polls
   useEffect(() => {
@@ -179,6 +207,20 @@ export default function StaffQueue() {
   const myWindow = queueData.my_window;
   const myCurrent = queueData.my_current;
   const waiting = queueData.waiting || [];
+
+  // Services that belong to the chosen division ('none' = services with no division)
+  const inDivision = (divisionId) => {
+    if (!waitingFilter.division) return true;
+    if (waitingFilter.division === 'none') return !divisionId;
+    return String(divisionId) === String(waitingFilter.division);
+  };
+  const serviceOptions = services.filter(svc => inDivision(svc.division));
+  const waitingFiltered = Boolean(waitingFilter.division || waitingFilter.service);
+  // Keep each ticket's real place in the full line (#3 stays #3 when filtered)
+  const visibleWaiting = waiting
+    .map((tx, idx) => ({ tx, position: idx + 1 }))
+    .filter(({ tx }) => inDivision(tx.division_id)
+      && (!waitingFilter.service || String(tx.service) === String(waitingFilter.service)));
   const othersServing = (queueData.serving || []).filter(tx => !myCurrent || tx.id !== myCurrent.id);
   const pendingList = queueData.pending || [];
   const officeName = queueData.office?.name || offices.find(o => String(o.id) === String(selectedOffice))?.name || '';
@@ -391,14 +433,63 @@ export default function StaffQueue() {
                 <h2 style={sectionTitle}>Waiting Queue</h2>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Priority first, then first come, first served</span>
               </div>
+
+              {/* View filter: show only tickets for one division and/or service */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                <select
+                  aria-label="Filter waiting list by division"
+                  value={waitingFilter.division}
+                  onChange={(e) => {
+                    const division = e.target.value;
+                    // Drop a chosen service that isn't in the new division
+                    const svc = services.find(x => String(x.id) === String(waitingFilter.service));
+                    const keep = svc && (!division || (division === 'none' ? !svc.division : String(svc.division) === division));
+                    updateWaitingFilter({ division, service: keep ? waitingFilter.service : '' });
+                  }}
+                  style={{ minHeight: '38px' }}
+                >
+                  <option value="">All divisions</option>
+                  {divisions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  <option value="none">No division</option>
+                </select>
+                <select
+                  aria-label="Filter waiting list by service"
+                  value={waitingFilter.service}
+                  onChange={(e) => updateWaitingFilter({ ...waitingFilter, service: e.target.value })}
+                  style={{ minHeight: '38px' }}
+                >
+                  <option value="">All services</option>
+                  {serviceOptions.map(svc => <option key={svc.id} value={svc.id}>{svc.name}</option>)}
+                </select>
+              </div>
+              {waitingFiltered && (
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
+                  fontSize: '0.8rem', color: 'var(--text-secondary)', background: '#f8fafc',
+                  border: 'var(--border-hairline)', borderRadius: 'var(--radius-md)', padding: '0.45rem 0.7rem', marginBottom: '0.6rem',
+                }}>
+                  <span>
+                    Showing <strong>{visibleWaiting.length}</strong> of {waiting.length} waiting.
+                    {' '}<span style={{ color: 'var(--text-muted)' }}>Call Next Client still calls #1 in the whole line; use Call on a ticket below to serve this filter.</span>
+                  </span>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => updateWaitingFilter({ division: '', service: '' })}>
+                    Clear filter
+                  </button>
+                </div>
+              )}
+
               {waiting.length === 0 ? (
                 <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nobody is waiting right now.</div>
+              ) : visibleWaiting.length === 0 ? (
+                <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Nobody is waiting for this {waitingFilter.service ? 'service' : 'division'} right now.
+                </div>
               ) : (
                 <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
-                  {waiting.map((tx, idx) => (
+                  {visibleWaiting.map(({ tx, position }) => (
                     <li key={tx.id} style={{
-                      border: idx === 0 ? '2px solid var(--dole-blue)' : 'var(--border-hairline)',
-                      background: idx === 0 ? 'var(--dole-blue-subtle)' : '#fff',
+                      border: position === 1 ? '2px solid var(--dole-blue)' : 'var(--border-hairline)',
+                      background: position === 1 ? 'var(--dole-blue-subtle)' : '#fff',
                       borderRadius: 'var(--radius-md)',
                       padding: '0.7rem 0.9rem',
                       display: 'grid',
@@ -408,7 +499,7 @@ export default function StaffQueue() {
                     }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>#{idx + 1}</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>#{position}</span>
                           <strong style={{ fontFamily: 'var(--font-mono)', fontSize: '1.2rem', color: 'var(--text-primary)' }}>{tx.queue_no}</strong>
                           {tx.is_priority && <span className="badge badge-priority">Priority</span>}
                           <DivisionTag name={tx.division_name} />
