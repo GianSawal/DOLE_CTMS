@@ -33,6 +33,7 @@ export default function StaffWindows() {
 
   const [formModal, setFormModal] = useState(null); // { mode: 'create' | 'rename', window? }
   const [formName, setFormName] = useState('');
+  const [formDescription, setFormDescription] = useState('');
   const [formError, setFormError] = useState('');
   const [confirmModal, setConfirmModal] = useState(null); // { title, message, confirmLabel, danger, onConfirm }
 
@@ -90,12 +91,14 @@ export default function StaffWindows() {
   const openCreate = () => {
     setFormModal({ mode: 'create' });
     setFormName(`Window ${windows.length + 1}`);
+    setFormDescription('');
     setFormError('');
   };
 
   const openRename = (w) => {
     setFormModal({ mode: 'rename', window: w });
     setFormName(w.name);
+    setFormDescription(w.description || '');
     setFormError('');
   };
 
@@ -104,11 +107,11 @@ export default function StaffWindows() {
     try {
       setFormError('');
       if (formModal.mode === 'create') {
-        const created = await staffApi.createWindow(selectedOffice, formName);
+        const created = await staffApi.createWindow(selectedOffice, formName, formDescription);
         flash('success', `${created.name} is ready.`);
       } else {
-        await staffApi.updateWindow(formModal.window.id, { name: formName });
-        flash('success', 'Window renamed.');
+        await staffApi.updateWindow(formModal.window.id, { name: formName, description: formDescription });
+        flash('success', 'Window updated.');
       }
       setFormModal(null);
       await fetchWindows();
@@ -242,7 +245,12 @@ export default function StaffWindows() {
                   opacity: w.is_active ? 1 : 0.8,
                 }}>
                   <div style={{ padding: '1.1rem 1.25rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                    <h2 style={{ fontSize: '1.3rem', margin: 0, color: 'var(--text-primary)', wordBreak: 'break-word' }}>{w.name}</h2>
+                    <div style={{ minWidth: 0 }}>
+                      <h2 style={{ fontSize: '1.3rem', margin: 0, color: 'var(--text-primary)', wordBreak: 'break-word' }}>{w.name}</h2>
+                      {w.description && (
+                        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>{w.description}</p>
+                      )}
+                    </div>
                     <span className="badge" style={{ backgroundColor: st.bg, color: st.color, border: `1px solid ${st.border}`, flexShrink: 0 }}>
                       {st.label}
                     </span>
@@ -319,6 +327,20 @@ export default function StaffWindows() {
             onChange={(e) => setFormName(e.target.value)}
             placeholder="e.g. Window 1"
           />
+
+          <label htmlFor="window-description" style={{ marginTop: '1rem' }}>Description (optional)</label>
+          <input
+            id="window-description"
+            type="text"
+            maxLength={120}
+            value={formDescription}
+            onChange={(e) => setFormDescription(e.target.value)}
+            placeholder="e.g. Labor inspection and SEnA cases"
+          />
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+            Shown to staff on this window's card, e.g. what it's for or which services it handles.
+          </div>
+
           {formError && (
             <div style={{ color: 'var(--dole-red-dark)', fontSize: '0.85rem', marginTop: '0.5rem' }}>{formError}</div>
           )}

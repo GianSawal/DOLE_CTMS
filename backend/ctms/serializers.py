@@ -77,8 +77,8 @@ class WindowSerializer(serializers.ModelSerializer):
     class Meta:
         model = CtmsCounter
         fields = [
-            'id', 'office', 'office_name', 'name', 'is_active', 'is_archived', 'archived_at', 'sort_order',
-            'assigned_user', 'assigned_user_name', 'assigned_at', 'is_mine', 'current_client',
+            'id', 'office', 'office_name', 'name', 'description', 'is_active', 'is_archived', 'archived_at',
+            'sort_order', 'assigned_user', 'assigned_user_name', 'assigned_at', 'is_mine', 'current_client',
         ]
 
     def get_assigned_user_name(self, obj):

@@ -141,6 +141,10 @@ class CtmsCounter(models.Model):
     id = models.BigAutoField(primary_key=True)
     office = models.ForeignKey(CsmOffice, on_delete=models.PROTECT, related_name='counters')
     name = models.CharField(max_length=50, help_text="e.g. Window 1, Window 2")
+    description = models.CharField(
+        max_length=120, blank=True, default='',
+        help_text="Optional, e.g. 'Labor inspection and SEnA cases'"
+    )
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveSmallIntegerField(default=0)
     # One occupant per window and one window per user, enforced by the unique column.

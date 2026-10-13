@@ -1299,7 +1299,7 @@ class StaffWindowViewSet(viewsets.ViewSet):
         if not office:
             return Response({"detail": "Choose an office you are assigned to."}, status=status.HTTP_403_FORBIDDEN)
         try:
-            window = services.create_window(office, request.data.get('name'))
+            window = services.create_window(office, request.data.get('name'), request.data.get('description', ''))
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         self._audit('WINDOW_CREATE', window, f"Created window '{window.name}' at {office.name}.")
@@ -1307,7 +1307,7 @@ class StaffWindowViewSet(viewsets.ViewSet):
 
     def partial_update(self, request, pk=None):
         window = self._get_window(pk)
-        changes = {k: request.data[k] for k in ('name', 'sort_order', 'is_active') if k in request.data}
+        changes = {k: request.data[k] for k in ('name', 'description', 'sort_order', 'is_active') if k in request.data}
         try:
             window = services.update_window(window, **changes)
         except (ValueError, TypeError) as e:

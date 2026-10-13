@@ -205,9 +205,9 @@ export const staffApi = {
     if (officeId) params.append('office', officeId);
     return apiRequest(`/staff/windows/?${params.toString()}`);
   },
-  createWindow: (officeId, name) => apiRequest('/staff/windows/', {
+  createWindow: (officeId, name, description = '') => apiRequest('/staff/windows/', {
     method: 'POST',
-    body: JSON.stringify({ office: officeId, name }),
+    body: JSON.stringify({ office: officeId, name, description }),
   }),
   updateWindow: (id, data) => apiRequest(`/staff/windows/${id}/`, {
     method: 'PATCH',

@@ -791,8 +791,38 @@ class Stage2WindowsTestCase(CsmTablesTestCase):
         self.client.force_authenticate(user=user)
         return self.client
 
-    def _create(self, name, office=None, user=None):
-        return self._as(user or self.ana).post('/api/staff/windows/', {'office': (office or self.bataan).id, 'name': name}, format='json')
+    def _create(self, name, office=None, user=None, description=None):
+        body = {'office': (office or self.bataan).id, 'name': name}
+        if description is not None:
+            body['description'] = description
+        return self._as(user or self.ana).post('/api/staff/windows/', body, format='json')
+
+    def test_window_description_is_optional_and_shown_and_editable(self):
+        res = self._create("Window 1", description="Labor inspection and SEnA cases")
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data['description'], "Labor inspection and SEnA cases")
+        w1 = res.data['id']
+
+        # Optional: omitting it leaves it blank, never required
+        res_no_desc = self._create("Window 2")
+        self.assertEqual(res_no_desc.status_code, 201)
+        self.assertEqual(res_no_desc.data['description'], '')
+
+        # Shown on the window list
+        listed = {w['id']: w['description'] for w in self._as(self.ana).get('/api/staff/windows/').data['windows']}
+        self.assertEqual(listed[w1], "Labor inspection and SEnA cases")
+
+        # Editable without renaming, and clearable
+        res_edit = self._as(self.ana).patch(f'/api/staff/windows/{w1}/', {'description': 'OSH concerns'}, format='json')
+        self.assertEqual(res_edit.status_code, 200)
+        self.assertEqual(res_edit.data['name'], 'Window 1')
+        self.assertEqual(res_edit.data['description'], 'OSH concerns')
+        res_clear = self._as(self.ana).patch(f'/api/staff/windows/{w1}/', {'description': ''}, format='json')
+        self.assertEqual(res_clear.data['description'], '')
+
+        # Too long is rejected
+        res_long = self._as(self.ana).patch(f'/api/staff/windows/{w1}/', {'description': 'x' * 121}, format='json')
+        self.assertEqual(res_long.status_code, 400)
 
     def test_staff_create_windows_for_their_own_office_only(self):
         self.assertEqual(self._create("Window 1").status_code, 201)

@@ -473,13 +473,16 @@ def _window_has_active_client(window):
     return CtmsTransaction.objects.filter(counter=window, status__in=WINDOW_BUSY_STATUSES).exists()
 
 
-def create_window(office, name):
+def create_window(office, name, description=''):
     """Creates a window, or restores an archived one with the same name in this office."""
     clean = (name or '').strip()
     if not clean:
         raise ValueError("Window name is required.")
     if len(clean) > 50:
         raise ValueError("Window name must be 50 characters or fewer.")
+    clean_description = (description or '').strip()
+    if len(clean_description) > 120:
+        raise ValueError("Window description must be 120 characters or fewer.")
 
     with transaction.atomic():
         existing = CtmsCounter.objects.select_for_update().filter(office=office, name__iexact=clean).first()
@@ -490,6 +493,7 @@ def create_window(office, name):
                       .aggregate(m=models.Max('sort_order'))['m'] or 0) + 1
         if existing:
             existing.name = clean
+            existing.description = clean_description
             existing.archived_at = None
             existing.is_active = True
             existing.assigned_user = None
@@ -497,10 +501,12 @@ def create_window(office, name):
             existing.sort_order = next_order
             existing.save()
             return existing
-        return CtmsCounter.objects.create(office=office, name=clean, is_active=True, sort_order=next_order)
+        return CtmsCounter.objects.create(
+            office=office, name=clean, description=clean_description, is_active=True, sort_order=next_order
+        )
 
 
-def update_window(window, name=None, sort_order=None, is_active=None):
+def update_window(window, name=None, description=None, sort_order=None, is_active=None):
     with transaction.atomic():
         window = CtmsCounter.objects.select_for_update().get(pk=window.pk)
         if window.archived_at:
@@ -517,6 +523,12 @@ def update_window(window, name=None, sort_order=None, is_active=None):
                 state = "an archived window" if clash.archived_at else "another window"
                 raise ValueError(f"The name '{clean}' is already used by {state} in this office.")
             window.name = clean
+
+        if description is not None:
+            clean_description = description.strip()
+            if len(clean_description) > 120:
+                raise ValueError("Window description must be 120 characters or fewer.")
+            window.description = clean_description
 
         if sort_order is not None:
             window.sort_order = max(0, int(sort_order))
