@@ -115,6 +115,11 @@ export default function DisplayBoard() {
   const defaultVideoVolumeRef = useRef(0.75);
   const isDuckingRef = useRef(false);
   const duckIntervalRef = useRef(null);
+  // Playlist safety: a file the TV can't play (e.g. .avi, or H.265 .mp4) or a video that stops
+  // loading is skipped instead of freezing the playlist on it.
+  const [skippedNote, setSkippedNote] = useState('');
+  const failedInARowRef = useRef(0);
+  const progressRef = useRef({ time: -1, at: 0 });
 
   const isFolderLike = (url) => {
     if (!url) return false;
@@ -584,6 +589,43 @@ export default function DisplayBoard() {
       setCurrentIndex((prev) => (prev + 1) % playlist.length);
     }
   };
+
+  const skipCurrentVideo = (reason) => {
+    if (!playlist || playlist.length <= 1) return;
+    failedInARowRef.current += 1;
+    const name = currentVideoItem?.name || 'a video';
+    if (failedInARowRef.current >= playlist.length) {
+      setSkippedNote(`None of the ${playlist.length} videos could be played on this TV. Use MP4 (H.264) files.`);
+      return;
+    }
+    setSkippedNote(`Skipped "${name}": ${reason}`);
+    isUserPausedRef.current = false;
+    setCurrentIndex((prev) => (prev + 1) % playlist.length);
+  };
+
+  // The browser can't open this file (unsupported format or codec): move on to the next one
+  const handleVideoError = () => {
+    skipCurrentVideo("it can't be played on this TV (the file may be damaged or in an unsupported format).");
+  };
+
+  // A video that stops moving for 20 seconds (stuck loading) is skipped too, unless staff paused it
+  useEffect(() => {
+    progressRef.current = { time: -1, at: Date.now() };
+    const timer = setInterval(() => {
+      const v = videoRef.current;
+      if (!v || playlist.length <= 1 || artaEmbed?.type !== 'direct' || isUserPausedRef.current || v.ended) {
+        progressRef.current = { time: v ? v.currentTime : -1, at: Date.now() };
+        return;
+      }
+      if (v.currentTime !== progressRef.current.time) {
+        progressRef.current = { time: v.currentTime, at: Date.now() };
+      } else if (Date.now() - progressRef.current.at > 20000) {
+        skipCurrentVideo('it stopped loading.');
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, playlist, artaEmbed?.url]);
 
   const handleVideoCanPlay = (e) => {
     const video = e.target;
@@ -1198,6 +1240,10 @@ export default function DisplayBoard() {
                     onPlay={() => {
                       isUserPausedRef.current = false;
                     }}
+                    onPlaying={() => {
+                      failedInARowRef.current = 0;
+                    }}
+                    onError={handleVideoError}
                     onPause={(e) => {
                       if (!e.target.ended) {
                         isUserPausedRef.current = true;
@@ -1299,6 +1345,11 @@ export default function DisplayBoard() {
                   ? `Video ${currentIndex + 1}/${playlist.length}: ${currentVideoItem?.name || 'Local Video'}`
                   : (currentVideoItem?.name || (artaEmbed ? "ARTA Video" : "No Video Uploaded"))}
               </span>
+              {skippedNote && (
+                <span title={skippedNote} style={{ color: '#fbbf24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 0', minWidth: 0, margin: '0 0.6rem' }}>
+                  ⚠ {skippedNote}
+                </span>
+              )}
               <span style={{ color: artaEmbed ? '#10b981' : '#64748b', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
                 <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: artaEmbed ? '#10b981' : '#475569' }} />
                 {artaEmbed ? (playlist.length > 1 ? `Looping (${playlist.length})` : 'Playing') : 'Idle'}
@@ -1384,7 +1435,7 @@ export default function DisplayBoard() {
               textTransform: 'uppercase',
               color: themeStyles.subTitleColor,
             }}>
-              Republic of the Philippines · DOLE
+              Republic of the Philippines
             </div>
             <h1 style={{ fontSize: '2.25rem', fontWeight: 900, margin: 0, letterSpacing: '-0.02em', color: themeStyles.titleColor }}>
               {displayData?.office?.name}
@@ -1545,7 +1596,6 @@ export default function DisplayBoard() {
         color: themeStyles.footerColor,
       }}>
         <span>DOLE Client Transaction Monitoring System (CTMS)</span>
-        <span>Display updates automatically every few seconds</span>
       </footer>
 
       {/* Hidden File Input for Single/Multiple Video File Selection */}
