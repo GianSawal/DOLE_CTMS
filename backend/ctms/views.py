@@ -563,7 +563,7 @@ class StaffTransactionActionView(APIView):
                 tx = services.call_transaction(tx, request.user)
 
             elif action == 'done':
-                tx = services.mark_done(tx, request.user)
+                tx = services.mark_done(tx, request.user, reason=str(request.data.get('reason', '')))
 
             elif action == 'undo-done':
                 tx = services.undo_done(tx, actor=request.user)
@@ -669,6 +669,8 @@ class StaffTransactionActionView(APIView):
                         'counter': tx.counter.name if tx.counter else '',
                         'assigned_personnel': tx.assigned_personnel,
                         'status': tx.status,
+                        **({'remarks': str(request.data.get('reason', '')).strip()}
+                           if action in ('done', 'pending') and str(request.data.get('reason', '')).strip() else {}),
                     }
                 )
 

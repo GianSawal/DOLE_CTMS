@@ -1253,6 +1253,35 @@ class Stage4MyClientsAndTransferTestCase(CsmTablesTestCase):
         row = self._tab(self.ben, 'pending')['results'][0]
         self.assertEqual((row['latest_note']['kind'], row['latest_note']['text']), ('pending', 'Waiting for permit copy'))
 
+    def test_done_remarks_are_saved_and_shown(self):
+        tx = self._served_by_ana()
+        res = self._as(self.ana).post(f'/api/staff/transactions/{tx.id}/done/',
+                                      {'reason': '  Assisted in filing the SEnA request  '}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['status'], 'done')
+        self.assertEqual((res.data['latest_note']['kind'], res.data['latest_note']['text'], res.data['latest_note']['by']),
+                         ('done', 'Assisted in filing the SEnA request', 'Ana'))
+
+        # Shown on the client in My Clients > Done, kept in the history, and in the audit log
+        row = self._tab(self.ana, 'done')['results'][0]
+        self.assertEqual(row['latest_note']['text'], 'Assisted in filing the SEnA request')
+        history = self._as(self.ana).get(f'/api/staff/transactions/{tx.id}/history/').data
+        self.assertIn('Assisted in filing the SEnA request', str(history))
+        audit = CtmsAuditLog.objects.filter(action='COMPLETE_SERVICE').latest('timestamp')
+        self.assertEqual(audit.details.get('remarks'), 'Assisted in filing the SEnA request')
+
+        # After Undo Done the client is being served again, so the Done remarks no longer show
+        self._as(self.ana).post(f'/api/staff/transactions/{tx.id}/undo-done/')
+        tx.refresh_from_db()
+        self.assertIsNone(StaffTransactionSerializer(tx).data['latest_note'])
+
+    def test_done_without_remarks_still_works(self):
+        tx = self._served_by_ana()
+        res = self._as(self.ana).post(f'/api/staff/transactions/{tx.id}/done/')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['status'], 'done')
+        self.assertIsNone(res.data['latest_note'])
+
     def test_waiting_ticket_cannot_be_transferred(self):
         tx = create_transaction(self.bataan, self.service)
         res = self._transfer(tx, self.ana, self.ben)

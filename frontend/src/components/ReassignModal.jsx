@@ -130,7 +130,7 @@ export default function ReassignModal({ tx, onClose, onTransferred }) {
               placeholder="Why are you reassigning this client? e.g. Needs a labor inspection specialist"
             />
             <p style={{ margin: '0.35rem 0 0', fontSize: '0.78rem', color: 'var(--ui-muted)' }}>
-              The new handler sees this note on the client and in their notification.
+              The new handler sees these remarks on the client and in their notification.
             </p>
           </div>
 

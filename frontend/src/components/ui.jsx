@@ -36,8 +36,8 @@ export function Notice({ notice, onDismiss }) {
 
 const NOTE_MAX = 255;
 
-/** Multi-line "Add note" box used when reassigning a client or moving them to pending. */
-export function NoteField({ id, value, onChange, placeholder, label = 'Add note' }) {
+/** Multi-line "Remarks" box used when reassigning, moving to pending, or completing a client. */
+export function NoteField({ id, value, onChange, placeholder, label = 'Remarks' }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -76,17 +76,24 @@ export function ConcernNote({ text }) {
   );
 }
 
-/** Shows the latest reassignment or pending note on a client. */
+const NOTE_STYLES = {
+  reassign: { label: 'Reassign remarks', background: '#fffaeb', border: '#fedf89' },
+  pending: { label: 'Pending remarks', background: '#f2f4f7', border: '#e4e7ec' },
+  done: { label: 'Done remarks', background: '#ecfdf3', border: '#abefc6' },
+};
+
+/** Shows the latest remarks written when the client was reassigned, put on pending, or completed. */
 export function LatestNote({ note }) {
   if (!note?.text) return null;
-  const label = note.kind === 'reassign' ? 'Reassign note' : 'Pending note';
+  const style = NOTE_STYLES[note.kind] || NOTE_STYLES.pending;
+  const label = style.label;
   return (
     <div style={{
       marginTop: '0.45rem',
       padding: '0.45rem 0.65rem',
       borderRadius: '8px',
-      background: note.kind === 'reassign' ? '#fffaeb' : '#f2f4f7',
-      border: `1px solid ${note.kind === 'reassign' ? '#fedf89' : '#e4e7ec'}`,
+      background: style.background,
+      border: `1px solid ${style.border}`,
       fontSize: '0.82rem',
       color: 'var(--ui-text-2)',
       lineHeight: 1.4,

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { staffApi } from '../../api/staff';
 import Modal from '../../components/Modal';
 import ReassignModal from '../../components/ReassignModal';
+import DoneModal from '../../components/DoneModal';
 import TransactionHistoryModal from '../../components/TransactionHistoryModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
 import { PageHeader, Notice, NoteField, LatestNote, ConcernNote } from '../../components/ui';
@@ -39,6 +40,7 @@ export default function StaffMyClients() {
   const [historyTxId, setHistoryTxId] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
   const [pendingTx, setPendingTx] = useState(null);
+  const [doneTx, setDoneTx] = useState(null);
   const [pendingReason, setPendingReason] = useState('');
 
   const fetchData = useCallback(async () => {
@@ -126,7 +128,7 @@ export default function StaffMyClients() {
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         {tx.status === 'serving' && (
           <>
-            <button className="btn btn-success btn-sm" disabled={busy} onClick={() => act(tx, 'done', `Queue ${tx.queue_no} completed. The client can now answer the CSM survey.`)}>Done</button>
+            <button className="btn btn-success btn-sm" disabled={busy} onClick={() => setDoneTx(tx)}>Done</button>
             <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => { setPendingReason(''); setPendingTx(tx); }}>Pending</button>
           </>
         )}
@@ -139,7 +141,7 @@ export default function StaffMyClients() {
           <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => { setPendingReason(''); setPendingTx(tx); }}>Pending</button>
         )}
         {tx.status === 'pending' && (
-          <button className="btn btn-success btn-sm" disabled={busy} onClick={() => act(tx, 'done', `Queue ${tx.queue_no} completed.`)}>Done</button>
+          <button className="btn btn-success btn-sm" disabled={busy} onClick={() => setDoneTx(tx)}>Done</button>
         )}
         {tx.status !== 'done' && (
           <>
@@ -279,6 +281,16 @@ export default function StaffMyClients() {
       />
 
       <TransactionHistoryModal txId={historyTxId} onClose={() => setHistoryTxId(null)} />
+
+      <DoneModal
+        tx={doneTx}
+        onClose={() => setDoneTx(null)}
+        onConfirm={(remarks) => {
+          const tx = doneTx;
+          setDoneTx(null);
+          act(tx, 'done', `Queue ${tx.queue_no} completed. The client can now answer the CSM survey.`, { reason: remarks });
+        }}
+      />
 
       <Modal isOpen={!!pendingTx} onClose={() => setPendingTx(null)} title={pendingTx ? `Move Queue ${pendingTx.queue_no} to Pending` : ''} maxWidth="460px">
         <form onSubmit={submitPending}>

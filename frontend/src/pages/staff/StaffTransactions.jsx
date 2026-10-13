@@ -710,6 +710,13 @@ export default function StaffTransactions() {
               {viewDetailsTx.concern_note && (
                 <div><strong>Concern:</strong> {viewDetailsTx.concern_note}</div>
               )}
+              {viewDetailsTx.latest_note?.text && (
+                <div>
+                  <strong>{{ reassign: 'Reassign remarks', pending: 'Pending remarks', done: 'Done remarks' }[viewDetailsTx.latest_note.kind] || 'Remarks'}
+                    {viewDetailsTx.latest_note.by ? ` (${viewDetailsTx.latest_note.by})` : ''}:</strong>{' '}
+                  {viewDetailsTx.latest_note.text}
+                </div>
+              )}
               <div><strong>Assigned Personnel:</strong> {viewDetailsTx.assigned_personnel || '— Unassigned —'}</div>
               <div><strong>Client Name:</strong> {viewDetailsTx.client_name || 'Anonymous'}</div>
               {Array.isArray(viewDetailsTx.group_member_names) && viewDetailsTx.group_member_names.length > 0 && (

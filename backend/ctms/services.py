@@ -344,8 +344,8 @@ def mark_pending(tx, actor=None, reason=''):
     return _apply(tx, CtmsTransaction.STATUS_PENDING, CtmsAssignmentHistory.EVENT_PENDING, actor, [], reason)
 
 
-def mark_done(tx, staff_user):
-    """Completes a transaction and unlocks the CSM survey."""
+def mark_done(tx, staff_user, reason=''):
+    """Completes a transaction and unlocks the CSM survey. `reason` = the staff's remarks on what was done."""
     from .models import CtmsAssignmentHistory
     ensure_handler(tx, staff_user)
     now = timezone.now()
@@ -360,7 +360,7 @@ def mark_done(tx, staff_user):
         handler_name = (tx.assigned_personnel or '').strip() or personnel_display_name(staff_user)
     tx.served_by_name = handler_name[:200]
     return _apply(tx, CtmsTransaction.STATUS_DONE, CtmsAssignmentHistory.EVENT_COMPLETED, staff_user,
-                  ['done_at', 'started_at', 'served_by', 'served_by_name'])
+                  ['done_at', 'started_at', 'served_by', 'served_by_name'], (reason or '').strip()[:255])
 
 
 def undo_done(tx, actor=None):

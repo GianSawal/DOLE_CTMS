@@ -426,17 +426,22 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
         return obj.assignment_history.filter(event=CtmsAssignmentHistory.EVENT_TRANSFERRED).exists()
 
     def get_latest_note(self, obj):
-        """Most recent note written when the client was reassigned or put on pending."""
-        from .models import CtmsAssignmentHistory
+        """Most recent remarks written when the client was reassigned, put on pending, or completed."""
+        from .models import CtmsAssignmentHistory as H
+        events = [H.EVENT_TRANSFERRED, H.EVENT_PENDING]
+        if obj.status == CtmsTransaction.STATUS_DONE:
+            # Done remarks only while the ticket is still done (not after Undo Done)
+            events.append(H.EVENT_COMPLETED)
         event = (obj.assignment_history
-                 .filter(event__in=[CtmsAssignmentHistory.EVENT_TRANSFERRED, CtmsAssignmentHistory.EVENT_PENDING])
+                 .filter(event__in=events)
                  .exclude(reason='')
                  .order_by('-created_at', '-id')
                  .first())
         if not event:
             return None
+        kinds = {H.EVENT_TRANSFERRED: 'reassign', H.EVENT_PENDING: 'pending', H.EVENT_COMPLETED: 'done'}
         return {
-            'kind': 'reassign' if event.event == CtmsAssignmentHistory.EVENT_TRANSFERRED else 'pending',
+            'kind': kinds[event.event],
             'text': event.reason,
             'by': event.actor_name,
             'at': event.created_at,

@@ -6,6 +6,7 @@ import Modal from '../../components/Modal';
 import PrintSlip from '../../components/PrintSlip';
 import WalkinModal from '../../components/WalkinModal';
 import ReassignModal from '../../components/ReassignModal';
+import DoneModal from '../../components/DoneModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
 import { PageHeader, Notice, NoteField, LatestNote, ConcernNote } from '../../components/ui';
 
@@ -84,6 +85,7 @@ export default function StaffQueue() {
   const [printedTx, setPrintedTx] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null); // { title, message, confirmLabel, danger, onConfirm }
   const [pendingTx, setPendingTx] = useState(null);
+  const [doneTx, setDoneTx] = useState(null);
   const [pendingReason, setPendingReason] = useState('');
   const [reassignTx, setReassignTx] = useState(null);
   // View-only filter for the waiting list; remembered on this computer
@@ -328,7 +330,7 @@ export default function StaffQueue() {
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem', marginTop: '1.1rem' }}>
                       <button className="btn btn-success" disabled={busy}
-                        onClick={() => act(myCurrent, 'done', `Queue ${myCurrent.queue_no} completed. The client can now answer the CSM survey.`)}>
+                        onClick={() => setDoneTx(myCurrent)}>
                         Done
                       </button>
                       {!myCurrent.was_transferred && (
@@ -391,7 +393,7 @@ export default function StaffQueue() {
                             </button>
                           )}
                           {tx.status === 'pending' && (
-                            <button className="btn btn-success btn-sm" disabled={busy} onClick={() => act(tx, 'done', `Queue ${tx.queue_no} completed.`)}>Done</button>
+                            <button className="btn btn-success btn-sm" disabled={busy} onClick={() => setDoneTx(tx)}>Done</button>
                           )}
                           <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => setReassignTx(tx)}>Reassign</button>
                           <button className="btn btn-outline btn-sm" disabled={busy}
@@ -554,6 +556,16 @@ export default function StaffQueue() {
       <Modal isOpen={!!printedTx} onClose={() => setPrintedTx(null)} title="Queue Slip">
         <PrintSlip transaction={printedTx} onClose={() => setPrintedTx(null)} />
       </Modal>
+
+      <DoneModal
+        tx={doneTx}
+        onClose={() => setDoneTx(null)}
+        onConfirm={(remarks) => {
+          const tx = doneTx;
+          setDoneTx(null);
+          act(tx, 'done', `Queue ${tx.queue_no} completed. The client can now answer the CSM survey.`, { reason: remarks });
+        }}
+      />
 
       <Modal isOpen={!!pendingTx} onClose={() => setPendingTx(null)} title={pendingTx ? `Move Queue ${pendingTx.queue_no} to Pending` : ''} maxWidth="460px">
         <form onSubmit={submitPending}>
