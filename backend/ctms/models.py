@@ -490,7 +490,7 @@ class CtmsTransaction(models.Model):
     @property
     def survey_url(self):
         if self.status == self.STATUS_DONE and not self.is_surveyed:
-            base = settings.CSM_SURVEY_BASE_URL.rstrip('/')
+            base = settings.CSM_SURVEY_PUBLIC_URL.rstrip('/')
             return f"{base}/survey/t/{self.survey_token}"
         return None
 

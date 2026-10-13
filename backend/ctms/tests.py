@@ -523,15 +523,23 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         }, format='json')
         self.assertEqual(res_unauthorized.status_code, 403)
 
-    @override_settings(CSM_SURVEY_BASE_URL='http://csm.dolero3.lan/')
+    @override_settings(CSM_SURVEY_BASE_URL='http://ctms.dolero3.lan:5173')  # the wrong live value must not matter
     def test_ticket_links_to_its_office_csm_survey(self):
+        aurora = CsmOffice.objects.create(id=6, name="Aurora Field Office", code="AUR", is_active=True)
         bataan = CsmOffice.objects.create(id=7, name="Bataan Field Office", code="BAT", is_active=True)
         regional = CsmOffice.objects.create(id=18, name="DOLE Regional Office III", code="RO3", is_active=True)
-        for office, url in ((bataan, 'http://csm.dolero3.lan/survey/office/7'),
+        for office, url in ((aurora, 'http://csm.dolero3.lan/survey/office/6'),
+                            (bataan, 'http://csm.dolero3.lan/survey/office/7'),
                             (regional, 'http://csm.dolero3.lan/survey/office/18')):
             tx = create_transaction(office, self.service, client_name='Juan')
             ticket = self.client.get(f'/api/public/tickets/{tx.ticket_token}/').data
             self.assertEqual(ticket['office_survey_url'], url)
+
+        # A finished ticket's own survey link uses the same CSM address
+        done_tx = create_transaction(self.office, self.service, client_name='Maria')
+        mark_done(call_transaction(done_tx, self.staff_user), self.staff_user)
+        ticket = self.client.get(f'/api/public/tickets/{done_tx.ticket_token}/').data
+        self.assertEqual(ticket['survey_url'], f'http://csm.dolero3.lan/survey/t/{done_tx.survey_token}')
 
     def test_public_individual_checkin_needs_a_name_or_anonymous(self):
         def checkin(**extra):

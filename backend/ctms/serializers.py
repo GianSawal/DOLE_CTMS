@@ -328,7 +328,7 @@ class TicketPublicSerializer(serializers.ModelSerializer):
 
     def get_office_survey_url(self, obj):
         # The CSM's general survey page for this office, e.g. http://csm.dolero3.lan/survey/office/7
-        return f"{settings.CSM_SURVEY_BASE_URL.rstrip('/')}/survey/office/{obj.office_id}"
+        return f"{settings.CSM_SURVEY_PUBLIC_URL.rstrip('/')}/survey/office/{obj.office_id}"
 
     def get_started_at(self, obj):
         val = obj.effective_started_at

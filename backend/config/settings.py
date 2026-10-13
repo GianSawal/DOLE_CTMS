@@ -179,6 +179,9 @@ if csrf_env:
 # CTMS specific URLs & settings
 CTMS_BASE_URL = os.getenv('CTMS_BASE_URL', 'http://localhost:5174').rstrip('/')
 CSM_SURVEY_BASE_URL = os.getenv('CSM_SURVEY_BASE_URL', 'http://localhost:5173').rstrip('/')
+# Where the client's "Rate Our Service" button sends them (the CSM on the office network).
+# Separate from CSM_SURVEY_BASE_URL so a wrong value there can't break the client's button.
+CSM_SURVEY_PUBLIC_URL = os.getenv('CSM_SURVEY_PUBLIC_URL', 'http://csm.dolero3.lan').rstrip('/')
 CSM_SURVEY_WINDOW_DAYS = int(os.getenv('CSM_SURVEY_WINDOW_DAYS', '3'))
 QUEUE_DEFAULT_OFFICE_SLUG = os.getenv('QUEUE_DEFAULT_OFFICE_SLUG', None)
 
