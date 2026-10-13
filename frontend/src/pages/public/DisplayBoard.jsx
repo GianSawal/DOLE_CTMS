@@ -895,6 +895,19 @@ export default function DisplayBoard() {
                 }}>PRIORITY</span>
               )}
             </div>
+            {/* What the window is for, as typed when the window was added */}
+            {w.description && (
+              <span style={{
+                marginTop: '-0.15rem',
+                fontSize: cardSizing.detailFont,
+                fontWeight: 600,
+                color: themeStyles.counterLabel,
+                lineHeight: 1.25,
+                ...ellipsis,
+              }}>
+                {w.description}
+              </span>
+            )}
 
             {single ? (
               <>

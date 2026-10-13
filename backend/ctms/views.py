@@ -356,6 +356,7 @@ class PublicDisplayBoardView(APIView):
                 "id": w.id,
                 "kind": "window",
                 "name": w.name,
+                "description": w.description,
                 "personnel_name": services.personnel_display_name(w.assigned_user) if w.assigned_user_id else "",
                 "clients": clients,
                 "current": clients[0] if clients else None,

@@ -1320,6 +1320,15 @@ class Stage5DisplayBoardTestCase(CsmTablesTestCase):
         names = [w['name'] for w in self._board()['windows']]
         self.assertEqual(names, ["Window 1", "Window 2", "Window 3", "Window 4"])
 
+    def test_cards_show_window_description(self):
+        from .services import create_window, update_window
+        create_window(self.bataan, "Window 5", "Labor inspection and SEnA cases")
+        update_window(self.windows[1], description="OSH concerns")
+        cards = {w['name']: w['description'] for w in self._board()['windows']}
+        self.assertEqual(cards["Window 5"], "Labor inspection and SEnA cases")
+        self.assertEqual(cards["Window 2"], "OSH concerns")
+        self.assertEqual(cards["Window 1"], "")
+
     def test_cards_follow_window_changes(self):
         from .services import create_window, archive_window, update_window
         create_window(self.bataan, "Window 5")
