@@ -476,7 +476,7 @@ def _window_has_active_client(window):
 
 
 def create_window(office, name, description=''):
-    """Creates a window, or restores an archived one with the same name in this office."""
+    """Creates a window. Names must differ from the office's current windows; deleted ones don't count."""
     clean = (name or '').strip()
     if not clean:
         raise ValueError("Window name is required.")
@@ -487,22 +487,13 @@ def create_window(office, name, description=''):
         raise ValueError("Window description must be 120 characters or fewer.")
 
     with transaction.atomic():
-        existing = CtmsCounter.objects.select_for_update().filter(office=office, name__iexact=clean).first()
-        if existing and existing.archived_at is None:
+        existing = (CtmsCounter.objects.select_for_update()
+                    .filter(office=office, name__iexact=clean, archived_at__isnull=True).first())
+        if existing:
             raise ValueError(f"A window named '{existing.name}' already exists in this office.")
 
         next_order = (CtmsCounter.objects.filter(office=office, archived_at__isnull=True)
                       .aggregate(m=models.Max('sort_order'))['m'] or 0) + 1
-        if existing:
-            existing.name = clean
-            existing.description = clean_description
-            existing.archived_at = None
-            existing.is_active = True
-            existing.assigned_user = None
-            existing.assigned_at = None
-            existing.sort_order = next_order
-            existing.save()
-            return existing
         return CtmsCounter.objects.create(
             office=office, name=clean, description=clean_description, is_active=True, sort_order=next_order
         )
@@ -520,11 +511,10 @@ def update_window(window, name=None, description=None, sort_order=None, is_activ
                 raise ValueError("Window name is required.")
             if len(clean) > 50:
                 raise ValueError("Window name must be 50 characters or fewer.")
-            clash = CtmsCounter.objects.filter(office=window.office, name__iexact=clean).exclude(pk=window.pk).first()
+            clash = (CtmsCounter.objects
+                     .filter(office=window.office, name__iexact=clean, archived_at__isnull=True)
+                     .exclude(pk=window.pk).exists())
             if clash:
-                if clash.archived_at:
-                    raise ValueError(f"The name '{clean}' belongs to a deleted window in this office. "
-                                     "Add a new window with that name to bring it back, or choose another name.")
                 raise ValueError(f"The name '{clean}' is already used by another window in this office.")
             window.name = clean
 

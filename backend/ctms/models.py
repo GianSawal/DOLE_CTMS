@@ -170,7 +170,8 @@ class CtmsCounter(models.Model):
         db_table = 'ctms_counter'
         verbose_name = 'CTMS Counter'
         verbose_name_plural = 'CTMS Counters'
-        unique_together = ('office', 'name')
+        # Names are unique only among an office's current windows (enforced in services):
+        # a deleted window keeps its name for history but frees it for reuse.
         ordering = ['office', 'name']
 
     def __str__(self):

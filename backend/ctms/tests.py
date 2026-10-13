@@ -959,8 +959,28 @@ class Stage2WindowsTestCase(CsmTablesTestCase):
         self.assertIsNotNone(window.archived_at)
         self.assertEqual(tx.counter, window)
         self.assertEqual(self._as(self.ana).get('/api/staff/windows/').data['windows'], [])
-        # Re-creating the same name restores the archived row
-        self.assertEqual(self._create("Window 1").data['id'], w1)
+        # The deleted window keeps its name for history; the name can be used again for a new window
+        res = self._create("Window 1")
+        self.assertEqual(res.status_code, 201)
+        self.assertNotEqual(res.data['id'], w1)
+        window.refresh_from_db()
+        self.assertIsNotNone(window.archived_at)
+        self.assertEqual(tx.counter.name, "Window 1")
+
+    def test_deleted_window_names_can_be_reused_again_and_again(self):
+        # Delete and re-add "TSSD1" several times
+        for _ in range(3):
+            wid = self._create("TSSD1").data['id']
+            self.assertEqual(self._as(self.ana).delete(f'/api/staff/windows/{wid}/').status_code, 204)
+        # Rename another window to a deleted window's name
+        w2 = self._create("Window 2").data['id']
+        res = self._as(self.ana).patch(f'/api/staff/windows/{w2}/', {'name': 'TSSD1'}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['name'], 'TSSD1')
+        # Two current windows still can't share a name in one office
+        self.assertEqual(self._create("tssd1").status_code, 400)
+        # ...but another office can use it
+        self.assertEqual(self._create("TSSD1", office=self.pampanga, user=self.pam_staff).status_code, 201)
 
     def test_queue_lists_office_windows_instead_of_division_counters(self):
         self._create("Window 1")
