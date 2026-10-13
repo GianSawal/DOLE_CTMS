@@ -902,8 +902,20 @@ export default function DisplayBoard() {
                   {cur.queue_no}
                 </span>
                 {cur.personnel && (
-                  <span style={{ fontSize: `calc(${cardSizing.detailFont} + 0.1rem)`, fontWeight: 700, color: themeStyles.personnelName, ...ellipsis }}>
-                    {cur.personnel}
+                  <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <span style={{ fontSize: `calc(${cardSizing.detailFont} + 0.1rem)`, fontWeight: 700, color: themeStyles.personnelName, ...ellipsis }}>
+                      {cur.personnel}
+                    </span>
+                    <span style={{
+                      fontSize: `calc(${cardSizing.detailFont} * 0.75)`,
+                      fontWeight: 800,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: themeStyles.counterLabel,
+                      ...ellipsis,
+                    }}>
+                      {lang === 'fil' ? 'Tumutulong na Opisyal' : 'Assisting Officer'}
+                    </span>
                   </span>
                 )}
                 {!cardSizing.compact && (
