@@ -133,7 +133,7 @@ export default function NotificationBell() {
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         new Notification(`DOLE CTMS: Queue #${notif.queue_no}`, {
           body: notif.message || `New client assigned: Queue #${notif.queue_no} (${notif.service_name})`,
-          icon: '/favicon.ico',
+          icon: '/dolelogo.png',
           tag: `ctms-${notif.id}`,
         });
       }

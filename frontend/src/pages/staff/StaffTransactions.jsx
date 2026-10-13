@@ -8,6 +8,8 @@ import { RefreshCw, Lock } from 'lucide-react';
 import { PageHeader } from '../../components/ui';
 
 const ITEMS_PER_PAGE = 10;
+// The server returns at most this many (newest first); narrow the dates to see older ones
+const TRANSACTIONS_LIMIT = 500;
 
 const DIVISION_BADGES = {
   'TSSD 1': { color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
@@ -73,6 +75,7 @@ export default function StaffTransactions() {
         q: query,
         date_from: dateFrom,
         date_to: dateTo,
+        limit: TRANSACTIONS_LIMIT,
       });
       setTransactions(data || []);
     } catch (err) {
@@ -568,6 +571,11 @@ export default function StaffTransactions() {
             totalItems={filteredTransactions.length}
             pageSize={ITEMS_PER_PAGE}
           />
+          {transactions.length >= TRANSACTIONS_LIMIT && (
+            <p style={{ margin: 0, padding: '0 1.25rem 1rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Showing the latest {TRANSACTIONS_LIMIT} transactions. Narrow the date range to see older ones.
+            </p>
+          )}
         </div>
       </main>
 

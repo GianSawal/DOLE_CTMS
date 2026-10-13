@@ -327,13 +327,31 @@ def call_transaction(tx, user):
         raise ValueError(f"Cannot call a transaction with status '{tx.status}'.")
 
 
-def _apply(tx, to_status, event, actor, fields, reason=''):
-    """Validates and saves a status change, then records it in the assignment history."""
-    ensure_transition(tx, to_status)
-    snap = _snapshot(tx)
-    tx.status = to_status
-    tx.save(update_fields=['status'] + list(fields))
-    record_event(tx, event, actor=actor, reason=reason, **snap)
+def _apply(tx, to_status, event, actor, prepare=None, reason=''):
+    """
+    Changes a transaction's status and records it in the assignment history.
+
+    The row is re-read under a lock first, so a stale copy can't overwrite a change made
+    by another window in the meantime (e.g. Cancel racing a Call on the same ticket): if the
+    status or owner changed since `tx` was loaded, the change is refused. The history keeps
+    who/where the ticket was *before* the change. `prepare(current)` returns the other
+    fields to set, computed from the locked row. `tx` is updated in place and returned.
+    """
+    with transaction.atomic():
+        current = (CtmsTransaction.objects.select_for_update()
+                   .select_related('assigned_to', 'counter').get(pk=tx.pk))
+        if current.status != tx.status or current.assigned_to_id != tx.assigned_to_id:
+            raise ValueError(f"Queue #{tx.queue_no} was just updated by someone else. Refresh and try again.")
+        ensure_transition(current, to_status)
+        snap = _snapshot(current)
+        changes = prepare(current) if prepare else {}
+        for field, value in changes.items():
+            setattr(current, field, value)
+        current.status = to_status
+        current.save(update_fields=['status'] + list(changes))
+        record_event(current, event, actor=actor, reason=reason, **snap)
+    for field in ['status'] + list(changes):
+        setattr(tx, field, getattr(current, field))
     return tx
 
 
@@ -341,65 +359,68 @@ def mark_pending(tx, actor=None, reason=''):
     """Pauses a transaction (e.g. waiting for requirements). It stays with its handler."""
     from .models import CtmsAssignmentHistory
     ensure_handler(tx, actor)
-    return _apply(tx, CtmsTransaction.STATUS_PENDING, CtmsAssignmentHistory.EVENT_PENDING, actor, [], reason)
+    return _apply(tx, CtmsTransaction.STATUS_PENDING, CtmsAssignmentHistory.EVENT_PENDING, actor, reason=reason)
 
 
 def mark_done(tx, staff_user, reason=''):
     """Completes a transaction and unlocks the CSM survey. `reason` = the staff's remarks on what was done."""
     from .models import CtmsAssignmentHistory
     ensure_handler(tx, staff_user)
-    now = timezone.now()
-    tx.done_at = now
-    if not tx.started_at:
-        tx.started_at = tx.called_at or now
-    tx.served_by = staff_user
-    # CSM attribution: the officer who handled the client, falling back to whoever pressed Done.
-    if tx.assigned_to:
-        handler_name = personnel_display_name(tx.assigned_to)
-    else:
-        handler_name = (tx.assigned_personnel or '').strip() or personnel_display_name(staff_user)
-    tx.served_by_name = handler_name[:200]
+
+    def prepare(current):
+        now = timezone.now()
+        # CSM attribution: the officer who handled the client, falling back to whoever pressed Done.
+        if current.assigned_to:
+            handler_name = personnel_display_name(current.assigned_to)
+        else:
+            handler_name = (current.assigned_personnel or '').strip() or personnel_display_name(staff_user)
+        return {
+            'done_at': now,
+            'started_at': current.started_at or current.called_at or now,
+            'served_by': staff_user,
+            'served_by_name': handler_name[:200],
+        }
+
     return _apply(tx, CtmsTransaction.STATUS_DONE, CtmsAssignmentHistory.EVENT_COMPLETED, staff_user,
-                  ['done_at', 'started_at', 'served_by', 'served_by_name'], (reason or '').strip()[:255])
+                  prepare, (reason or '').strip()[:255])
 
 
 def undo_done(tx, actor=None):
-    """Reverts Done back to Serving. Refused if already surveyed."""
+    """Reverts Done back to Serving. Refused if already surveyed, or if the handler is serving someone else."""
     from .models import CtmsAssignmentHistory
     if tx.status != CtmsTransaction.STATUS_DONE:
         raise ValueError(f"Cannot undo Done for transaction with status '{tx.status}'.")
     if tx.is_surveyed:
         raise ValueError("Cannot undo Done: CSM survey response has already been submitted.")
     ensure_handler(tx, actor)
-    tx.done_at = None
-    return _apply(tx, CtmsTransaction.STATUS_SERVING, CtmsAssignmentHistory.EVENT_REOPENED, actor, ['done_at'])
+    if tx.assigned_to_id:
+        # One client at a time: reopening this one must not leave its handler serving two
+        _ensure_not_serving_another(tx.assigned_to, tx.office, exclude_pk=tx.pk)
+    return _apply(tx, CtmsTransaction.STATUS_SERVING, CtmsAssignmentHistory.EVENT_REOPENED, actor,
+                  lambda current: {'done_at': None})
 
 
 def mark_no_show(tx, actor=None):
     from .models import CtmsAssignmentHistory
     ensure_handler(tx, actor)
-    tx.closed_at = timezone.now()
-    return _apply(tx, CtmsTransaction.STATUS_NO_SHOW, CtmsAssignmentHistory.EVENT_NO_SHOW, actor, ['closed_at'])
+    return _apply(tx, CtmsTransaction.STATUS_NO_SHOW, CtmsAssignmentHistory.EVENT_NO_SHOW, actor,
+                  lambda current: {'closed_at': timezone.now()})
 
 
 def cancel_transaction(tx, actor=None):
     from .models import CtmsAssignmentHistory
     ensure_handler(tx, actor)
-    tx.closed_at = timezone.now()
-    return _apply(tx, CtmsTransaction.STATUS_CANCELLED, CtmsAssignmentHistory.EVENT_CANCELLED, actor, ['closed_at'])
+    return _apply(tx, CtmsTransaction.STATUS_CANCELLED, CtmsAssignmentHistory.EVENT_CANCELLED, actor,
+                  lambda current: {'closed_at': timezone.now()})
 
 
 def requeue_transaction(tx, actor=None):
     """Returns a transaction to the office's shared waiting queue, unassigned."""
     from .models import CtmsAssignmentHistory
     ensure_handler(tx, actor)
-    tx.counter = None
-    tx.assigned_to = None
-    tx.assigned_personnel = None
-    tx.started_at = None
-    tx.called_at = None
     return _apply(tx, CtmsTransaction.STATUS_WAITING, CtmsAssignmentHistory.EVENT_REQUEUED, actor,
-                  ['counter', 'assigned_to', 'assigned_personnel', 'started_at', 'called_at'])
+                  lambda current: {'counter': None, 'assigned_to': None, 'assigned_personnel': None,
+                                   'started_at': None, 'called_at': None})
 
 
 def transfer_recipients(office, exclude_users=()):

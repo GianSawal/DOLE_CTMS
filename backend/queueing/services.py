@@ -1,4 +1,4 @@
-from typing import Iterable, Optional
+from typing import Iterable
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone

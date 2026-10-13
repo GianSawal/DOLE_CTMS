@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
 import Modal from '../../components/Modal';
@@ -22,7 +22,8 @@ function windowState(w) {
 
 export default function StaffWindows() {
   const { user } = useAuth();
-  const offices = user?.assigned_offices || [];
+  // Stable reference, so effects that depend on it don't re-run every render
+  const offices = useMemo(() => user?.assigned_offices || [], [user]);
 
   const [selectedOffice, setSelectedOffice] = useState(() => localStorage.getItem('ctms_staff_office') || '');
   const [windows, setWindows] = useState([]);

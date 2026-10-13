@@ -48,8 +48,8 @@ export default function StaffReports() {
 
       <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
         <PageHeader title="Queue & Survey Performance Reports" subtitle="Monitor transaction throughput, wait times, and CSM survey compliance.">
-          <button onClick={fetchReports} className="btn btn-outline btn-sm">
-            <RefreshCw size={14} aria-hidden="true" /> Refresh
+          <button onClick={fetchReports} className="btn btn-outline btn-sm" disabled={loading}>
+            <RefreshCw size={14} aria-hidden="true" /> {loading ? 'Refreshing...' : 'Refresh'}
           </button>
         </PageHeader>
 

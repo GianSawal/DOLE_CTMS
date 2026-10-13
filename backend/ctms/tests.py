@@ -22,6 +22,8 @@ from .models import (
     CtmsNotification,
     CtmsOfficeQrConfig,
     CtmsDisplayConfig,
+    CtmsAssignmentHistory,
+    CtmsOfficeProfile,
 )
 from .services import (
     create_transaction,
@@ -30,6 +32,7 @@ from .services import (
     mark_done,
     undo_done,
     requeue_transaction,
+    cancel_transaction,
     current_office_code_period,
 )
 from .serializers import StaffTransactionSerializer
@@ -1746,3 +1749,122 @@ class SecurityHardeningTestCase(CsmTablesTestCase):
                                                              'client_name': 'Juan'}, format='json')
         self.assertEqual(res.status_code, 400)
         self.assertNotIn('secret', str(res.data))
+
+
+class ProjectReviewBugFixesTestCase(CsmTablesTestCase):
+    """Bugs found in the full project review."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.office = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.service = CsmService.objects.create(name="Single Entry Approach (SEnA)", is_active=True, sort_order=1)
+        self.ana = User.objects.create_user(username="ana", password="Ana-Pass-1", is_staff=True, first_name="Ana")
+        self.ben = User.objects.create_user(username="ben", password="Ben-Pass-1", is_staff=True, first_name="Ben")
+        for user, window in ((self.ana, "Window 1"), (self.ben, "Window 2")):
+            CtmsStaffOffice.objects.create(user=user, office=self.office)
+            CtmsCounter.objects.create(office=self.office, name=window, is_active=True, assigned_user=user)
+
+    def test_stale_cancel_cannot_overwrite_a_ticket_another_window_just_called(self):
+        tx = create_transaction(self.office, self.service, client_name="Juan")
+        stale = CtmsTransaction.objects.get(pk=tx.pk)          # loaded while still waiting
+        call_transaction(tx, self.ben)                          # Ben's window calls it meanwhile
+        with self.assertRaisesMessage(ValueError, "just updated by someone else"):
+            cancel_transaction(stale, actor=self.ana)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, 'serving')
+
+    def test_return_to_queue_history_keeps_who_and_which_window(self):
+        tx = call_transaction(create_transaction(self.office, self.service, client_name="Juan"), self.ana)
+        requeue_transaction(tx, actor=self.ana)
+        event = CtmsAssignmentHistory.objects.filter(transaction=tx, event='REQUEUED').get()
+        self.assertEqual(event.from_user, self.ana)
+        self.assertEqual(event.from_counter_name, "Window 1")
+        self.assertEqual(event.from_status, 'serving')
+
+    def test_undo_done_refused_while_serving_another_client(self):
+        first = call_transaction(create_transaction(self.office, self.service, client_name="A"), self.ana)
+        mark_done(first, self.ana)
+        call_transaction(create_transaction(self.office, self.service, client_name="B"), self.ana)
+        with self.assertRaisesMessage(ValueError, "still serving"):
+            undo_done(CtmsTransaction.objects.get(pk=first.pk), actor=self.ana)
+
+    def test_report_wait_time_counts_to_the_first_call_not_recalls(self):
+        admin = User.objects.create_superuser(username="root", password="Root-Pass-1")
+        tx = create_transaction(self.office, self.service, client_name="Juan")
+        t0 = tx.checked_in_at
+        CtmsTransaction.objects.filter(pk=tx.pk).update(
+            status='done', started_at=t0 + timedelta(minutes=10), called_at=t0 + timedelta(hours=5),
+            done_at=t0 + timedelta(hours=5, minutes=5))
+        self.client.force_authenticate(user=admin)
+        data = self.client.get('/api/staff/reports/summary/', {'office': self.office.id}).data
+        self.assertEqual(data['avg_wait_min'], 10.0)
+
+    def test_bad_filter_values_are_400_not_server_errors(self):
+        admin = User.objects.create_superuser(username="root", password="Root-Pass-1")
+        self.client.force_authenticate(user=admin)
+        self.assertEqual(self.client.get('/api/staff/transactions/', {'date_from': 'yesterday'}).status_code, 400)
+        self.assertEqual(self.client.get('/api/staff/transactions/', {'limit': 'abc'}).status_code, 200)
+        self.assertEqual(self.client.get('/api/staff/transactions/', {'limit': '-5'}).status_code, 200)
+        self.assertEqual(self.client.get('/api/staff/reports/summary/', {'date_to': '2026-13-45'}).status_code, 400)
+        self.assertEqual(self.client.get('/api/staff/audit-logs/', {'office': 'x', 'page': 'y'}).status_code, 200)
+
+    def test_transactions_search_finds_service_name_and_survey_code(self):
+        tx = create_transaction(self.office, self.service, client_name="Juan")
+        other = CsmService.objects.create(name="Registration of Union", is_active=True, sort_order=2)
+        create_transaction(self.office, other, client_name="Maria")
+        self.client.force_authenticate(user=self.ana)
+        by_service = self.client.get('/api/staff/transactions/', {'q': 'SEnA'}).data
+        self.assertEqual([r['id'] for r in by_service], [tx.id])
+        by_code = self.client.get('/api/staff/transactions/', {'q': tx.claim_code}).data
+        self.assertIn(tx.id, [r['id'] for r in by_code])
+
+    def test_transactions_list_values_match_per_row_lookups(self):
+        tx = call_transaction(create_transaction(self.office, self.service, client_name="Juan"), self.ana)
+        mark_done(tx, self.ana, reason="Filed the SEnA request")
+        self.client.force_authenticate(user=self.ana)
+        row = self.client.get('/api/staff/transactions/').data[0]
+        single = StaffTransactionSerializer(CtmsTransaction.objects.get(pk=tx.pk)).data
+        self.assertEqual(row['latest_note']['text'], single['latest_note']['text'])
+        self.assertEqual(row['is_surveyed'], single['is_surveyed'])
+
+    def test_my_current_client_shows_a_client_left_serving_from_yesterday(self):
+        tx = call_transaction(create_transaction(self.office, self.service, client_name="Juan"), self.ana)
+        yesterday = timezone.now() - timedelta(days=1)
+        CtmsTransaction.objects.filter(pk=tx.pk).update(queue_date=timezone.localdate() - timedelta(days=1),
+                                                        called_at=yesterday, checked_in_at=yesterday)
+        self.client.force_authenticate(user=self.ana)
+        data = self.client.get('/api/staff/queue/', {'office': self.office.id}).data
+        self.assertEqual(data['my_current']['id'], tx.id)
+
+    def test_change_password_requires_the_current_password(self):
+        self.client.force_authenticate(user=self.ana)
+        url = '/api/staff/auth/change-password/'
+        self.assertEqual(self.client.post(url, {'new_password': 'New-Pass-9', 'confirm_password': 'New-Pass-9'},
+                                          format='json').status_code, 400)
+        self.assertEqual(self.client.post(url, {'current_password': 'wrong', 'new_password': 'New-Pass-9',
+                                                'confirm_password': 'New-Pass-9'}, format='json').status_code, 400)
+        res = self.client.post(url, {'current_password': 'Ana-Pass-1', 'new_password': 'New pass 9 ',
+                                     'confirm_password': 'New pass 9 '}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.ana.refresh_from_db()
+        self.assertTrue(self.ana.check_password('New pass 9 '))  # kept exactly as typed
+
+    def test_garbage_forwarded_for_does_not_break_account_creation(self):
+        CtmsOfficeProfile.objects.update_or_create(office=self.office, defaults={'office_type': 'REGIONAL'})
+        admin = User.objects.create_superuser(username="root", password="Root-Pass-1")
+        self.client.force_authenticate(user=admin)
+        res = self.client.post('/api/staff/users/', {
+            'username': 'carla', 'password': 'Carla-Pass-1', 'first_name': 'Carla', 'last_name': 'Cruz',
+            'office': self.office.id,
+        }, format='json', HTTP_X_FORWARDED_FOR='not-an-ip-' + 'x' * 200)
+        self.assertEqual(res.status_code, 201, res.data)
+        log = CtmsAuditLog.objects.filter(action='USER_CREATE').latest('timestamp')
+        self.assertIsNone(log.ip_address)
+
+    def test_group_registration_size_is_capped(self):
+        res = self.client.post('/api/public/checkin/', {
+            'office': self.office.id, 'service': self.service.id, 'client_name': 'Rep (Group of 51)',
+            'group_member_names': [f'Member {i}' for i in range(51)],
+        }, format='json')
+        self.assertEqual(res.status_code, 400)

@@ -269,7 +269,7 @@ class CheckinRequestSerializer(serializers.Serializer):
     is_priority = serializers.BooleanField(required=False, default=False)
     group_member_names = serializers.ListField(
         child=serializers.CharField(max_length=200),
-        required=False, default=None, allow_null=True,
+        required=False, default=None, allow_null=True, max_length=50,
         help_text="List of individual member names for group registrations"
     )
     office_code = serializers.CharField(
@@ -439,11 +439,15 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
         if obj.status == CtmsTransaction.STATUS_DONE:
             # Done remarks only while the ticket is still done (not after Undo Done)
             events.append(H.EVENT_COMPLETED)
-        event = (obj.assignment_history
-                 .filter(event__in=events)
-                 .exclude(reason='')
-                 .order_by('-created_at', '-id')
-                 .first())
+        prefetched = getattr(obj, 'note_events', None)  # list views load these in one query
+        if prefetched is not None:
+            event = next((e for e in prefetched if e.event in events and e.reason), None)
+        else:
+            event = (obj.assignment_history
+                     .filter(event__in=events)
+                     .exclude(reason='')
+                     .order_by('-created_at', '-id')
+                     .first())
         if not event:
             return None
         kinds = {H.EVENT_TRANSFERRED: 'reassign', H.EVENT_PENDING: 'pending', H.EVENT_COMPLETED: 'done'}

@@ -1,5 +1,5 @@
+import ipaddress
 import secrets
-import string
 from django.db import models, transaction
 from django.conf import settings
 from django.utils import timezone
@@ -482,6 +482,9 @@ class CtmsTransaction(models.Model):
 
     @property
     def is_surveyed(self):
+        flag = getattr(self, 'surveyed_flag', None)  # annotated by list views (one query for all rows)
+        if flag is not None:
+            return flag
         try:
             return CsmResponse.objects.filter(ctms_transaction_id=self.id).exists()
         except Exception:
@@ -670,11 +673,14 @@ def log_audit_event(
         if request:
             if not actor_user and hasattr(request, 'user') and request.user.is_authenticated:
                 actor_user = request.user
+            # X-Forwarded-For is set by the visitor's browser as much as by our proxies, so
+            # only a valid address is stored: anything else would fail the insert.
             x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-            if x_forwarded_for:
-                ip_addr = x_forwarded_for.split(',')[0].strip()
-            else:
-                ip_addr = request.META.get('REMOTE_ADDR')
+            ip_addr = x_forwarded_for.split(',')[0].strip() if x_forwarded_for else request.META.get('REMOTE_ADDR')
+            try:
+                ip_addr = str(ipaddress.ip_address((ip_addr or '').strip())) if ip_addr else None
+            except ValueError:
+                ip_addr = None
 
         if actor_user and actor_user.is_authenticated:
             resolved_username = actor_user.username
@@ -688,22 +694,26 @@ def log_audit_event(
 
         office_name = resolved_office.name if resolved_office else ''
 
-        return CtmsAuditLog.objects.create(
-            actor=actor_user if actor_user and actor_user.is_authenticated else None,
-            actor_username=resolved_username,
-            actor_role=resolved_role,
-            action=action,
-            category=category,
-            target_type=target_type,
-            target_id=str(target_id) if target_id else '',
-            target_repr=target_repr,
-            office=resolved_office,
-            office_name=office_name,
-            division_name=division_name,
-            ip_address=ip_addr,
-            description=description,
-            details=details or {}
-        )
-    except Exception as e:
-        print(f"Warning: Failed to create audit log entry: {e}")
+        # Own savepoint: if this insert fails, the action being logged (often inside its own
+        # transaction, e.g. creating an account) must not be rolled back with it.
+        with transaction.atomic():
+            return CtmsAuditLog.objects.create(
+                actor=actor_user if actor_user and actor_user.is_authenticated else None,
+                actor_username=resolved_username,
+                actor_role=resolved_role,
+                action=action,
+                category=category,
+                target_type=target_type,
+                target_id=str(target_id) if target_id else '',
+                target_repr=target_repr,
+                office=resolved_office,
+                office_name=office_name,
+                division_name=division_name,
+                ip_address=ip_addr,
+                description=description,
+                details=details or {}
+            )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Failed to create audit log entry for %s", action)
         return None

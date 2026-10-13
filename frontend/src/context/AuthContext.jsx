@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { staffApi } from '../api/staff';
+import { SESSION_EXPIRED_EVENT } from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -25,6 +26,13 @@ export function AuthProvider({ children }) {
       setLoading(false);
     }
     loadUser();
+  }, []);
+
+  // The API helper could not renew the sign-in: show the login page
+  useEffect(() => {
+    const onExpired = () => setUser(null);
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
 
   const login = async (username, password) => {

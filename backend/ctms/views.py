@@ -1,31 +1,25 @@
 import io
-import os
-import re
 import logging
+import math
 import secrets
-import urllib.request
-import urllib.parse
-import mimetypes
+
 import qrcode
-from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import models, transaction, IntegrityError
-from django.db.models import Avg, F, ExpressionWrapper, fields
-from django.http import HttpResponse, FileResponse, Http404
+from django.db import models, transaction
+from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status, viewsets, permissions, exceptions
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from django.utils.dateparse import parse_date
+from rest_framework import status, viewsets, permissions
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-
-User = get_user_model()
-logger = logging.getLogger(__name__)
-
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
+
 from .security import login_locked, record_office_code_failure, video_upload_error
 from .models import (
     CANONICAL_DIVISIONS,
@@ -68,11 +62,50 @@ from .permissions import (
     IsRegionalAdmin,
     IsSystemAdmin,
     admin_scope_offices,
-    is_regional_admin,
     office_type,
     staff_session,
 )
 from . import services
+
+User = get_user_model()
+logger = logging.getLogger(__name__)
+
+
+def _query_date(request, name):
+    """An optional YYYY-MM-DD query parameter; a malformed one is a 400, not a server error."""
+    raw = (request.query_params.get(name) or '').strip()
+    if not raw:
+        return None
+    try:
+        value = parse_date(raw)   # None for a bad format; ValueError for e.g. month 13
+    except ValueError:
+        value = None
+    if value is None:
+        raise ValidationError({name: "Use a date in the format YYYY-MM-DD."})
+    return value
+
+
+def _query_int(request, name, default, minimum, maximum):
+    """An optional integer query parameter, kept within [minimum, maximum]."""
+    try:
+        value = int(request.query_params.get(name, default))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _surveyed_and_notes(qs):
+    """
+    Loads, in two queries for the whole list, what StaffTransactionSerializer would otherwise
+    query once per row: whether the client answered the CSM survey, and the remarks history.
+    """
+    return qs.annotate(
+        surveyed_flag=models.Exists(CsmResponse.objects.filter(ctms_transaction_id=models.OuterRef('pk')))
+    ).prefetch_related(models.Prefetch(
+        'assignment_history',
+        queryset=CtmsAssignmentHistory.objects.exclude(reason='').order_by('-created_at', '-id'),
+        to_attr='note_events',
+    ))
 
 
 # =====================================================================
@@ -475,7 +508,11 @@ class StaffQueueView(APIView):
         ).order_by('sort_order', 'name', 'id')
 
         my_window = services.user_window(request.user, office)
-        my_current = serving_qs.filter(assigned_to=request.user).first()
+        # Not limited to today: a client left "serving" yesterday still blocks Call Next
+        # ("You are still serving..."), so it must be visible here to be finished.
+        my_current = (CtmsTransaction.objects
+                      .filter(office=office, status=CtmsTransaction.STATUS_SERVING, assigned_to=request.user)
+                      .select_related(*related).order_by('-called_at').first())
 
         return Response({
             "office": CsmOfficeSerializer(office).data,
@@ -532,8 +569,12 @@ class StaffCreateWalkinView(APIView):
                 }
             )
             return Response(StaffTransactionSerializer(tx).data, status=status.HTTP_201_CREATED)
-        except Exception as e:
+        except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("Walk-in registration failed")
+            return Response({"detail": "Walk-in registration failed. Please try again."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
 
 class StaffCallNextView(APIView):
@@ -857,28 +898,31 @@ class StaffTransactionsListView(APIView):
         if status_param:
             qs = qs.filter(status=status_param)
 
-        date_from = request.query_params.get('date_from')
+        date_from = _query_date(request, 'date_from')
         if date_from:
             qs = qs.filter(queue_date__gte=date_from)
 
-        date_to = request.query_params.get('date_to')
+        date_to = _query_date(request, 'date_to')
         if date_to:
             qs = qs.filter(queue_date__lte=date_to)
 
-        q = request.query_params.get('q')
+        q = (request.query_params.get('q') or '').strip()
         if q:
+            # Same fields the Transactions page searches, so server and page agree
             qs = qs.filter(
                 models.Q(transaction_no__icontains=q) |
                 models.Q(queue_no__icontains=q) |
                 models.Q(client_name__icontains=q) |
                 models.Q(group_member_names__icontains=q) |
                 models.Q(assigned_personnel__icontains=q) |
-                models.Q(service__division__name__icontains=q)
+                models.Q(service__name__icontains=q) |
+                models.Q(service__division__name__icontains=q) |
+                models.Q(counter__name__icontains=q) |
+                models.Q(claim_code__icontains=q)
             )
 
-        # Pagination / limit
-        limit = int(request.query_params.get('limit', 100))
-        qs = qs.order_by('-checked_in_at')[:limit]
+        limit = _query_int(request, 'limit', default=100, minimum=1, maximum=1000)
+        qs = _surveyed_and_notes(qs.order_by('-checked_in_at'))[:limit]
 
         return Response(StaffTransactionSerializer(qs, many=True).data)
 
@@ -899,11 +943,11 @@ class StaffReportsSummaryView(APIView):
         else:
             qs = CtmsTransaction.objects.filter(office__in=allowed_offices)
 
-        date_from = request.query_params.get('date_from')
+        date_from = _query_date(request, 'date_from')
         if date_from:
             qs = qs.filter(queue_date__gte=date_from)
 
-        date_to = request.query_params.get('date_to')
+        date_to = _query_date(request, 'date_to')
         if date_to:
             qs = qs.filter(queue_date__lte=date_to)
 
@@ -914,17 +958,24 @@ class StaffReportsSummaryView(APIView):
         total_no_show = qs.filter(status=CtmsTransaction.STATUS_NO_SHOW).count()
         total_cancelled = qs.filter(status=CtmsTransaction.STATUS_CANCELLED).count()
 
-        # Avg wait time (called_at - checked_in_at in minutes)
-        called_txs = qs.filter(called_at__isnull=False)
-        wait_times = [(t.called_at - t.checked_in_at).total_seconds() / 60.0 for t in called_txs if t.called_at and t.checked_in_at]
+        # Avg wait time: check-in to the FIRST call (started_at). called_at is moved by every
+        # recall, resume and reassignment, so using it counted hours of service as "waiting".
+        first_calls = qs.filter(models.Q(started_at__isnull=False) | models.Q(called_at__isnull=False)) \
+            .values_list('checked_in_at', 'started_at', 'called_at')
+        wait_times = [
+            ((started or called) - checked_in).total_seconds() / 60.0
+            for checked_in, started, called in first_calls
+            if checked_in and (started or called) and (started or called) >= checked_in
+        ]
         avg_wait_min = round(sum(wait_times) / len(wait_times), 1) if wait_times else 0
 
         # Avg service time (done_at - (started_at or called_at) in minutes)
-        done_txs = qs.filter(status=CtmsTransaction.STATUS_DONE, done_at__isnull=False)
+        done_txs = qs.filter(status=CtmsTransaction.STATUS_DONE, done_at__isnull=False) \
+            .values_list('done_at', 'started_at', 'called_at')
         service_times = [
-            (t.done_at - (t.started_at or t.called_at)).total_seconds() / 60.0
-            for t in done_txs
-            if t.done_at and (t.started_at or t.called_at)
+            (done - (started or called)).total_seconds() / 60.0
+            for done, started, called in done_txs
+            if done and (started or called)
         ]
         avg_service_min = round(sum(service_times) / len(service_times), 1) if service_times else 0
 
@@ -1420,8 +1471,9 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
         return str(data.get(key) or '').strip()
 
     def _validate_password(self, data, required):
-        password = self._clean(data, 'password')
-        confirm = self._clean(data, 'confirm_password')
+        # Not trimmed: sign-in compares the password exactly as typed
+        password = str(data.get('password') or '')
+        confirm = str(data.get('confirm_password') or '')
         if not password:
             if required:
                 raise ValueError("Password is required.")
@@ -1660,11 +1712,17 @@ class StaffChangePasswordView(APIView):
 
     def post(self, request):
         user = request.user
-        current_password = request.data.get('current_password', '').strip()
-        new_password = request.data.get('new_password', '').strip()
-        confirm_password = request.data.get('confirm_password', '').strip()
+        # Not trimmed: sign-in compares the password exactly as typed
+        current_password = str(request.data.get('current_password') or '')
+        new_password = str(request.data.get('new_password') or '')
+        confirm_password = str(request.data.get('confirm_password') or '')
 
-        if not new_password:
+        # The current password is always required, so an unattended signed-in browser
+        # can't be used to change it
+        if not current_password or not user.check_password(current_password):
+            return Response({"detail": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not new_password.strip():
             return Response({"detail": "New password cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
 
         if len(new_password) < 6:
@@ -1672,11 +1730,6 @@ class StaffChangePasswordView(APIView):
 
         if confirm_password and new_password != confirm_password:
             return Response({"detail": "New passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # If current_password is provided, verify it
-        if current_password:
-            if not user.check_password(current_password):
-                return Response({"detail": "Current temporary password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Disallow setting new password to the exact same temporary password / employee_id
         if user.check_password(new_password):
@@ -1707,10 +1760,6 @@ class CsmOfficeListView(APIView):
             row['office_type'] = office_type(office)
         return Response(data)
 
-
-# =====================================================================
-# TV Display Local Folder Video Scanner & Streamer
-# =====================================================================
 
 class CsmDivisionListView(APIView):
     """The service divisions (TSSD 1, TSSD 2, IMSD), used to tag and filter services."""
@@ -1839,8 +1888,8 @@ class StaffAuditLogListView(APIView):
             qs = qs.filter(action=action_filter)
 
         office_id = request.query_params.get('office', '').strip()
-        if office_id and office_id != 'all':
-            qs = qs.filter(office_id=office_id)
+        if office_id.isdigit():
+            qs = qs.filter(office_id=int(office_id))
 
         search = request.query_params.get('search', '').strip()
         if search:
@@ -1852,11 +1901,11 @@ class StaffAuditLogListView(APIView):
                 models.Q(ip_address__icontains=search)
             )
 
-        date_from = request.query_params.get('date_from', '').strip()
+        date_from = _query_date(request, 'date_from')
         if date_from:
             qs = qs.filter(timestamp__date__gte=date_from)
 
-        date_to = request.query_params.get('date_to', '').strip()
+        date_to = _query_date(request, 'date_to')
         if date_to:
             qs = qs.filter(timestamp__date__lte=date_to)
 
@@ -1879,21 +1928,13 @@ class StaffAuditLogListView(APIView):
         )
 
         # Pagination
-        try:
-            page = int(request.query_params.get('page', 1))
-            page_size = int(request.query_params.get('page_size', 25))
-        except ValueError:
-            page = 1
-            page_size = 25
-
-        page = max(1, page)
-        page_size = min(max(10, page_size), 100)
+        page = _query_int(request, 'page', default=1, minimum=1, maximum=1_000_000)
+        page_size = _query_int(request, 'page_size', default=25, minimum=10, maximum=100)
 
         start = (page - 1) * page_size
         end = start + page_size
         paged_qs = qs.order_by('-timestamp')[start:end]
 
-        import math
         total_pages = math.ceil(total_count / page_size) if total_count > 0 else 1
 
         serializer = CtmsAuditLogSerializer(paged_qs, many=True)

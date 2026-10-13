@@ -522,8 +522,6 @@ class QueueingCoreTestCase(TestCase):
     # 7. PCT Compliance Report View & QR Utilities
     # -----------------------------------------------------------------
     def test_pct_report_view_and_calculations(self):
-        from .qr import generate_qr_data_uri, generate_qr_bytes
-
         # Must require login
         res_anon = self.client.get('/reports/pct/')
         self.assertEqual(res_anon.status_code, 302)

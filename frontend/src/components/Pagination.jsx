@@ -13,9 +13,6 @@ import React from 'react';
 export default function Pagination({ currentPage, totalPages, onPageChange, totalItems, pageSize = 10 }) {
   if (totalPages <= 1) return null;
 
-  const startItem = (currentPage - 1) * pageSize + 1;
-  const endItem = Math.min(currentPage * pageSize, totalItems || currentPage * pageSize);
-
   return (
     <div style={{
       display: 'flex',

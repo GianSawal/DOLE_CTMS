@@ -1,13 +1,12 @@
 import re
-from datetime import datetime, time
+from datetime import datetime
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import HttpResponse, JsonResponse, HttpResponseForbidden
+from django.http import JsonResponse, HttpResponseForbidden
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib import messages
-from django.db.models import Count, Avg, F, Q
 from django.utils import timezone
 from django.conf import settings
-from django.views.decorators.http import require_POST, require_GET
+from django.views.decorators.http import require_POST
 
 from .models import (
     Office,
@@ -15,7 +14,6 @@ from .models import (
     Service,
     QueueTicket,
     TicketItem,
-    StaffProfile,
 )
 from .services import (
     issue_ticket,

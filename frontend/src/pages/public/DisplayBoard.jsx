@@ -3,10 +3,8 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { publicApi } from '../../api/public';
 import { translations } from '../../locales/translations';
 import {
-  playAirportChime,
   announceNowServing,
   cancelAllAnnouncements,
-  getAudioContext,
   unlockAudioContext,
   isAudioUnlocked,
   CHIME_BROADCAST_CHANNEL,
@@ -19,7 +17,6 @@ import {
   savePlaylistToIndexedDB,
   loadPlaylistFromIndexedDB,
   clearPlaylistFromIndexedDB,
-  pickFolderNative,
 } from '../../utils/localVideoPlaylist';
 
 // Now Serving: a grid of cards. As an office adds windows the grid gains columns and
@@ -48,7 +45,6 @@ export default function DisplayBoard() {
   const [displayData, setDisplayData] = useState(null);
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(() => {
     const saved = localStorage.getItem('ctms_display_sound_enabled');
     return saved !== null ? saved === 'true' : true;
@@ -62,8 +58,6 @@ export default function DisplayBoard() {
     setTheme(nextTheme);
     localStorage.setItem('ctms_display_theme', nextTheme);
   };
-
-  const DEFAULT_ARTA_VIDEO = '';
 
   const sanitizeVideoUrl = (url) => {
     if (!url || typeof url !== 'string') return '';
@@ -700,11 +694,9 @@ export default function DisplayBoard() {
 
         // ARTA video is linked locally — do not use server arta_video_url
         setDisplayData(data);
-        setError('');
       } catch (err) {
-        if (isMounted) {
-          setError(err.message || 'Error fetching display data.');
-        }
+        // Keep showing the last good data; the next poll retries
+        console.warn('Display refresh failed:', err.message);
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -1613,7 +1605,6 @@ export default function DisplayBoard() {
         ref={folderFileInputRef}
         type="file"
         webkitdirectory="true"
-        directory="true"
         multiple
         onChange={handleFolderFilesSelected}
         style={{ display: 'none' }}
