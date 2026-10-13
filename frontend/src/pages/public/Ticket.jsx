@@ -241,7 +241,8 @@ export default function Ticket() {
             ℹ️ {t.keep_ticket_note}
           </p>
 
-          {/* Survey: the client's own CSM survey once Done, otherwise the office's survey page */}
+          {/* Survey: the client's own CSM survey once Done, otherwise the office's survey page.
+              Same tab on purpose: QR scanners' built-in browsers often ignore new-tab links. */}
           {!ticket.surveyed && (ticket.survey_url || ticket.office_survey_url) && (
             <div style={{
               marginTop: '1.25rem',
@@ -253,8 +254,6 @@ export default function Ticket() {
               </p>
               <a
                 href={(ticket.status === 'done' && ticket.survey_url) || ticket.office_survey_url}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="btn btn-gold btn-lg w-full"
                 style={{ fontSize: '1.1rem', boxShadow: 'var(--shadow-md)' }}
               >
