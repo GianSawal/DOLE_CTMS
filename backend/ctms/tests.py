@@ -2,7 +2,7 @@ from datetime import timedelta
 from django.core.cache import cache
 from unittest import mock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -522,6 +522,16 @@ class CtmsCoreTestCase(CsmTablesTestCase):
             'is_qr_enabled': False,
         }, format='json')
         self.assertEqual(res_unauthorized.status_code, 403)
+
+    @override_settings(CSM_SURVEY_BASE_URL='http://csm.dolero3.lan/')
+    def test_ticket_links_to_its_office_csm_survey(self):
+        bataan = CsmOffice.objects.create(id=7, name="Bataan Field Office", code="BAT", is_active=True)
+        regional = CsmOffice.objects.create(id=18, name="DOLE Regional Office III", code="RO3", is_active=True)
+        for office, url in ((bataan, 'http://csm.dolero3.lan/survey/office/7'),
+                            (regional, 'http://csm.dolero3.lan/survey/office/18')):
+            tx = create_transaction(office, self.service, client_name='Juan')
+            ticket = self.client.get(f'/api/public/tickets/{tx.ticket_token}/').data
+            self.assertEqual(ticket['office_survey_url'], url)
 
     def test_public_individual_checkin_needs_a_name_or_anonymous(self):
         def checkin(**extra):

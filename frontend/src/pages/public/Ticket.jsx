@@ -222,6 +222,24 @@ export default function Ticket() {
             </div>
           )}
 
+          {/* The office's CSM survey page; once Done, the transaction's own survey button above takes over */}
+          {ticket.status !== 'done' && ticket.office_survey_url && (
+            <div style={{ marginTop: '1.5rem' }}>
+              <a
+                href={ticket.office_survey_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-gold w-full"
+                style={{ fontSize: '1rem', minHeight: '48px', boxShadow: 'var(--shadow-sm)' }}
+              >
+                {t.office_survey_btn}
+              </a>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.45rem' }}>
+                {t.office_survey_note}
+              </p>
+            </div>
+          )}
+
           {/* Transaction Metadata Details */}
           <div style={{
             borderTop: 'var(--border-hairline)',

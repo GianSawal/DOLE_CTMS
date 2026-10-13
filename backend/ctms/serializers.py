@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from .models import (
     CsmDivision,
@@ -297,10 +298,12 @@ class TicketPublicSerializer(serializers.ModelSerializer):
     survey_url = serializers.ReadOnlyField()
     surveyed = serializers.ReadOnlyField(source='is_surveyed')
     started_at = serializers.SerializerMethodField()
+    office_survey_url = serializers.SerializerMethodField()
 
     class Meta:
         model = CtmsTransaction
         fields = [
+            'office_survey_url',
             'queue_no',
             'transaction_no',
             'claim_code',
@@ -322,6 +325,10 @@ class TicketPublicSerializer(serializers.ModelSerializer):
 
     def get_counter(self, obj):
         return obj.counter.name if obj.counter else None
+
+    def get_office_survey_url(self, obj):
+        # The CSM's general survey page for this office, e.g. http://csm.dolero3.lan/survey/office/7
+        return f"{settings.CSM_SURVEY_BASE_URL.rstrip('/')}/survey/office/{obj.office_id}"
 
     def get_started_at(self, obj):
         val = obj.effective_started_at
