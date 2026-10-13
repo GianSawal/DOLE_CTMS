@@ -5,7 +5,7 @@ import Modal from '../../components/Modal';
 import ReassignModal from '../../components/ReassignModal';
 import TransactionHistoryModal from '../../components/TransactionHistoryModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
-import { PageHeader, Notice, NoteField, LatestNote } from '../../components/ui';
+import { PageHeader, Notice, NoteField, LatestNote, ConcernNote } from '../../components/ui';
 
 const POLL_MS = 5000;
 
@@ -258,6 +258,7 @@ export default function StaffMyClients() {
                         : `Checked in ${formatDateTime(tx.checked_in_at)}`}
                     </div>
                     <LatestNote note={tx.latest_note} />
+                    <ConcernNote text={tx.concern_note} />
                   </div>
                   {renderActions(tx)}
                 </div>

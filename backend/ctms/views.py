@@ -199,6 +199,7 @@ class PublicCheckinView(APIView):
                 is_priority=data.get('is_priority', False),
                 source=CtmsTransaction.SOURCE_QR,
                 group_member_names=data.get('group_member_names'),
+                concern_note=data.get('concern_note'),
             )
             return Response({
                 "ticket_token": tx.ticket_token,
@@ -473,6 +474,7 @@ class StaffCreateWalkinView(APIView):
                 is_priority=data.get('is_priority', False),
                 source=CtmsTransaction.SOURCE_STAFF,
                 group_member_names=data.get('group_member_names'),
+                concern_note=data.get('concern_note'),
             )
             log_audit_event(
                 action='CREATE_WALKIN',

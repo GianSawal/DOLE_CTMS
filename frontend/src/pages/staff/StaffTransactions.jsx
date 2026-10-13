@@ -707,6 +707,9 @@ export default function StaffTransactions() {
               <div><strong>Office:</strong> {viewDetailsTx.office_name}</div>
               <div><strong>Division:</strong> {viewDetailsTx.division_name || '—'}</div>
               <div><strong>Service:</strong> {viewDetailsTx.service_name}</div>
+              {viewDetailsTx.concern_note && (
+                <div><strong>Concern:</strong> {viewDetailsTx.concern_note}</div>
+              )}
               <div><strong>Assigned Personnel:</strong> {viewDetailsTx.assigned_personnel || '— Unassigned —'}</div>
               <div><strong>Client Name:</strong> {viewDetailsTx.client_name || 'Anonymous'}</div>
               {Array.isArray(viewDetailsTx.group_member_names) && viewDetailsTx.group_member_names.length > 0 && (

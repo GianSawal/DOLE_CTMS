@@ -13,6 +13,14 @@ def generate_claim_code(length=4):
 def generate_token(nbytes=16):
     return secrets.token_urlsafe(nbytes)
 
+def service_requires_concern(name):
+    """
+    True for a catch-all "Other..." service (e.g. "Other Services", "Other Services
+    (IMSD)"), where the client must type what they actually need since the service
+    name alone doesn't say.
+    """
+    return (name or '').strip().lower().startswith('other')
+
 def generate_office_code(length=4):
     """
     Hourly in-room check-in code (digits only, easy to read off a whiteboard or TV
@@ -415,6 +423,9 @@ class CtmsTransaction(models.Model):
         null=True, blank=True, default=None,
         help_text="List of individual member names for group registrations, e.g. ['Juan', 'Maria', ...]"
     )
+    # What the client typed when they picked a catch-all "Other..." service; see
+    # service_requires_concern(). Blank for every other service.
+    concern_note = models.CharField(max_length=300, blank=True, default='')
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_WAITING, db_index=True)
     counter = models.ForeignKey(CtmsCounter, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default=SOURCE_QR)

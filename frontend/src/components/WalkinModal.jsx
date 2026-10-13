@@ -17,6 +17,7 @@ export default function WalkinModal({ isOpen, onClose, officeId, onCreated }) {
   const [walkinRepName, setWalkinRepName] = useState('');
   const [walkinGroupSize, setWalkinGroupSize] = useState('2');
   const [walkinMemberNames, setWalkinMemberNames] = useState(['', '']);
+  const [walkinConcern, setWalkinConcern] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -36,12 +37,20 @@ export default function WalkinModal({ isOpen, onClose, officeId, onCreated }) {
     setWalkinRepName('');
     setWalkinGroupSize('2');
     setWalkinMemberNames(['', '']);
+    setWalkinConcern('');
     setError('');
   };
+
+  const selectedService = services.find(s => String(s.id) === String(walkinService));
+  const concernRequired = !!selectedService?.requires_concern;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!walkinService) return;
+    if (concernRequired && !walkinConcern.trim()) {
+      setError('Please describe what the client needs.');
+      return;
+    }
 
     let finalClientName = '';
     let memberNames = null;
@@ -70,6 +79,7 @@ export default function WalkinModal({ isOpen, onClose, officeId, onCreated }) {
         client_name: finalClientName,
         is_priority: walkinPriority,
         group_member_names: memberNames,
+        concern_note: concernRequired ? walkinConcern.trim() : '',
       });
       resetForm();
       onCreated(newTx);
@@ -370,6 +380,25 @@ export default function WalkinModal({ isOpen, onClose, officeId, onCreated }) {
             searchPlaceholder="Search services or division..."
           />
         </div>
+
+        {concernRequired && (
+          <div style={{ marginBottom: '1rem' }}>
+            <label htmlFor="walkin-concern">Client's Concern *</label>
+            <textarea
+              id="walkin-concern"
+              required
+              rows={3}
+              maxLength={300}
+              value={walkinConcern}
+              onChange={(e) => setWalkinConcern(e.target.value)}
+              placeholder="e.g. Asking about unpaid last pay from a previous employer"
+              style={{ resize: 'vertical', minHeight: '76px', lineHeight: 1.45 }}
+            />
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+              The selected service is a catch-all; briefly note what the client needs.
+            </p>
+          </div>
+        )}
 
         <div style={{ marginBottom: '1.5rem' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>

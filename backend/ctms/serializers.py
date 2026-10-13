@@ -12,6 +12,7 @@ from .models import (
     CtmsTransaction,
     CtmsAuditLog,
     CtmsNotification,
+    service_requires_concern,
 )
 from .services import personnel_display_name
 
@@ -32,10 +33,14 @@ class CsmOfficeSerializer(serializers.ModelSerializer):
 
 class CsmServiceSerializer(serializers.ModelSerializer):
     division_name = serializers.ReadOnlyField(source='division.name')
+    requires_concern = serializers.SerializerMethodField()
 
     class Meta:
         model = CsmService
-        fields = ['id', 'name', 'is_active', 'sort_order', 'division', 'division_name']
+        fields = ['id', 'name', 'is_active', 'sort_order', 'division', 'division_name', 'requires_concern']
+
+    def get_requires_concern(self, obj):
+        return service_requires_concern(obj.name)
 
 
 class StaffServiceSerializer(serializers.ModelSerializer):
@@ -270,6 +275,18 @@ class CheckinRequestSerializer(serializers.Serializer):
         max_length=10, required=False, allow_blank=True, default='',
         help_text="Hourly in-office code; required when the office enables it"
     )
+    concern_note = serializers.CharField(
+        max_length=300, required=False, allow_blank=True, default='',
+        help_text="What the client needs; required for a catch-all 'Other...' service"
+    )
+
+    def validate(self, attrs):
+        service = attrs.get('service')
+        if service and service_requires_concern(service.name) and not attrs.get('concern_note', '').strip():
+            raise serializers.ValidationError({
+                'concern_note': "Please describe what you need."
+            })
+        return attrs
 
 
 class TicketPublicSerializer(serializers.ModelSerializer):
@@ -290,6 +307,7 @@ class TicketPublicSerializer(serializers.ModelSerializer):
             'status',
             'office_name',
             'service_name',
+            'concern_note',
             'counter',
             'assigned_personnel',
             'ahead',
@@ -359,6 +377,7 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'is_priority',
             'client_name',
             'group_member_names',
+            'concern_note',
             'status',
             'counter',
             'counter_name',

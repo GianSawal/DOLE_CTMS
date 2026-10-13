@@ -57,6 +57,25 @@ export function NoteField({ id, value, onChange, placeholder, label = 'Add note'
   );
 }
 
+/** Shows what the client typed for a catch-all "Other..." service. */
+export function ConcernNote({ text }) {
+  if (!text) return null;
+  return (
+    <div style={{
+      marginTop: '0.45rem',
+      padding: '0.45rem 0.65rem',
+      borderRadius: '8px',
+      background: '#eff6ff',
+      border: '1px solid #bfdbfe',
+      fontSize: '0.82rem',
+      color: 'var(--ui-text-2)',
+      lineHeight: 1.4,
+    }}>
+      <strong style={{ fontWeight: 600 }}>Concern:</strong> {text}
+    </div>
+  );
+}
+
 /** Shows the latest reassignment or pending note on a client. */
 export function LatestNote({ note }) {
   if (!note?.text) return null;

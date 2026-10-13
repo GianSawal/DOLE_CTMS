@@ -92,7 +92,8 @@ def personnel_display_name(user):
     return user.get_full_name().strip() or user.username
 
 
-def create_transaction(office, service, client_name=None, is_priority=False, source='qr', group_member_names=None):
+def create_transaction(office, service, client_name=None, is_priority=False, source='qr', group_member_names=None,
+                        concern_note=None):
     """
     Creates a new queue transaction atomically. Tickets enter the office's shared
     waiting queue unassigned; whoever calls the ticket from a window takes it.
@@ -147,6 +148,7 @@ def create_transaction(office, service, client_name=None, is_priority=False, sou
             is_priority=bool(is_priority),
             client_name=client_name.strip() if client_name else None,
             group_member_names=cleaned_member_names,
+            concern_note=concern_note.strip() if concern_note else '',
             status=CtmsTransaction.STATUS_WAITING,
             source=source,
             checked_in_at=now,

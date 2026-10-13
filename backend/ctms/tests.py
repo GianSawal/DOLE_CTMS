@@ -523,6 +523,57 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         }, format='json')
         self.assertEqual(res_unauthorized.status_code, 403)
 
+    def test_other_service_requires_a_concern_note(self):
+        other = CsmService.objects.create(name="Other Services (IMSD)", is_active=True, sort_order=99)
+
+        # The public office page flags which services need a concern note
+        pub = self.client.get(f'/api/public/offices/{self.office.id}/').data
+        flags = {s['id']: s['requires_concern'] for s in pub['services']}
+        self.assertTrue(flags[other.id])
+        self.assertFalse(flags[self.service.id])
+
+        # An ordinary service never needs one
+        res_ok = self.client.post('/api/public/checkin/', {
+            'office': self.office.id, 'service': self.service.id, 'client_name': 'Juan',
+        }, format='json')
+        self.assertEqual(res_ok.status_code, 201)
+
+        # "Other..." without a concern note is rejected
+        res_missing = self.client.post('/api/public/checkin/', {
+            'office': self.office.id, 'service': other.id, 'client_name': 'Maria',
+        }, format='json')
+        self.assertEqual(res_missing.status_code, 400)
+        self.assertIn('concern_note', res_missing.data)
+
+        # Blank/whitespace-only is rejected too
+        res_blank = self.client.post('/api/public/checkin/', {
+            'office': self.office.id, 'service': other.id, 'client_name': 'Maria', 'concern_note': '   ',
+        }, format='json')
+        self.assertEqual(res_blank.status_code, 400)
+
+        # With a concern note, it succeeds and staff can see what was typed
+        res_created = self.client.post('/api/public/checkin/', {
+            'office': self.office.id, 'service': other.id, 'client_name': 'Maria',
+            'concern_note': 'Asking about unpaid last pay from a previous employer',
+        }, format='json')
+        self.assertEqual(res_created.status_code, 201)
+
+        self.client.force_authenticate(user=self.staff_user)
+        queue = self.client.get('/api/staff/queue/').data
+        waiting = {tx['client_name']: tx['concern_note'] for tx in queue['waiting']}
+        self.assertEqual(waiting['Maria'], 'Asking about unpaid last pay from a previous employer')
+        self.assertEqual(waiting['Juan'], '')
+
+        # Staff creating a walk-in for an "Other..." service also needs the note
+        res_walkin_missing = self.client.post('/api/staff/transactions/walkin/', {
+            'office': self.office.id, 'service': other.id, 'client_name': 'Ben',
+        }, format='json')
+        self.assertEqual(res_walkin_missing.status_code, 400)
+        res_walkin_ok = self.client.post('/api/staff/transactions/walkin/', {
+            'office': self.office.id, 'service': other.id, 'client_name': 'Ben', 'concern_note': 'OSH complaint',
+        }, format='json')
+        self.assertEqual(res_walkin_ok.status_code, 201)
+
     def test_hourly_office_code_blocks_off_site_checkin(self):
         def checkin(code=None):
             body = {'office': self.office.id, 'service': self.service.id, 'client_name': 'Citizen'}

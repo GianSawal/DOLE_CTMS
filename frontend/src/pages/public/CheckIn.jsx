@@ -27,6 +27,8 @@ export default function CheckIn() {
   const [isPriority, setIsPriority] = useState(false);
   const [officeCode, setOfficeCode] = useState('');
   const [officeCodeError, setOfficeCodeError] = useState(false);
+  const [concernNote, setConcernNote] = useState('');
+  const [concernError, setConcernError] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsAgreedCheckbox, setTermsAgreedCheckbox] = useState(false);
 
@@ -48,10 +50,18 @@ export default function CheckIn() {
     }
   }, [officeId]);
 
+  const selectedService = (officeData?.services || []).find(s => String(s.id) === String(serviceId));
+  const concernRequired = !!selectedService?.requires_concern;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!serviceId) {
       setError(lang === 'fil' ? 'Mangyaring pumili ng serbisyo bago magpatuloy.' : 'Please select a service to proceed.');
+      return;
+    }
+    if (concernRequired && !concernNote.trim()) {
+      setConcernError(true);
+      setError(t.concern_required);
       return;
     }
 
@@ -82,6 +92,7 @@ export default function CheckIn() {
       setSubmitting(true);
       setError('');
       setOfficeCodeError(false);
+      setConcernError(false);
       const res = await publicApi.checkin({
         office: Number(officeId),
         service: Number(serviceId),
@@ -89,6 +100,7 @@ export default function CheckIn() {
         is_priority: isPriority,
         group_member_names: groupMemberNamesList,
         office_code: officeCode,
+        concern_note: concernRequired ? concernNote.trim() : '',
       });
 
       // Redirect to client live ticket
@@ -815,12 +827,47 @@ export default function CheckIn() {
                   required
                   services={officeData?.services || []}
                   value={serviceId}
-                  onChange={(val) => setServiceId(val)}
+                  onChange={(val) => {
+                    setServiceId(val);
+                    setConcernError(false);
+                  }}
                   placeholder={t.select_service}
                   searchPlaceholder={t.search_services}
                   noResultsText={t.no_services_found}
                 />
               </div>
+
+              {concernRequired && (
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label htmlFor="concern-note">{t.concern_label} *</label>
+                  <textarea
+                    id="concern-note"
+                    required
+                    rows={3}
+                    maxLength={300}
+                    value={concernNote}
+                    onChange={(e) => {
+                      setConcernNote(e.target.value);
+                      setConcernError(false);
+                    }}
+                    placeholder={t.concern_placeholder}
+                    aria-invalid={concernError}
+                    aria-describedby="concern-note-help"
+                    style={{
+                      resize: 'vertical',
+                      minHeight: '84px',
+                      lineHeight: 1.45,
+                      borderColor: concernError ? 'var(--dole-red)' : undefined,
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', marginTop: '0.35rem' }}>
+                    <p id="concern-note-help" style={{ fontSize: '0.8rem', color: concernError ? 'var(--dole-red)' : 'var(--text-muted)', margin: 0 }}>
+                      {t.concern_help}
+                    </p>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>{concernNote.length}/300</span>
+                  </div>
+                </div>
+              )}
 
               <div style={{
                 backgroundColor: isPriority ? 'var(--dole-gold-light)' : '#f8fafc',

@@ -7,7 +7,7 @@ import PrintSlip from '../../components/PrintSlip';
 import WalkinModal from '../../components/WalkinModal';
 import ReassignModal from '../../components/ReassignModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
-import { PageHeader, Notice, NoteField, LatestNote } from '../../components/ui';
+import { PageHeader, Notice, NoteField, LatestNote, ConcernNote } from '../../components/ui';
 
 const POLL_MS = 3000;
 
@@ -282,6 +282,7 @@ export default function StaffQueue() {
                       {myCurrent.transaction_no} · Claim code {myCurrent.claim_code}
                     </div>
                     <LatestNote note={myCurrent.latest_note} />
+                    <ConcernNote text={myCurrent.concern_note} />
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem', marginTop: '1.1rem' }}>
                       <button className="btn btn-success" disabled={busy}
@@ -332,6 +333,7 @@ export default function StaffQueue() {
                         </div>
                         <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}><ClientName tx={tx} /> · {tx.service_name}</div>
                         <LatestNote note={tx.latest_note} />
+                        <ConcernNote text={tx.concern_note} />
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
                           {tx.status === 'transferred' ? (
                             <button className="btn btn-primary btn-sm" disabled={busy || !!myCurrent}
@@ -415,6 +417,7 @@ export default function StaffQueue() {
                         <div style={{ fontSize: '0.85rem', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           <ClientName tx={tx} /> · <span style={{ color: 'var(--text-secondary)' }}>{tx.service_name}</span>
                         </div>
+                        <ConcernNote text={tx.concern_note} />
                       </div>
                       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button className="btn btn-primary btn-sm" disabled={!canCall} title={callBlockedReason || undefined} onClick={() => handleCall(tx)}>Call</button>
