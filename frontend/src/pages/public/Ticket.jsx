@@ -187,56 +187,21 @@ export default function Ticket() {
             </div>
           )}
 
-          {/* DONE state & Survey Hand-off */}
-          {ticket.status === 'done' && (
+          {/* DONE and already surveyed: thank the client */}
+          {ticket.status === 'done' && ticket.surveyed && (
             <div style={{ margin: '1.75rem 0' }}>
-              {ticket.surveyed ? (
-                <div style={{
-                  backgroundColor: 'var(--dole-green-light)',
-                  border: '1px solid #a7f3d0',
-                  color: '#065f46',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '1.25rem',
-                }}>
-                  <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎉</div>
-                  <div style={{ fontWeight: 700, fontSize: '1rem' }}>
-                    {t.survey_completed}
-                  </div>
+              <div style={{
+                backgroundColor: 'var(--dole-green-light)',
+                border: '1px solid #a7f3d0',
+                color: '#065f46',
+                borderRadius: 'var(--radius-md)',
+                padding: '1.25rem',
+              }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎉</div>
+                <div style={{ fontWeight: 700, fontSize: '1rem' }}>
+                  {t.survey_completed}
                 </div>
-              ) : (
-                ticket.survey_url && (
-                  <div>
-                    <a
-                      href={ticket.survey_url}
-                      className="btn btn-gold btn-lg w-full"
-                      style={{ fontSize: '1.15rem', boxShadow: 'var(--shadow-md)' }}
-                    >
-                      {t.rate_service_btn}
-                    </a>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                      Click above to rate your experience in the DOLE CSM Survey
-                    </p>
-                  </div>
-                )
-              )}
-            </div>
-          )}
-
-          {/* The office's CSM survey page; once Done, the transaction's own survey button above takes over */}
-          {ticket.status !== 'done' && ticket.office_survey_url && (
-            <div style={{ marginTop: '1.5rem' }}>
-              <a
-                href={ticket.office_survey_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-gold w-full"
-                style={{ fontSize: '1rem', minHeight: '48px', boxShadow: 'var(--shadow-sm)' }}
-              >
-                {t.office_survey_btn}
-              </a>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.45rem' }}>
-                {t.office_survey_note}
-              </p>
+              </div>
             </div>
           )}
 
@@ -275,6 +240,31 @@ export default function Ticket() {
           }}>
             ℹ️ {t.keep_ticket_note}
           </p>
+
+          {/* Survey: the client's own CSM survey once Done, otherwise the office's survey page */}
+          {!ticket.surveyed && (ticket.survey_url || ticket.office_survey_url) && (
+            <div style={{
+              marginTop: '1.25rem',
+              paddingTop: '1.25rem',
+              borderTop: 'var(--border-hairline)',
+            }}>
+              <p style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 0.75rem', lineHeight: 1.4 }}>
+                {t.rate_prompt}
+              </p>
+              <a
+                href={(ticket.status === 'done' && ticket.survey_url) || ticket.office_survey_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-gold btn-lg w-full"
+                style={{ fontSize: '1.1rem', boxShadow: 'var(--shadow-md)' }}
+              >
+                {t.rate_service_btn}
+              </a>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.45rem' }}>
+                {t.office_survey_note}
+              </p>
+            </div>
+          )}
         </div>
       </main>
     </div>
