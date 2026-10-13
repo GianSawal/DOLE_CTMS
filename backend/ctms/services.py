@@ -522,8 +522,10 @@ def update_window(window, name=None, description=None, sort_order=None, is_activ
                 raise ValueError("Window name must be 50 characters or fewer.")
             clash = CtmsCounter.objects.filter(office=window.office, name__iexact=clean).exclude(pk=window.pk).first()
             if clash:
-                state = "an archived window" if clash.archived_at else "another window"
-                raise ValueError(f"The name '{clean}' is already used by {state} in this office.")
+                if clash.archived_at:
+                    raise ValueError(f"The name '{clean}' belongs to a deleted window in this office. "
+                                     "Add a new window with that name to bring it back, or choose another name.")
+                raise ValueError(f"The name '{clean}' is already used by another window in this office.")
             window.name = clean
 
         if description is not None:
@@ -554,7 +556,7 @@ def archive_window(window):
         if window.archived_at:
             return window
         if _window_has_active_client(window):
-            raise ValueError("Finish or return the client at this window before archiving it.")
+            raise ValueError("Finish or return the client at this window before deleting it.")
         window.assigned_user = None
         window.assigned_at = None
         window.is_active = False

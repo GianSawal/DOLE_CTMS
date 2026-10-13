@@ -1332,7 +1332,7 @@ class StaffWindowViewSet(viewsets.ViewSet):
             window = services.archive_window(window)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        self._audit('WINDOW_ARCHIVE', window, f"Archived window '{window.name}'.")
+        self._audit('WINDOW_ARCHIVE', window, f"Deleted window '{window.name}'.")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'], url_path='assign-me')

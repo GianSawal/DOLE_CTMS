@@ -150,13 +150,14 @@ export default function StaffWindows() {
     });
   };
 
-  const askArchive = (w) => {
+  // "Delete" hides the window for good; past transactions still show which window served them
+  const askDelete = (w) => {
     setConfirmModal({
-      title: `Archive ${w.name}?`,
-      message: `${w.name} will be removed from this office and the TV display. Past transactions keep their window history. Creating a window with the same name later restores it.`,
-      confirmLabel: 'Archive Window',
+      title: `Delete ${w.name}?`,
+      message: `${w.name} will be removed from this office and the TV display. Past transactions still show that they were served at ${w.name}.`,
+      confirmLabel: 'Delete Window',
       danger: true,
-      onConfirm: () => runAction(w.id, () => staffApi.archiveWindow(w.id), `${w.name} archived.`),
+      onConfirm: () => runAction(w.id, () => staffApi.archiveWindow(w.id), `${w.name} deleted.`),
     });
   };
 
@@ -299,7 +300,7 @@ export default function StaffWindows() {
                       <button className="btn btn-outline btn-sm" style={{ flex: 1 }} disabled={busy} onClick={() => askToggleActive(w)}>
                         {w.is_active ? 'Deactivate' : 'Activate'}
                       </button>
-                      <button className="btn btn-outline btn-sm" style={{ flex: 1, color: 'var(--dole-red-dark)' }} disabled={busy} onClick={() => askArchive(w)}>Archive</button>
+                      <button className="btn btn-outline btn-sm" style={{ flex: 1, color: 'var(--dole-red-dark)' }} disabled={busy} onClick={() => askDelete(w)}>Delete</button>
                     </div>
                   </div>
                 </div>
