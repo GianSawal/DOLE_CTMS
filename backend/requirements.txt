@@ -1,6 +1,7 @@
 Django==5.2.17
 djangorestframework==3.18.1
 djangorestframework-simplejwt==5.5.1
+PyJWT>=2.15.1  # GHSA-42vr-xj54-vc7v, GHSA-x33g-cr3x-6449
 django-cors-headers==4.9.0
 python-dotenv==1.2.3
 mysqlclient==2.3.0

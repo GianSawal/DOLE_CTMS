@@ -10,6 +10,7 @@ from .views import (
     PublicDisplayBoardView,
     StaffLoginView,
     StaffMeView,
+    StaffLogoutView,
     StaffChangePasswordView,
     StaffQueueView,
     StaffCreateWalkinView,
@@ -24,9 +25,6 @@ from .views import (
     StaffQrConfigView,
     StaffOfficeCodeView,
     StaffDisplayVideoView,
-    PublicFolderVideosView,
-    PublicStreamLocalVideoView,
-    PublicDisplayVideoUploadView,
     CsmDivisionListView,
     CsmOfficeListView,
     StaffPositionViewSet,
@@ -55,14 +53,12 @@ urlpatterns = [
     path('public/checkin/', PublicCheckinView.as_view(), name='public-checkin'),
     path('public/tickets/<str:ticket_token>/', PublicTicketDetailView.as_view(), name='public-ticket-detail'),
     path('public/display/<int:office_id>/', PublicDisplayBoardView.as_view(), name='public-display-board'),
-    path('public/display-video-upload/<int:office_id>/', PublicDisplayVideoUploadView.as_view(), name='public-display-video-upload'),
-    path('public/folder-videos/', PublicFolderVideosView.as_view(), name='public-folder-videos'),
-    path('public/stream-video/', PublicStreamLocalVideoView.as_view(), name='public-stream-video'),
 
     # Staff authentication
     path('staff/auth/login/', StaffLoginView.as_view(), name='staff-login'),
     path('staff/auth/refresh/', TokenRefreshView.as_view(), name='staff-refresh'),
     path('staff/auth/me/', StaffMeView.as_view(), name='staff-me'),
+    path('staff/auth/logout/', StaffLogoutView.as_view(), name='staff-logout'),
     path('staff/auth/change-password/', StaffChangePasswordView.as_view(), name='staff-change-password'),
 
     # Staff queue operations

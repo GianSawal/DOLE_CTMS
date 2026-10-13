@@ -11,12 +11,4 @@ export const publicApi = {
   getDisplayBoard: (officeId, key) => apiRequest(
     `/public/display/${officeId}/${key ? `?key=${encodeURIComponent(key)}` : ''}`
   ),
-  uploadDisplayVideo: (officeId, file) => {
-    const formData = new FormData();
-    formData.append('video_file', file);
-    return apiRequest(`/public/display-video-upload/${officeId}/`, {
-      method: 'POST',
-      body: formData,
-    });
-  },
 };

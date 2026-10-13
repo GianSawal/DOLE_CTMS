@@ -14,6 +14,11 @@ export default function StaffLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [capsLock, setCapsLock] = useState(false);
+
+  const checkCapsLock = (e) => {
+    if (typeof e.getModifierState === 'function') setCapsLock(e.getModifierState('CapsLock'));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,7 +28,15 @@ export default function StaffLogin() {
       await login(username.trim(), password);
       navigate('/staff/queue');
     } catch (err) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      if (err.status === 429 && err.data?.code === 'ACCOUNT_LOCKED') {
+        setError(err.message);
+      } else if (err.status === 429) {
+        setError('Too many sign-in attempts. Wait a minute, then try again.');
+      } else if (err.status === 401 || /no active account/i.test(err.message || '')) {
+        setError('Wrong username or password. Check that Caps Lock is off. If it still fails, ask your office administrator to reset your password.');
+      } else {
+        setError(err.message || 'Login failed. Please check your credentials.');
+      }
     } finally {
       setLoading(false);
     }
@@ -48,8 +61,13 @@ export default function StaffLogin() {
             required
             autoFocus
             autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            onKeyDown={checkCapsLock}
+            onKeyUp={checkCapsLock}
           />
         </div>
 
@@ -63,6 +81,9 @@ export default function StaffLogin() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={checkCapsLock}
+              onKeyUp={checkCapsLock}
+              aria-describedby={capsLock ? 'caps-lock-warning' : undefined}
               style={{ paddingRight: '2.75rem' }}
             />
             <button
@@ -74,6 +95,11 @@ export default function StaffLogin() {
               {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
             </button>
           </div>
+          {capsLock && (
+            <p id="caps-lock-warning" role="status" style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', fontWeight: 600, color: '#b54708' }}>
+              Caps Lock is on. Passwords are case-sensitive.
+            </p>
+          )}
         </div>
 
         <button type="submit" disabled={loading} className="btn btn-primary btn-lg w-full" style={{ marginTop: '0.35rem' }}>

@@ -101,22 +101,8 @@ export async function parseFolderLink(folderUrl) {
   const trimmed = folderUrl.trim();
   if (!trimmed) return [];
 
-  // 1. Try querying backend folder-videos endpoint (resolves server paths, CORS-free HTTP directories, etc.)
-  try {
-    const res = await fetch(`/api/public/folder-videos/?folder=${encodeURIComponent(trimmed)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.videos && data.videos.length > 0) {
-        return data.videos.map((v, i) => ({
-          id: i,
-          name: v.name || `Video ${i + 1}`,
-          url: v.url,
-        }));
-      }
-    }
-  } catch (err) {
-    console.debug('Backend folder-videos check:', err);
-  }
+  // (The server no longer looks up folders or URLs on the TV's behalf: anyone could make it
+  // fetch internal addresses or list its disk. Links are resolved here in the browser.)
 
   // 2. Client-side parsing for multiple URLs separated by newlines, commas, or semicolons
   const lines = trimmed.split(/[\r\n,;]+/).map(s => s.trim()).filter(Boolean);

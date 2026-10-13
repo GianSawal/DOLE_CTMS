@@ -41,6 +41,16 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    // Revoke the refresh token on the server so a copy of it can't be used later
+    const refresh = localStorage.getItem('ctms_refresh_token');
+    if (refresh) {
+      fetch('/api/staff/auth/logout/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh }),
+        keepalive: true,
+      }).catch(() => {});
+    }
     localStorage.removeItem('ctms_access_token');
     localStorage.removeItem('ctms_refresh_token');
     localStorage.removeItem('ctms_user');

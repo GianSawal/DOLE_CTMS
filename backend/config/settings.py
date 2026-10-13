@@ -10,8 +10,20 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-ctms-secret-key-default-replace-in-prod')
-DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 't')
+# Off unless explicitly turned on: a missing setting must never expose debug pages
+DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 't')
 TESTING = 'test' in sys.argv
+
+# The secret key signs every login token. A missing or publicly known key lets anyone forge a
+# login, so say so loudly at startup (without refusing to start, to keep the service up).
+_PUBLIC_DEFAULT_KEYS = {
+    'django-insecure-ctms-secret-key-default-replace-in-prod',
+    'coolify-ctms-secret-key-change-in-production',
+    'replace-with-a-strong-random-secret-key-min-50-chars',
+}
+if not DEBUG and not TESTING and (SECRET_KEY in _PUBLIC_DEFAULT_KEYS or len(SECRET_KEY) < 40):
+    print("!!! SECURITY WARNING: DJANGO_SECRET_KEY is missing, a public default, or too short. "
+          "Set a long random value in the server's environment variables.", file=sys.stderr, flush=True)
 
 ALLOWED_HOSTS = [host.strip() for host in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,*').split(',') if host.strip()]
 
@@ -28,6 +40,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',  # lets logout revoke a refresh token
     
     # CTMS app
     'ctms.apps.CtmsConfig',
@@ -96,6 +109,9 @@ else:
     }
 
 # Password validation
+# Usernames are matched ignoring capitals at sign-in; passwords stay case-sensitive
+AUTHENTICATION_BACKENDS = ['ctms.auth_backends.CaseInsensitiveUsernameBackend']
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},

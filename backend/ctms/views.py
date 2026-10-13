@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import logging
 import secrets
 import urllib.request
 import urllib.parse
@@ -22,7 +23,10 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
+from rest_framework_simplejwt.tokens import RefreshToken
+from .security import login_locked, record_office_code_failure, video_upload_error
 from .models import (
     CANONICAL_DIVISIONS,
     CsmDivision,
@@ -80,10 +84,15 @@ class StaffLoginView(TokenObtainPairView):
     throttle_classes = [LoginThrottle]
 
     def post(self, request, *args, **kwargs):
+        if login_locked(str(request.data.get('username') or '')):
+            msg = "Too many failed sign-ins for this account. Try again in 15 minutes, or ask your office administrator to reset your password."
+            return Response({"detail": msg, "code": "ACCOUNT_LOCKED"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         response = super().post(request, *args, **kwargs)
         if response.status_code == 200:
-            username = request.data.get('username')
-            user_obj = User.objects.filter(username=username).first()
+            typed = str(request.data.get('username') or '').strip()
+            user_obj = (User.objects.filter(username=typed).first()
+                        or User.objects.filter(username__iexact=typed).first())
+            username = user_obj.username if user_obj else typed
             log_audit_event(
                 action='LOGIN',
                 category=CtmsAuditLog.CATEGORY_AUTH,
@@ -95,6 +104,18 @@ class StaffLoginView(TokenObtainPairView):
                 description=f"User '{username}' successfully logged in."
             )
         return response
+
+
+class StaffLogoutView(APIView):
+    """Signs out: the refresh token is revoked, so a copy of it stops working."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        try:
+            RefreshToken(str(request.data.get('refresh') or '')).blacklist()
+        except Exception:
+            pass  # already expired, revoked, or malformed: nothing left to revoke
+        return Response(status=status.HTTP_205_RESET_CONTENT)
 
 
 class StaffMeView(APIView):
@@ -188,6 +209,9 @@ class PublicCheckinView(APIView):
         # enabled, require this hour's code shown on the TV / board inside the office.
         if qr_config and qr_config.requires_office_code:
             if not services.office_code_matches(qr_config, data.get('office_code')):
+                if record_office_code_failure(office.id):
+                    # Someone is guessing codes: replace this office's code (the TV shows the new one)
+                    services.get_or_rotate_office_code(qr_config, force=True)
                 msg = "Incorrect check-in code. Please enter the 4-digit code shown on the screen or board at the office."
                 return Response({"detail": msg, "message": msg, "code": "OFFICE_CODE_INVALID"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -212,8 +236,12 @@ class PublicCheckinView(APIView):
                 "queue_no": tx.queue_no,
                 "transaction_no": tx.transaction_no,
             }, status=status.HTTP_201_CREATED)
-        except Exception as e:
+        except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("Public check-in failed")
+            return Response({"detail": "Check-in failed. Please try again or ask DOLE staff for assistance."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
 
 class PublicTicketDetailView(APIView):
@@ -1141,8 +1169,11 @@ class StaffDisplayVideoView(APIView):
         office = get_object_or_404(allowed_offices, pk=office_id)
         config, _ = CtmsDisplayConfig.objects.get_or_create(office=office)
 
-        # Handle uploaded video file
+        # Handle uploaded video file (real video files only; never HTML, SVG, scripts...)
         if 'video_file' in request.FILES:
+            upload_error = video_upload_error(request.FILES['video_file'])
+            if upload_error:
+                return Response({"detail": upload_error}, status=status.HTTP_400_BAD_REQUEST)
             if config.video_file:
                 try:
                     config.video_file.delete(save=False)
@@ -1191,40 +1222,6 @@ class StaffDisplayVideoView(APIView):
             "video_file_name": file_name,
             "has_file": bool(config.video_file),
             "is_active": config.is_active,
-        })
-
-
-class PublicDisplayVideoUploadView(APIView):
-    permission_classes = [permissions.AllowAny]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def post(self, request, office_id):
-        office = get_object_or_404(CsmOffice, pk=office_id)
-        if 'video_file' not in request.FILES:
-            return Response({"detail": "No video file provided."}, status=status.HTTP_400_BAD_REQUEST)
-
-        file = request.FILES['video_file']
-        config, _ = CtmsDisplayConfig.objects.get_or_create(office=office)
-        if config.video_file:
-            try:
-                config.video_file.delete(save=False)
-            except Exception:
-                pass
-        config.video_file = file
-        config.arta_video_url = ''
-        config.is_active = True
-        config.save()
-
-        video_url = config.video_file.url
-        file_name = config.video_file.name.split('/')[-1]
-
-        return Response({
-            "status": "success",
-            "office_id": office.id,
-            "office_name": office.name,
-            "arta_video_url": video_url,
-            "video_file_name": file_name,
-            "is_active": True,
         })
 
 
@@ -1714,115 +1711,6 @@ class CsmOfficeListView(APIView):
 # =====================================================================
 # TV Display Local Folder Video Scanner & Streamer
 # =====================================================================
-
-class PublicFolderVideosView(APIView):
-    """
-    Parses a local folder path, HTTP folder URL, or multi-line video list
-    and returns a playlist of video URLs for continuous playback on the TV display.
-    Uses 0 server storage by streaming directly or referencing external links.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request):
-        folder = request.query_params.get('folder', '').strip()
-        if not folder:
-            return Response({"status": "error", "message": "Folder link or path is required.", "videos": []})
-
-        video_extensions = ('.mp4', '.webm', '.ogg', '.mov', '.mkv', '.m4v')
-
-        # 1. Multiple URLs separated by newlines, commas, or semicolons
-        lines = [line.strip() for line in re.split(r'[\r\n,;]+', folder) if line.strip()]
-        if len(lines) > 1:
-            videos = []
-            for i, line in enumerate(lines):
-                name = os.path.basename(line.split('?')[0]) or f"Video {i + 1}"
-                videos.append({"id": i, "name": name, "url": line})
-            return Response({"status": "success", "videos": videos})
-
-        # 2. Local filesystem directory path
-        clean_folder = folder.replace('file:///', '').replace('file://', '')
-        if os.path.isdir(clean_folder):
-            try:
-                entries = os.listdir(clean_folder)
-                video_files = [f for f in entries if os.path.isfile(os.path.join(clean_folder, f)) and f.lower().endswith(video_extensions)]
-                def natural_sort_key(s):
-                    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
-                video_files.sort(key=natural_sort_key)
-
-                videos = []
-                for i, filename in enumerate(video_files):
-                    file_full_path = os.path.join(clean_folder, filename)
-                    stream_url = f"/api/public/stream-video/?file={urllib.parse.quote(file_full_path)}"
-                    videos.append({
-                        "id": i,
-                        "name": filename,
-                        "url": stream_url,
-                    })
-                return Response({"status": "success", "videos": videos})
-            except Exception as e:
-                return Response({"status": "error", "message": str(e), "videos": []})
-
-        # 3. HTTP / HTTPS directory link (e.g. Apache/Nginx autoindex)
-        if folder.startswith('http://') or folder.startswith('https://'):
-            if folder.lower().endswith(video_extensions):
-                name = os.path.basename(folder.split('?')[0]) or "Video 1"
-                return Response({"status": "success", "videos": [{"id": 0, "name": name, "url": folder}]})
-
-            try:
-                req = urllib.request.Request(folder, headers={'User-Agent': 'Mozilla/5.0 DOLE-CTMS-Display/1.0'})
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    content = response.read().decode('utf-8', errors='ignore')
-                    found_links = re.findall(r'href=["\']([^"\']+\.(?:mp4|webm|ogg|mov|mkv|m4v))["\']', content, re.IGNORECASE)
-                    if found_links:
-                        def natural_sort_key(s):
-                            return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
-                        found_links.sort(key=natural_sort_key)
-
-                        videos = []
-                        seen = set()
-                        for href in found_links:
-                            full_url = urllib.parse.urljoin(folder, href)
-                            if full_url not in seen:
-                                seen.add(full_url)
-                                name = os.path.basename(href.split('?')[0]) or f"Video {len(videos) + 1}"
-                                videos.append({"id": len(videos), "name": name, "url": full_url})
-                        if videos:
-                            return Response({"status": "success", "videos": videos})
-            except Exception:
-                pass
-
-        # Fallback: single video item
-        name = os.path.basename(folder.split('?')[0]) or "ARTA Video"
-        return Response({"status": "success", "videos": [{"id": 0, "name": name, "url": folder}]})
-
-
-class PublicStreamLocalVideoView(APIView):
-    """
-    Streams a local video file with HTTP 206 Partial Content / Range support for smooth seeking.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request):
-        file_param = request.query_params.get('file', '').strip()
-        if not file_param:
-            raise Http404("Video file parameter required.")
-
-        file_path = urllib.parse.unquote(file_param)
-        if not os.path.isfile(file_path):
-            raise Http404("Video file not found.")
-
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext not in ('.mp4', '.webm', '.ogg', '.mov', '.mkv', '.m4v'):
-            raise Http404("Unsupported video format.")
-
-        content_type, _ = mimetypes.guess_type(file_path)
-        if not content_type:
-            content_type = 'video/mp4'
-
-        response = FileResponse(open(file_path, 'rb'), content_type=content_type)
-        response['Accept-Ranges'] = 'bytes'
-        return response
-
 
 class CsmDivisionListView(APIView):
     """The service divisions (TSSD 1, TSSD 2, IMSD), used to tag and filter services."""

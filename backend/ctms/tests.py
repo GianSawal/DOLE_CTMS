@@ -21,6 +21,7 @@ from .models import (
     CtmsAuditLog,
     CtmsNotification,
     CtmsOfficeQrConfig,
+    CtmsDisplayConfig,
 )
 from .services import (
     create_transaction,
@@ -540,6 +541,30 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         mark_done(call_transaction(done_tx, self.staff_user), self.staff_user)
         ticket = self.client.get(f'/api/public/tickets/{done_tx.ticket_token}/').data
         self.assertEqual(ticket['survey_url'], f'http://csm.dolero3.lan/survey/t/{done_tx.survey_token}')
+
+    def test_staff_login_ignores_username_capitals_but_not_password(self):
+        User.objects.create_user(username="DOLE-ADMIN", password="S3cret!pass", is_staff=True)
+
+        def login(username, password):
+            return self.client.post('/api/staff/auth/login/', {'username': username, 'password': password}, format='json')
+
+        for typed in ("DOLE-ADMIN", "dole-admin", "Dole-Admin", "  dole-admin "):
+            res = login(typed, "S3cret!pass")
+            self.assertEqual(res.status_code, 200, typed)
+            self.assertEqual(res.data['user']['username'], "DOLE-ADMIN")
+            cache.clear()  # stay under the 5-per-minute sign-in limit
+        # The password is still case-sensitive, and unknown users are refused
+        self.assertEqual(login("dole-admin", "s3cret!pass").status_code, 401)
+        self.assertEqual(login("nobody", "S3cret!pass").status_code, 401)
+        # The audit log records the real account
+        self.assertEqual(CtmsAuditLog.objects.filter(action='LOGIN').latest('timestamp').target_repr, "User 'DOLE-ADMIN'")
+
+    def test_login_picks_the_exact_account_when_two_differ_only_by_capitals(self):
+        User.objects.create_user(username="ana", password="lower-pass", is_staff=True)
+        User.objects.create_user(username="ANA", password="upper-pass", is_staff=True)
+        res = self.client.post('/api/staff/auth/login/', {'username': 'ANA', 'password': 'upper-pass'}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['user']['username'], "ANA")
 
     def test_public_individual_checkin_needs_a_name_or_anonymous(self):
         def checkin(**extra):
@@ -1622,3 +1647,102 @@ class Stage7DivisionsAndCatalogTestCase(CsmTablesTestCase):
         self.assertEqual(summary['untagged_services'], 1)
         res = self.client.patch(f'/api/staff/services/{self.service.id}/', {'division': self.tssd1.id}, format='json')
         self.assertEqual(res.status_code, 403)
+
+
+class SecurityHardeningTestCase(CsmTablesTestCase):
+    """Fixes from the security review (VAPT)."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.office = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.service = CsmService.objects.create(name="SEnA Assistance", is_active=True, sort_order=1)
+        self.staff = User.objects.create_user(username="ana", password="Correct-Pass-1", is_staff=True)
+        CtmsStaffOffice.objects.create(user=self.staff, office=self.office)
+
+    def _login(self, username, password, ip):
+        # A different (fake) X-Forwarded-For each time: the per-address limit is bypassable,
+        # the per-account limit must still hold.
+        return self.client.post('/api/staff/auth/login/', {'username': username, 'password': password},
+                                format='json', HTTP_X_FORWARDED_FOR=ip)
+
+    def test_unsafe_public_endpoints_are_gone(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        evil = SimpleUploadedFile("poc.html", b"<script>alert(1)</script>", content_type="video/mp4")
+        self.assertEqual(self.client.post(f'/api/public/display-video-upload/{self.office.id}/', {'video_file': evil}).status_code, 404)
+        self.assertEqual(self.client.get('/api/public/folder-videos/', {'folder': 'C:/'}).status_code, 404)
+        self.assertEqual(self.client.get('/api/public/stream-video/', {'file': 'C:/x.mp4'}).status_code, 404)
+
+    def test_staff_upload_accepts_videos_only(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_authenticate(user=self.staff)
+        bad = [
+            SimpleUploadedFile("poc.html", b"<script>alert(1)</script>"),
+            SimpleUploadedFile("poc.mp4", b"<script>alert(1)</script>"),   # video name, not a video
+            SimpleUploadedFile("pic.svg", b"<svg onload=alert(1)>"),
+        ]
+        for f in bad:
+            res = self.client.post('/api/staff/display-video/', {'office': self.office.id, 'video_file': f}, format='multipart')
+            self.assertEqual(res.status_code, 400, f.name)
+        mp4 = SimpleUploadedFile("arta.mp4", b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64)
+        res = self.client.post('/api/staff/display-video/', {'office': self.office.id, 'video_file': mp4}, format='multipart')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertTrue(res.data['arta_video_url'].endswith('.mp4'))
+        CtmsDisplayConfig.objects.get(office=self.office).video_file.delete(save=False)
+
+    def test_account_locks_after_repeated_wrong_passwords_even_with_spoofed_addresses(self):
+        for i in range(10):
+            self.assertEqual(self._login("ana", "wrong", f"10.9.9.{i}").status_code, 401)
+        locked = self._login("ana", "Correct-Pass-1", "10.9.9.200")
+        self.assertEqual(locked.status_code, 429)
+        self.assertEqual(locked.data['code'], 'ACCOUNT_LOCKED')
+        # Typing the username in other capitals doesn't get around it
+        self.assertEqual(self._login("ANA", "Correct-Pass-1", "10.9.9.201").status_code, 429)
+        # Other accounts are unaffected
+        User.objects.create_user(username="ben", password="Ben-Pass-1", is_staff=True)
+        self.assertEqual(self._login("ben", "Ben-Pass-1", "10.9.9.202").status_code, 200)
+
+    def test_correct_password_resets_the_failure_count(self):
+        for i in range(9):
+            self._login("ana", "wrong", f"10.8.8.{i}")
+        self.assertEqual(self._login("ana", "Correct-Pass-1", "10.8.8.100").status_code, 200)
+        for i in range(9):
+            self._login("ana", "wrong", f"10.8.9.{i}")
+        self.assertEqual(self._login("ana", "Correct-Pass-1", "10.8.9.100").status_code, 200)
+
+    def test_django_admin_login_also_counts_toward_the_lock(self):
+        admin = User.objects.create_superuser(username="root", password="Root-Pass-1")
+        for _ in range(10):
+            self.client.post('/django-admin/login/', {'username': 'root', 'password': 'wrong'})
+        res = self.client.post('/django-admin/login/', {'username': 'root', 'password': 'Root-Pass-1'})
+        self.assertEqual(res.status_code, 200)  # stays on the login page: not signed in
+        self.assertNotIn('_auth_user_id', self.client.session)
+        self.assertTrue(admin.is_active)
+
+    def test_guessing_the_check_in_code_replaces_it(self):
+        from .services import get_or_rotate_office_code
+        config = CtmsOfficeQrConfig.objects.create(office=self.office, requires_office_code=True)
+        code = get_or_rotate_office_code(config)
+        wrong = '0000' if code != '0000' else '1111'
+        for i in range(30):
+            self.client.post('/api/public/checkin/', {'office': self.office.id, 'service': self.service.id,
+                                                       'client_name': 'Guesser', 'office_code': wrong},
+                             format='json', HTTP_X_FORWARDED_FOR=f"10.7.7.{i}")
+        config.refresh_from_db()
+        self.assertNotEqual(config.office_code, code)
+
+    def test_logout_revokes_the_refresh_token(self):
+        tokens = self._login("ana", "Correct-Pass-1", "10.6.6.1").data
+        self.assertEqual(self.client.post('/api/staff/auth/refresh/', {'refresh': tokens['refresh']}, format='json').status_code, 200)
+        fresh = self._login("ana", "Correct-Pass-1", "10.6.6.2").data
+        self.assertEqual(self.client.post('/api/staff/auth/logout/', {'refresh': fresh['refresh']}, format='json').status_code, 205)
+        self.assertEqual(self.client.post('/api/staff/auth/refresh/', {'refresh': fresh['refresh']}, format='json').status_code, 401)
+        # Logging out twice, or with junk, is harmless
+        self.assertEqual(self.client.post('/api/staff/auth/logout/', {'refresh': 'junk'}, format='json').status_code, 205)
+
+    def test_public_checkin_does_not_leak_internal_errors(self):
+        with mock.patch('ctms.services.create_transaction', side_effect=RuntimeError("DB path C:/secret/db")):
+            res = self.client.post('/api/public/checkin/', {'office': self.office.id, 'service': self.service.id,
+                                                             'client_name': 'Juan'}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertNotIn('secret', str(res.data))
