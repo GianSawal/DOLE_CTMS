@@ -264,7 +264,7 @@ class CtmsNotificationSerializer(serializers.ModelSerializer):
 class CheckinRequestSerializer(serializers.Serializer):
     office = serializers.PrimaryKeyRelatedField(queryset=CsmOffice.objects.filter(is_active=True))
     service = serializers.PrimaryKeyRelatedField(queryset=CsmService.objects.filter(is_active=True))
-    client_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    client_name = serializers.CharField(max_length=200, required=False, allow_blank=True, allow_null=True)
     is_priority = serializers.BooleanField(required=False, default=False)
     group_member_names = serializers.ListField(
         child=serializers.CharField(max_length=200),

@@ -523,6 +523,29 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         }, format='json')
         self.assertEqual(res_unauthorized.status_code, 403)
 
+    def test_public_individual_checkin_needs_a_name_or_anonymous(self):
+        def checkin(**extra):
+            return self.client.post('/api/public/checkin/', {
+                'office': self.office.id, 'service': self.service.id, **extra}, format='json')
+
+        # Blank, missing, or null name: a clear message, never "may not be null"
+        for extra in ({}, {'client_name': ''}, {'client_name': '   '}, {'client_name': None}):
+            res = checkin(**extra)
+            self.assertEqual(res.status_code, 400, extra)
+            self.assertEqual(res.data['code'], 'NAME_REQUIRED')
+            self.assertIn('Anonymous', res.data['detail'])
+
+        self.assertEqual(checkin(client_name='Juan Dela Cruz').status_code, 201)
+        self.assertEqual(checkin(client_name='Anonymous').status_code, 201)
+        # Groups always carry a representative name in client_name, plus the members
+        self.assertEqual(checkin(client_name='Anonymous (Group of 2)', group_member_names=['A', 'B']).status_code, 201)
+
+        # Staff walk-ins may still leave the name blank
+        self.client.force_authenticate(user=self.staff_user)
+        res_walkin = self.client.post('/api/staff/transactions/walkin/', {
+            'office': self.office.id, 'service': self.service.id, 'client_name': ''}, format='json')
+        self.assertEqual(res_walkin.status_code, 201)
+
     def test_other_service_requires_a_concern_note(self):
         other = CsmService.objects.create(name="Other Services (IMSD)", is_active=True, sort_order=99)
 

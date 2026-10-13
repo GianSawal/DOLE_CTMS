@@ -3,6 +3,9 @@ import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
 import Modal from '../../components/Modal';
 import { PageHeader, Notice } from '../../components/ui';
+import Pagination, { paginateArray } from '../../components/Pagination';
+
+const PAGE_SIZES = [10, 25, 50];
 
 const EMPTY_FORM = {
   username: '',
@@ -48,6 +51,8 @@ export default function StaffUsers() {
   const [notice, setNotice] = useState(null);
 
   const [filters, setFilters] = useState({ search: '', office: '', role: '', status: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [formModal, setFormModal] = useState(null); // { mode: 'create' | 'edit', account? }
   const [form, setForm] = useState(EMPTY_FORM);
@@ -86,7 +91,10 @@ export default function StaffUsers() {
     staffApi.getPositions().then(d => setPositions(Array.isArray(d) ? d : (d?.results || []))).catch(() => {});
   }, []);
 
-  const setFilter = (key, value) => setFilters(f => ({ ...f, [key]: value }));
+  const setFilter = (key, value) => {
+    setFilters(f => ({ ...f, [key]: value }));
+    setCurrentPage(1);
+  };
   const setField = (key, value) => setForm(f => ({ ...f, [key]: value }));
 
   const selectedOffice = offices.find(o => String(o.id) === String(form.office));
@@ -216,6 +224,13 @@ export default function StaffUsers() {
 
   const filterOffices = me?.oversight_offices?.length ? me.oversight_offices : offices;
 
+  // Stay on a page that exists after the list shrinks (e.g. an account was deleted)
+  const totalPages = Math.max(1, Math.ceil(accounts.length / pageSize));
+  const page = Math.min(currentPage, totalPages);
+  const pageAccounts = paginateArray(accounts, page, pageSize);
+  const firstShown = accounts.length === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastShown = Math.min(page * pageSize, accounts.length);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-ground)' }}>
 
@@ -245,7 +260,8 @@ export default function StaffUsers() {
 
         <Notice notice={notice} onDismiss={() => setNotice(null)} />
 
-        <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', minWidth: '860px' }}>
             <thead>
               <tr style={{ background: '#f8fafc', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -263,7 +279,7 @@ export default function StaffUsers() {
                 <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading accounts…</td></tr>
               ) : accounts.length === 0 ? (
                 <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No accounts match these filters.</td></tr>
-              ) : accounts.map(a => (
+              ) : pageAccounts.map(a => (
                 <tr key={a.id} style={{ borderTop: 'var(--border-hairline)', opacity: a.is_active ? 1 : 0.6 }}>
                   <td style={{ padding: '0.75rem 1rem' }}>
                     <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{a.full_name}</div>
@@ -300,6 +316,42 @@ export default function StaffUsers() {
               ))}
             </tbody>
           </table>
+          </div>
+
+          {!loading && accounts.length > 0 && (
+            <>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '0.75rem',
+                flexWrap: 'wrap',
+                padding: '0.75rem 1.25rem',
+                borderTop: 'var(--border-hairline)',
+                fontSize: '0.85rem',
+                color: 'var(--text-muted)',
+              }}>
+                <span>Showing {firstShown}–{lastShown} of {accounts.length} account{accounts.length === 1 ? '' : 's'}</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontWeight: 500, fontSize: '0.85rem' }}>
+                  Rows per page
+                  <select
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                    style={{ minHeight: '36px', width: 'auto', padding: '0.25rem 2rem 0.25rem 0.6rem' }}
+                  >
+                    {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+              </div>
+              <Pagination
+                currentPage={page}
+                totalPages={totalPages}
+                onPageChange={(p) => { setCurrentPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                totalItems={accounts.length}
+                pageSize={pageSize}
+              />
+            </>
+          )}
         </div>
       </main>
 

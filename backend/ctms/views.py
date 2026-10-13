@@ -191,6 +191,12 @@ class PublicCheckinView(APIView):
                 msg = "Incorrect check-in code. Please enter the 4-digit code shown on the screen or board at the office."
                 return Response({"detail": msg, "message": msg, "code": "OFFICE_CODE_INVALID"}, status=status.HTTP_403_FORBIDDEN)
 
+        # A client registering alone must give a name or choose "Anonymous" (groups always
+        # send a representative name). Staff walk-ins may leave it blank.
+        if not data.get('group_member_names') and not (data.get('client_name') or '').strip():
+            msg = "Please type your name, or tap Anonymous."
+            return Response({"detail": msg, "message": msg, "code": "NAME_REQUIRED"}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             tx = services.create_transaction(
                 office=office,

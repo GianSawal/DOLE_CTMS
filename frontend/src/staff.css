@@ -516,6 +516,17 @@
   color: #fff;
 }
 
+/* Filled buttons read as still clickable when merely faded, so disabled ones go gray */
+.app-shell .btn-primary:disabled,
+.app-shell .btn-success:disabled,
+.app-shell .btn-danger:disabled {
+  opacity: 1;
+  background: #eaecf0;
+  border-color: #eaecf0;
+  color: #98a2b3;
+  box-shadow: none;
+}
+
 .app-shell .btn-ghost-danger {
   color: #b42318 !important;
 }

@@ -20,6 +20,7 @@ export default function CheckIn() {
   const [serviceId, setServiceId] = useState('');
   const [clientName, setClientName] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [nameError, setNameError] = useState(false);
   const [isGroup, setIsGroup] = useState(false);
   const [representativeName, setRepresentativeName] = useState('');
   const [groupSize, setGroupSize] = useState('2');
@@ -55,6 +56,15 @@ export default function CheckIn() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Individual registration needs a name unless the client chose Anonymous
+    if (!isGroup && !isAnonymous && !clientName.trim()) {
+      setNameError(true);
+      setError(t.name_required);
+      const nameInput = document.getElementById('client-name');
+      nameInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      nameInput?.focus({ preventScroll: true });
+      return;
+    }
     if (!serviceId) {
       setError(lang === 'fil' ? 'Mangyaring pumili ng serbisyo bago magpatuloy.' : 'Please select a service to proceed.');
       return;
@@ -79,7 +89,7 @@ export default function CheckIn() {
         return;
       }
     } else {
-      finalClientName = isAnonymous ? 'Anonymous' : (clientName.trim() || null);
+      finalClientName = isAnonymous ? 'Anonymous' : clientName.trim();
     }
 
     if (officeData?.requires_office_code && officeCode.length !== 4) {
@@ -513,11 +523,12 @@ export default function CheckIn() {
                 <div style={{ marginBottom: '1.25rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
                     <label htmlFor="client-name" style={{ margin: 0 }}>
-                      {t.name_label}
+                      {t.name_label} *
                     </label>
                     <button
                       type="button"
                       onClick={() => {
+                        setNameError(false);
                         if (isAnonymous) {
                           setIsAnonymous(false);
                           setClientName('');
@@ -552,6 +563,7 @@ export default function CheckIn() {
                       value={clientName}
                       onChange={(e) => {
                         setClientName(e.target.value);
+                        setNameError(false);
                         if (e.target.value.trim().toLowerCase() === 'anonymous') {
                           setIsAnonymous(true);
                         } else if (isAnonymous && e.target.value.trim().toLowerCase() !== 'anonymous') {
@@ -559,9 +571,11 @@ export default function CheckIn() {
                         }
                       }}
                       placeholder={isAnonymous ? 'Anonymous' : t.name_placeholder}
+                      aria-invalid={nameError}
+                      aria-describedby="client-name-help"
                       style={{
                         backgroundColor: isAnonymous ? 'rgba(3, 5, 186, 0.04)' : '#ffffff',
-                        borderColor: isAnonymous ? 'var(--dole-blue)' : undefined,
+                        borderColor: nameError ? 'var(--dole-red)' : (isAnonymous ? 'var(--dole-blue)' : undefined),
                         fontWeight: isAnonymous ? 700 : 400,
                         color: isAnonymous ? 'var(--dole-blue)' : undefined,
                       }}
@@ -572,6 +586,7 @@ export default function CheckIn() {
                         onClick={() => {
                           setIsAnonymous(false);
                           setClientName('');
+                          setNameError(false);
                         }}
                         style={{
                           position: 'absolute',
@@ -591,8 +606,8 @@ export default function CheckIn() {
                       </button>
                     )}
                   </div>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                    {t.anonymous_note}
+                  <p id="client-name-help" style={{ fontSize: '0.75rem', color: nameError ? 'var(--dole-red)' : 'var(--text-muted)', marginTop: '0.35rem' }}>
+                    {isAnonymous ? t.anonymous_note : (nameError ? t.name_required : t.name_hint)}
                   </p>
                 </div>
               ) : (
