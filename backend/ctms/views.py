@@ -19,7 +19,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .security import login_locked, record_office_code_failure, video_upload_error
 from .models import (
@@ -57,6 +57,7 @@ from .serializers import (
     TicketPublicSerializer,
     StaffTransactionSerializer,
     StaffTokenObtainPairSerializer,
+    StaffTokenRefreshSerializer,
     CtmsAuditLogSerializer,
 )
 from .throttling import CheckinThrottle, LoginThrottle
@@ -140,6 +141,10 @@ class StaffLoginView(TokenObtainPairView):
                 description=f"User '{username}' successfully logged in."
             )
         return response
+
+
+class StaffTokenRefreshView(TokenRefreshView):
+    serializer_class = StaffTokenRefreshSerializer
 
 
 class StaffLogoutView(APIView):

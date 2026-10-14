@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth, LOGOUT_REASON_KEY } from '../../context/AuthContext';
 import AuthLayout from '../../components/AuthLayout';
 import { Notice } from '../../components/ui';
 
@@ -15,6 +15,19 @@ export default function StaffLogin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [capsLock, setCapsLock] = useState(false);
+  const [remember, setRemember] = useState(false);
+  // Shown once after being signed out for inactivity
+  const [signedOutNotice] = useState(() => {
+    try {
+      const reason = sessionStorage.getItem(LOGOUT_REASON_KEY);
+      sessionStorage.removeItem(LOGOUT_REASON_KEY);
+      return reason === 'idle'
+        ? { type: 'info', text: 'You were signed out after 1 hour of inactivity. Sign in again to continue.' }
+        : null;
+    } catch {
+      return null;
+    }
+  });
 
   const checkCapsLock = (e) => {
     if (typeof e.getModifierState === 'function') setCapsLock(e.getModifierState('CapsLock'));
@@ -25,7 +38,7 @@ export default function StaffLogin() {
     try {
       setLoading(true);
       setError('');
-      const signedIn = await login(username.trim(), password);
+      const signedIn = await login(username.trim(), password, remember);
       // A TV Display account opens its office's TV board instead of the staff pages
       navigate(signedIn?.role === 'DISPLAY' && signedIn.display ? signedIn.display.url : '/staff/queue');
     } catch (err) {
@@ -51,7 +64,7 @@ export default function StaffLogin() {
         <p className="page-subtitle">Use your DOLE staff account.</p>
       </div>
 
-      <Notice notice={error ? { type: 'error', text: error } : null} />
+      <Notice notice={error ? { type: 'error', text: error } : signedOutNotice} />
 
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '1.1rem' }}>
         <div>
@@ -102,6 +115,21 @@ export default function StaffLogin() {
             </p>
           )}
         </div>
+
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.55rem', fontWeight: 500, cursor: 'pointer', margin: 0 }}>
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            style={{ width: '18px', height: '18px', minHeight: 0, marginTop: '0.15rem', flexShrink: 0 }}
+          />
+          <span>
+            Remember me
+            <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--ui-muted)', fontWeight: 400 }}>
+              Stay signed in even when idle. Don't check this on a shared computer.
+            </span>
+          </span>
+        </label>
 
         <button type="submit" disabled={loading} className="btn btn-primary btn-lg w-full" style={{ marginTop: '0.35rem' }}>
           {loading ? 'Signing in…' : 'Sign in'}

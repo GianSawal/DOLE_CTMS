@@ -1,5 +1,9 @@
+from datetime import timedelta
+
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.utils import datetime_from_epoch
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from .models import (
@@ -462,13 +466,39 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
         return personnel_display_name(obj.assigned_to) if obj.assigned_to_id else None
 
 
+# "Remember me": the sign-in lasts this long instead of SIMPLE_JWT's REFRESH_TOKEN_LIFETIME
+# (and the browser does not sign the user out after an hour of inactivity).
+REMEMBER_ME_LIFETIME = timedelta(days=30)
+# A TV Display account with "Remember me" stays signed in for good (a token needs an expiry,
+# so: ten years, renewed on every refresh). Sign out, deactivation or deletion still end it.
+REMEMBER_TV_LIFETIME = timedelta(days=3650)
+
+
+def remember_refresh_token(refresh, tv=False):
+    """Marks a refresh token as "Remember me" and gives it the longer lifetime."""
+    refresh['remember'] = 'tv' if tv else True
+    refresh.set_exp(lifetime=REMEMBER_TV_LIFETIME if tv else REMEMBER_ME_LIFETIME)
+    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+    OutstandingToken.objects.filter(jti=refresh['jti']).update(expires_at=datetime_from_epoch(refresh['exp']))
+    return refresh
+
+
 class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
     Staff login (is_staff, same requirement as the CSM) returning the session summary.
     TV Display accounts may also sign in; they are sent straight to their office's TV.
     """
+    remember = serializers.BooleanField(required=False, default=False)
+
+    def get_token(self, user):
+        token = super().get_token(user)
+        if getattr(self, '_remember', False):
+            from .permissions import is_display_account
+            remember_refresh_token(token, tv=is_display_account(user))
+        return token
 
     def validate(self, attrs):
+        self._remember = bool(attrs.get('remember'))
         data = super().validate(attrs)
         from .permissions import display_session, is_display_account, staff_session
         if is_display_account(self.user):
@@ -477,6 +507,19 @@ class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
         elif not self.user.is_staff:
             raise serializers.ValidationError("Access denied. Only DOLE staff members may log in.")
         data['user'] = staff_session(self.user)
+        data['remember'] = self._remember
+        return data
+
+
+class StaffTokenRefreshSerializer(TokenRefreshSerializer):
+    """Token refresh that keeps a "Remember me" sign-in on its longer lifetime when rotating."""
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        if 'refresh' in data:
+            rotated = RefreshToken(data['refresh'])
+            if rotated.get('remember'):
+                data['refresh'] = str(remember_refresh_token(rotated, tv=rotated['remember'] == 'tv'))
         return data
 
 

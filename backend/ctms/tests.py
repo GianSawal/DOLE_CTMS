@@ -2088,3 +2088,64 @@ class TvDisplayAccountTestCase(CsmTablesTestCase):
         CsmOffice.objects.filter(pk=self.aurora.pk).update(is_active=False)
         res = self.client.post('/api/staff/auth/login/', {'username': 'tv_aurora', 'password': 'Tv-Pass-123'}, format='json')
         self.assertEqual(res.status_code, 400)
+
+
+class RememberMeSignInTestCase(CsmTablesTestCase):
+    """"Remember me" sign-ins last 30 days, also across token refreshes; normal ones keep 1 day."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.office = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.user = User.objects.create_user(username="ana", password="Ana-Pass-1", is_staff=True, first_name="Ana")
+        CtmsStaffOffice.objects.create(user=self.user, office=self.office)
+
+    def login(self, **extra):
+        res = self.client.post('/api/staff/auth/login/', {'username': 'ana', 'password': 'Ana-Pass-1', **extra}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        return res.data
+
+    @staticmethod
+    def days_left(refresh):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        token = RefreshToken(refresh)
+        return (token['exp'] - timezone.now().timestamp()) / 86400, token.get('remember', False)
+
+    def test_normal_sign_in_lasts_one_day(self):
+        days, remember = self.days_left(self.login()['refresh'])
+        self.assertAlmostEqual(days, 1, delta=0.01)
+        self.assertFalse(remember)
+
+    def test_remember_me_lasts_thirty_days_and_survives_refresh(self):
+        data = self.login(remember=True)
+        self.assertTrue(data['remember'])
+        days, remember = self.days_left(data['refresh'])
+        self.assertAlmostEqual(days, 30, delta=0.01)
+        self.assertTrue(remember)
+        refreshed = self.client.post('/api/staff/auth/refresh/', {'refresh': data['refresh']}, format='json')
+        self.assertEqual(refreshed.status_code, 200)
+        days, remember = self.days_left(refreshed.data['refresh'])
+        self.assertAlmostEqual(days, 30, delta=0.01)
+        self.assertTrue(remember)
+        # Sign-out still revokes it
+        self.client.post('/api/staff/auth/logout/', {'refresh': refreshed.data['refresh']}, format='json')
+        again = self.client.post('/api/staff/auth/refresh/', {'refresh': refreshed.data['refresh']}, format='json')
+        self.assertEqual(again.status_code, 401)
+
+    def test_tv_account_with_remember_me_stays_signed_in(self):
+        tv = User.objects.create_user(username="tv_bat", password="Tv-Pass-123", is_staff=False)
+        DolePersonnel.objects.create(user=tv, employee_id="tv_bat", first_name="TV Display", last_name="Bataan",
+                                     office=self.office, role=DolePersonnel.ROLE_DISPLAY)
+        res = self.client.post('/api/staff/auth/login/', {'username': 'tv_bat', 'password': 'Tv-Pass-123',
+                                                          'remember': True}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        days, remember = self.days_left(res.data['refresh'])
+        self.assertGreater(days, 3600)
+        self.assertEqual(remember, 'tv')
+        refreshed = self.client.post('/api/staff/auth/refresh/', {'refresh': res.data['refresh']}, format='json')
+        days, remember = self.days_left(refreshed.data['refresh'])
+        self.assertGreater(days, 3600)
+        # Deactivating the TV account still ends the sign-in
+        User.objects.filter(pk=tv.pk).update(is_active=False)
+        again = self.client.post('/api/staff/auth/refresh/', {'refresh': refreshed.data['refresh']}, format='json')
+        self.assertEqual(again.status_code, 401)

@@ -1,9 +1,9 @@
 import { apiRequest } from './client';
 
 export const staffApi = {
-  login: (username, password) => apiRequest('/staff/auth/login/', {
+  login: (username, password, remember = false) => apiRequest('/staff/auth/login/', {
     method: 'POST',
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, remember }),
   }),
   getMe: () => apiRequest('/staff/auth/me/'),
 
