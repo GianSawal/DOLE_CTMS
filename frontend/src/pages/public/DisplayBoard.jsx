@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { publicApi } from '../../api/public';
+import { useAuth } from '../../context/AuthContext';
 import { translations } from '../../locales/translations';
 import {
   announceNowServing,
@@ -34,7 +35,12 @@ export default function DisplayBoard() {
   const { officeId } = useParams();
   // Secret key from the TV link on the Check-in QR page; unlocks the current check-in code.
   const [searchParams] = useSearchParams();
-  const displayKey = searchParams.get('key') || '';
+  const { user } = useAuth();
+  // Signed in as this office's TV account: use the office's current TV key, so a newly
+  // issued TV link takes effect without retyping the address on the TV
+  const accountKey = user?.role === 'DISPLAY' && String(user.display?.office_id) === String(officeId)
+    ? user.display.key : '';
+  const displayKey = accountKey || searchParams.get('key') || '';
   // The TV always shows English, light theme, with chime & voice on (no on-screen toggles)
   const lang = 'en';
   const t = translations[lang];

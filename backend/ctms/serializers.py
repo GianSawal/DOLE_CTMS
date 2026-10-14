@@ -463,13 +463,19 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
 
 
 class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Staff-only login (is_staff, same requirement as the CSM) returning the session summary."""
+    """
+    Staff login (is_staff, same requirement as the CSM) returning the session summary.
+    TV Display accounts may also sign in; they are sent straight to their office's TV.
+    """
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        if not self.user.is_staff:
+        from .permissions import display_session, is_display_account, staff_session
+        if is_display_account(self.user):
+            if not display_session(self.user):
+                raise serializers.ValidationError("This TV account's office is not active. Ask the system administrator.")
+        elif not self.user.is_staff:
             raise serializers.ValidationError("Access denied. Only DOLE staff members may log in.")
-        from .permissions import staff_session
         data['user'] = staff_session(self.user)
         return data
 

@@ -64,6 +64,7 @@ from .permissions import (
     IsRegionalAdmin,
     IsSystemAdmin,
     admin_scope_offices,
+    is_display_account,
     office_type,
     staff_session,
 )
@@ -157,7 +158,7 @@ class StaffMeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if not request.user.is_staff:
+        if not request.user.is_staff and not is_display_account(request.user):
             return Response({"detail": "Forbidden: Staff account required."}, status=status.HTTP_403_FORBIDDEN)
         return Response(staff_session(request.user))
 
@@ -1480,16 +1481,18 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
     Unified User Management: each staff account is created and edited together
     with its personnel profile (name, personnel ID, office, position, role).
     Regional administrators only; the system admin account is not listed.
+    TV Display accounts are created, listed and managed by the system admin only.
     """
     permission_classes = [IsRegionalAdmin]
 
     # ---------------------------------------------------------------- helpers
     def _queryset(self):
-        qs = (User.objects.filter(is_staff=True)
+        is_tv = models.Q(dole_personnel__role=DolePersonnel.ROLE_DISPLAY)
+        qs = (User.objects.filter(models.Q(is_staff=True) | is_tv)
               .select_related('dole_personnel', 'dole_personnel__office', 'occupied_window')
               .prefetch_related('staff_offices__office'))
         if not self.request.user.is_superuser:
-            qs = qs.filter(is_superuser=False)
+            qs = qs.filter(is_superuser=False).exclude(is_tv)
         return qs
 
     def _get(self, pk):
@@ -1542,10 +1545,16 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
 
     def _resolve_role(self, data, office, current=None):
         role = self._clean(data, 'role').upper() or current or DolePersonnel.ROLE_PERSONNEL
-        if role not in (DolePersonnel.ROLE_PERSONNEL, DolePersonnel.ROLE_ADMIN):
-            raise ValueError("Role must be Personnel or Administrator.")
+        if role not in (DolePersonnel.ROLE_PERSONNEL, DolePersonnel.ROLE_ADMIN, DolePersonnel.ROLE_DISPLAY):
+            raise ValueError("Role must be Personnel, Administrator or TV Display.")
         if role == DolePersonnel.ROLE_ADMIN and office_type(office) != 'REGIONAL':
             raise ValueError("Administrator role is only available for regional office accounts.")
+        if role == DolePersonnel.ROLE_DISPLAY and not self.request.user.is_superuser:
+            raise ValueError("Only the system administrator can create TV Display accounts.")
+        # A TV sign-in and a staff sign-in differ in what they can reach: no switching either way
+        if current and (current == DolePersonnel.ROLE_DISPLAY) != (role == DolePersonnel.ROLE_DISPLAY):
+            raise ValueError("A TV Display account can't become a staff account, or the other way around. "
+                             "Create a new account instead.")
         return role
 
     def _active_clients(self, user):
@@ -1561,7 +1570,7 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
         if office_id:
             qs = qs.filter(models.Q(dole_personnel__office_id=office_id) | models.Q(staff_offices__office_id=office_id))
         role = (request.query_params.get('role') or '').upper()
-        if role in (DolePersonnel.ROLE_PERSONNEL, DolePersonnel.ROLE_ADMIN):
+        if role in (DolePersonnel.ROLE_PERSONNEL, DolePersonnel.ROLE_ADMIN, DolePersonnel.ROLE_DISPLAY):
             qs = qs.filter(dole_personnel__role=role)
         status_param = request.query_params.get('status')
         if status_param in ('active', 'inactive'):
@@ -1590,29 +1599,36 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
             if User.objects.filter(username__iexact=username).exists():
                 raise ValueError(f"The username '{username}' is already taken.")
             password = self._validate_password(data, required=True)
-            first_name, last_name = self._clean(data, 'first_name'), self._clean(data, 'last_name')
-            if not first_name or not last_name:
-                raise ValueError("First and last name are required.")
             office = self._resolve_office(data)
             role = self._resolve_role(data, office)
+            is_tv = role == DolePersonnel.ROLE_DISPLAY
+            first_name, last_name = self._clean(data, 'first_name'), self._clean(data, 'last_name')
+            if is_tv:  # names are optional for a TV sign-in
+                first_name, last_name = first_name or 'TV Display', last_name or office.name[:100]
+            if not first_name or not last_name:
+                raise ValueError("First and last name are required.")
             employee_id = self._clean(data, 'employee_id') or username
             if DolePersonnel.objects.filter(employee_id__iexact=employee_id).exists():
                 raise ValueError(f"Personnel ID '{employee_id}' is already used by another account.")
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+        # A TV account is not staff and has no office assignment, so it never appears among
+        # personnel (windows, transfers, reports) and every staff endpoint refuses it.
         user = User.objects.create_user(
             username=username, password=password, email=self._clean(data, 'email'),
-            first_name=first_name[:150], last_name=last_name[:150], is_staff=True, is_active=True,
+            first_name=first_name[:150], last_name=last_name[:150], is_staff=not is_tv, is_active=True,
         )
-        CtmsStaffOffice.objects.create(user=user, office=office)
+        if not is_tv:
+            CtmsStaffOffice.objects.create(user=user, office=office)
         DolePersonnel.objects.create(
             user=user, employee_id=employee_id, first_name=first_name,
             middle_name=self._clean(data, 'middle_name'), last_name=last_name,
-            position=self._clean(data, 'position'), office=office, role=role,
-            is_active=True, must_change_password=True,
+            position='' if is_tv else self._clean(data, 'position'), office=office, role=role,
+            is_active=True, must_change_password=not is_tv,  # nobody types a new password on a TV
         )
-        self._audit('USER_CREATE', user, f"Created account '{user.username}' ({role.title()}, {office.name})", office=office)
+        kind = 'TV Display' if is_tv else role.title()
+        self._audit('USER_CREATE', user, f"Created account '{user.username}' ({kind}, {office.name})", office=office)
         return Response(self._out(user), status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, pk=None):
@@ -1678,8 +1694,9 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
             changes['password'] = 'reset'
         user.save()
 
-        # Office assignment (single office per account)
-        if 'office' in changes or not CtmsStaffOffice.objects.filter(user=user).exists():
+        # Office assignment (single office per account); a TV account has none
+        is_tv = role == DolePersonnel.ROLE_DISPLAY
+        if not is_tv and ('office' in changes or not CtmsStaffOffice.objects.filter(user=user).exists()):
             CtmsStaffOffice.objects.filter(user=user).exclude(office=office).delete()
             CtmsStaffOffice.objects.get_or_create(user=user, office=office)
             CtmsCounter.objects.filter(assigned_user=user).exclude(office=office).update(assigned_user=None, assigned_at=None)
@@ -1701,7 +1718,7 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
         profile.role = role
         profile.office = office
         profile.is_active = user.is_active
-        if password:
+        if password and not is_tv:
             profile.must_change_password = True
         profile.save()
 
@@ -1743,6 +1760,9 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(password)
         user.save()
+        if is_display_account(user):
+            self._audit('USER_PASSWORD_RESET', user, f"Reset password for '{user.username}'")
+            return Response({"status": "success", "message": f"New password set for {user.username}. Sign in on the TV with it."})
         DolePersonnel.objects.filter(user=user).update(must_change_password=True)
         self._audit('USER_PASSWORD_RESET', user, f"Reset password for '{user.username}'")
         return Response({"status": "success", "message": f"Temporary password set for {user.username}. They must change it at next login."})

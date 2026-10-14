@@ -1978,3 +1978,113 @@ class TvCallAnnouncementTestCase(CsmTablesTestCase):
         self.assertEqual(self.client.get('/api/public/display/999999/calls/').status_code, 404)
         CsmOffice.objects.filter(pk=self.office.pk).update(is_active=False)
         self.assertEqual(self.client.get(self.url).status_code, 404)
+
+
+class TvDisplayAccountTestCase(CsmTablesTestCase):
+    """TV Display accounts: system admin only; sign-in opens the office TV; no staff access."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.aurora = CsmOffice.objects.create(name="Aurora Field Office", code="AUR", is_active=True)
+        self.ro3 = CsmOffice.objects.create(name="DOLE Regional Office III", code="RO3", is_active=True)
+        CtmsOfficeProfile.objects.update_or_create(office=self.ro3, defaults={'office_type': 'REGIONAL'})
+        self.root = User.objects.create_superuser(username="root", password="Root-Pass-1")
+        self.regional_admin = User.objects.create_user(username="radmin", password="Admin-Pass-1", is_staff=True,
+                                                       first_name="Rita", last_name="Admin")
+        CtmsStaffOffice.objects.create(user=self.regional_admin, office=self.ro3)
+        DolePersonnel.objects.create(user=self.regional_admin, employee_id="radmin", first_name="Rita",
+                                     last_name="Admin", office=self.ro3, role=DolePersonnel.ROLE_ADMIN)
+
+    def create_tv(self, username="tv_aurora", office=None):
+        self.client.force_authenticate(user=self.root)
+        res = self.client.post('/api/staff/users/', {
+            'username': username, 'password': 'Tv-Pass-123', 'confirm_password': 'Tv-Pass-123',
+            'role': 'DISPLAY', 'office': (office or self.aurora).id,
+        }, format='json')
+        self.client.force_authenticate(user=None)
+        return res
+
+    def test_system_admin_creates_a_tv_account_that_is_not_staff(self):
+        res = self.create_tv()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['role'], 'DISPLAY')
+        tv = User.objects.get(username="tv_aurora")
+        self.assertFalse(tv.is_staff)
+        self.assertFalse(CtmsStaffOffice.objects.filter(user=tv).exists())
+        self.assertFalse(tv.dole_personnel.must_change_password)
+        self.assertEqual(tv.dole_personnel.office, self.aurora)
+
+    def test_regional_admin_cannot_create_or_see_tv_accounts(self):
+        self.create_tv()
+        self.client.force_authenticate(user=self.regional_admin)
+        res = self.client.post('/api/staff/users/', {
+            'username': 'tv2', 'password': 'Tv-Pass-123', 'role': 'DISPLAY', 'office': self.aurora.id,
+        }, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("system administrator", res.data['detail'])
+        listed = [a['username'] for a in self.client.get('/api/staff/users/').data]
+        self.assertNotIn('tv_aurora', listed)
+        self.client.force_authenticate(user=self.root)
+        self.assertIn('tv_aurora', [a['username'] for a in self.client.get('/api/staff/users/').data])
+
+    def test_sign_in_returns_the_office_tv_link_with_its_key(self):
+        self.create_tv()
+        res = self.client.post('/api/staff/auth/login/', {'username': 'tv_aurora', 'password': 'Tv-Pass-123'}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        user = res.data['user']
+        key = CtmsOfficeQrConfig.objects.get(office=self.aurora).display_key
+        self.assertEqual(user['role'], 'DISPLAY')
+        self.assertEqual(user['display']['office_id'], self.aurora.id)
+        self.assertEqual(user['display']['url'], f"/display/office/{self.aurora.id}?key={key}")
+        self.assertEqual(user['assigned_offices'], [])
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
+        self.assertEqual(self.client.get('/api/staff/auth/me/').data['display']['key'], key)
+
+    def test_tv_account_cannot_use_staff_pages_or_actions(self):
+        self.create_tv()
+        tv = User.objects.get(username="tv_aurora")
+        self.client.force_authenticate(user=tv)
+        for method, url, body in (
+            ('get', f'/api/staff/queue/?office={self.aurora.id}', None),
+            ('post', '/api/staff/call-next/', {'office': self.aurora.id}),
+            ('get', '/api/staff/my-clients/', None),
+            ('get', '/api/staff/transactions/', None),
+            ('get', f'/api/staff/qr-config/?office={self.aurora.id}', None),
+            ('get', '/api/staff/windows/', None),
+            ('get', '/api/staff/users/', None),
+            ('get', '/api/staff/reports/summary/', None),
+        ):
+            res = getattr(self.client, method)(url, body, format='json') if body else getattr(self.client, method)(url)
+            self.assertIn(res.status_code, (401, 403), f"{method} {url} -> {res.status_code}")
+
+    def test_tv_and_staff_roles_cannot_be_switched(self):
+        self.create_tv()
+        tv = User.objects.get(username="tv_aurora")
+        self.client.force_authenticate(user=self.root)
+        res = self.client.patch(f'/api/staff/users/{tv.id}/', {'role': 'PERSONNEL'}, format='json')
+        self.assertEqual(res.status_code, 400)
+        res = self.client.patch(f'/api/staff/users/{self.regional_admin.id}/', {'role': 'DISPLAY'}, format='json')
+        self.assertEqual(res.status_code, 400)
+        # Moving the TV account to another office is fine and keeps it a non-staff account
+        res = self.client.patch(f'/api/staff/users/{tv.id}/', {'office': self.ro3.id}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        tv.refresh_from_db()
+        self.assertFalse(tv.is_staff)
+        self.assertFalse(CtmsStaffOffice.objects.filter(user=tv).exists())
+
+    def test_password_reset_does_not_force_a_change_on_the_tv(self):
+        self.create_tv()
+        tv = User.objects.get(username="tv_aurora")
+        self.client.force_authenticate(user=self.root)
+        res = self.client.post(f'/api/staff/users/{tv.id}/reset-password/', {'password': 'New-Tv-Pass-1'}, format='json')
+        self.assertEqual(res.status_code, 200)
+        tv.refresh_from_db()
+        self.assertTrue(tv.check_password('New-Tv-Pass-1'))
+        self.assertFalse(tv.dole_personnel.must_change_password)
+
+    def test_tv_sign_in_refused_when_its_office_is_inactive(self):
+        self.create_tv()
+        CsmOffice.objects.filter(pk=self.aurora.pk).update(is_active=False)
+        res = self.client.post('/api/staff/auth/login/', {'username': 'tv_aurora', 'password': 'Tv-Pass-123'}, format='json')
+        self.assertEqual(res.status_code, 400)

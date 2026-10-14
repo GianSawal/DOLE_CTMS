@@ -6,6 +6,8 @@ Role and office-type rules, in one place.
   (DOLE RO3). Manages users, services and reports, and oversees every office.
 - Everyone else (all provincial accounts, and regional personnel): operational
   access to their own office only (Queue, Windows, My Clients, TV, QR, Transactions).
+- TV Display accounts (created by the system admin only): not staff. Signing in just
+  opens their office's TV display; every staff page and action refuses them.
 
 Office type and role are separate: an ADMIN role on a provincial account grants nothing extra.
 """
@@ -34,6 +36,32 @@ def primary_office(user):
         return profile.office
     link = CtmsStaffOffice.objects.filter(user=user).select_related('office').first() if user and user.is_authenticated else None
     return link.office if link else None
+
+
+def is_display_account(user):
+    """A sign-in for an office TV (role DISPLAY): not staff, no access beyond the TV page."""
+    if not user or not user.is_authenticated or user.is_superuser:
+        return False
+    profile = personnel_profile(user)
+    return bool(profile and profile.role == DolePersonnel.ROLE_DISPLAY)
+
+
+def display_session(user):
+    """Where a TV Display account goes after signing in: its office's TV, with the office's TV key."""
+    from .models import CtmsOfficeQrConfig
+    from .services import get_display_key
+
+    office = primary_office(user)
+    if not office or not office.is_active:
+        return None
+    config, _ = CtmsOfficeQrConfig.objects.get_or_create(office=office)
+    key = get_display_key(config)
+    return {
+        "office_id": office.id,
+        "office_name": office.name,
+        "key": key,
+        "url": f"/display/office/{office.id}?key={key}",
+    }
 
 
 def office_type(office):
@@ -124,4 +152,6 @@ def staff_session(user):
                             "office_name": window.office.name} if window else None,
     }
     data.update(user_access(user))
+    if is_display_account(user):
+        data["display"] = display_session(user)
     return data

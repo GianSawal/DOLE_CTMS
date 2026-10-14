@@ -200,9 +200,13 @@ class DolePersonnel(models.Model):
     """
     ROLE_PERSONNEL = 'PERSONNEL'
     ROLE_ADMIN = 'ADMIN'
+    # A sign-in for an office TV: it only opens that office's TV display. Not staff
+    # (User.is_staff is False), so every staff page and action refuses it.
+    ROLE_DISPLAY = 'DISPLAY'
     ROLE_CHOICES = (
         (ROLE_PERSONNEL, 'Personnel'),
         (ROLE_ADMIN, 'Administrator'),
+        (ROLE_DISPLAY, 'TV Display'),
     )
 
     id = models.BigAutoField(primary_key=True)

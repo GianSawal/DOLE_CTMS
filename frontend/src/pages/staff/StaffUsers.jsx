@@ -38,6 +38,7 @@ function formatDate(iso) {
 
 function RoleBadge({ account }) {
   if (account.role === 'SYSTEM_ADMIN') return <span className="badge" style={{ background: '#1e293b', color: '#fff' }}>System Admin</span>;
+  if (account.role === 'DISPLAY') return <span className="badge" style={{ background: '#e0f2fe', color: '#075985' }}>TV Display</span>;
   if (account.is_regional_admin) return <span className="badge badge-priority">Administrator</span>;
   return <span className="badge badge-waiting">Personnel</span>;
 }
@@ -99,6 +100,9 @@ export default function StaffUsers() {
 
   const selectedOffice = offices.find(o => String(o.id) === String(form.office));
   const adminAllowed = selectedOffice?.office_type === 'REGIONAL';
+  // TV Display accounts (system admin only) just open their office's TV board after signing in
+  const isTvForm = form.role === 'DISPLAY';
+  const canCreateTv = Boolean(me?.is_superuser);
 
   // An Administrator role only means something on a regional account.
   useEffect(() => {
@@ -116,7 +120,7 @@ export default function StaffUsers() {
       ...EMPTY_FORM,
       username: account.username,
       email: account.email || '',
-      role: account.role === 'ADMIN' ? 'ADMIN' : 'PERSONNEL',
+      role: ['ADMIN', 'DISPLAY'].includes(account.role) ? account.role : 'PERSONNEL',
       first_name: account.first_name || '',
       middle_name: account.middle_name || '',
       last_name: account.last_name || '',
@@ -154,7 +158,9 @@ export default function StaffUsers() {
           password: form.password,
           confirm_password: form.confirm_password,
         });
-        flash('success', `Account ${created.username} created. They will be asked to change the password at first login.`);
+        flash('success', created.role === 'DISPLAY'
+          ? `TV account ${created.username} created. Sign in with it on the office TV; it opens the TV display automatically.`
+          : `Account ${created.username} created. They will be asked to change the password at first login.`);
       } else {
         await staffApi.updateEmployee(formModal.account.id, payload);
         flash('success', `Account ${formModal.account.username} updated.`);
@@ -250,6 +256,7 @@ export default function StaffUsers() {
             <option value="">All roles</option>
             <option value="PERSONNEL">Personnel</option>
             <option value="ADMIN">Administrator</option>
+            {canCreateTv && <option value="DISPLAY">TV Display</option>}
           </select>
           <select value={filters.status} onChange={(e) => setFilter('status', e.target.value)} aria-label="Status" style={{ minHeight: '44px' }}>
             <option value="">Active and inactive</option>
@@ -384,7 +391,7 @@ export default function StaffUsers() {
               {formModal.mode === 'create' && (
                 <>
                   <div>
-                    <label htmlFor="acc-password">Temporary password *</label>
+                    <label htmlFor="acc-password">{isTvForm ? 'Password *' : 'Temporary password *'}</label>
                     <input id="acc-password" type="password" required minLength={6} value={form.password}
                       onChange={(e) => setField('password', e.target.value)} autoComplete="new-password" />
                   </div>
@@ -397,17 +404,48 @@ export default function StaffUsers() {
               )}
               <div>
                 <label htmlFor="acc-role">Role *</label>
-                <select id="acc-role" value={form.role} onChange={(e) => setField('role', e.target.value)}>
-                  <option value="PERSONNEL">Personnel</option>
-                  <option value="ADMIN" disabled={!adminAllowed}>Administrator{adminAllowed ? '' : ' (regional office only)'}</option>
+                {/* A TV account and a staff account can't be switched into each other */}
+                <select id="acc-role" value={form.role} onChange={(e) => setField('role', e.target.value)}
+                  disabled={formModal.mode === 'edit' && isTvForm}>
+                  {!(formModal.mode === 'edit' && isTvForm) && (
+                    <>
+                      <option value="PERSONNEL">Personnel</option>
+                      <option value="ADMIN" disabled={!adminAllowed}>Administrator{adminAllowed ? '' : ' (regional office only)'}</option>
+                    </>
+                  )}
+                  {(isTvForm || (formModal.mode === 'create' && canCreateTv)) && <option value="DISPLAY">TV Display</option>}
                 </select>
               </div>
             </div>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.5rem 0 1.4rem' }}>
-              Administrators of the regional office manage accounts, services and reports for all offices.
-              {formModal.mode === 'create' && ' New accounts must change their password at first login.'}
-            </p>
+            {isTvForm ? (
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.5rem 0 1.4rem' }}>
+                Sign in with this account on the office TV: it opens that office's TV display (with the check-in code)
+                automatically. It cannot open any staff page or act on clients.
+              </p>
+            ) : (
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.5rem 0 1.4rem' }}>
+                Administrators of the regional office manage accounts, services and reports for all offices.
+                {formModal.mode === 'create' && ' New accounts must change their password at first login.'}
+              </p>
+            )}
 
+            {isTvForm ? (
+              <>
+                <h3 style={sectionHeading}>TV display</h3>
+                <div style={fieldGrid}>
+                  <div>
+                    <label htmlFor="acc-office">Office whose TV this is *</label>
+                    <select id="acc-office" required value={form.office} onChange={(e) => setField('office', e.target.value)}>
+                      <option value="">Choose office…</option>
+                      {offices.map(o => (
+                        <option key={o.id} value={o.id}>{o.name}{o.office_type === 'REGIONAL' ? ' (Regional)' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            ) : (
+            <>
             <h3 style={sectionHeading}>Personnel details</h3>
             <div style={fieldGrid}>
               <div>
@@ -443,6 +481,8 @@ export default function StaffUsers() {
                 </datalist>
               </div>
             </div>
+            </>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.5rem' }}>
               <button type="button" className="btn btn-outline" onClick={() => setFormModal(null)}>Cancel</button>

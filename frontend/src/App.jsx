@@ -21,6 +21,12 @@ import StaffUsers from './pages/staff/StaffUsers';
 import StaffAuditLogs from './pages/staff/StaffAuditLogs';
 import StaffChangePassword from './pages/staff/StaffChangePassword';
 
+// Where a signed-in TV Display account belongs: its office's TV board (never the staff pages)
+function tvDisplayRedirect(user) {
+  if (user?.role !== 'DISPLAY') return null;
+  return <Navigate to={user.display?.url || '/staff/login'} replace />;
+}
+
 function ProtectedRoute({ children }) {
   const { user, isAuthenticated, loading } = useAuth();
 
@@ -35,6 +41,9 @@ function ProtectedRoute({ children }) {
   if (!isAuthenticated) {
     return <Navigate to="/staff/login" replace />;
   }
+
+  const tv = tvDisplayRedirect(user);
+  if (tv) return tv;
 
   if (user?.must_change_password) {
     return <Navigate to="/staff/change-password" replace />;
@@ -57,6 +66,9 @@ function PermissionRoute({ permission, children }) {
   if (!isAuthenticated) {
     return <Navigate to="/staff/login" replace />;
   }
+
+  const tv = tvDisplayRedirect(user);
+  if (tv) return tv;
 
   if (user?.must_change_password) {
     return <Navigate to="/staff/change-password" replace />;
@@ -84,6 +96,9 @@ function ChangePasswordRoute({ children }) {
   if (!isAuthenticated) {
     return <Navigate to="/staff/login" replace />;
   }
+
+  const tv = tvDisplayRedirect(user);
+  if (tv) return tv;
 
   if (!user?.must_change_password) {
     return <Navigate to="/staff/queue" replace />;
