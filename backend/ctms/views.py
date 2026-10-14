@@ -2,6 +2,7 @@ import io
 import logging
 import math
 import secrets
+from datetime import timedelta
 
 import qrcode
 from django.conf import settings
@@ -38,6 +39,7 @@ from .models import (
     CtmsAuditLog,
     CtmsNotification,
     CtmsAssignmentHistory,
+    CtmsCallAnnouncement,
     log_audit_event,
 )
 from .serializers import (
@@ -349,6 +351,54 @@ def get_service_description(service_name):
     if 'job fair' in s_lower:
         return 'Regulatory evaluation and permit issuance for job recruitment fairs.'
     return 'Frontline public service, inquiry assistance, and document processing.'
+
+
+class PublicDisplayCallsView(APIView):
+    """
+    The office TV's announcement feed, polled about once a second.
+
+    GET ?after=<id> returns every call logged after that id, oldest first, so calls made
+    at the same moment by different windows are all announced, in order. Without `after`
+    (a TV that just opened) it returns only the current cursor: earlier calls are not
+    replayed. Calls from the last few seconds are always included as well, so a call whose
+    database transaction committed after a later-numbered one is still picked up; the TV
+    skips ids it has already announced. Nothing is consumed, so several TVs can follow
+    the same office. Queue numbers and window names only, never client names.
+    """
+    permission_classes = [permissions.AllowAny]
+    LOOKBACK = timedelta(seconds=15)
+    BATCH = 50
+
+    def get(self, request, office_id):
+        if not CsmOffice.objects.filter(pk=office_id, is_active=True).exists():
+            raise Http404
+        now = timezone.now()
+        office_calls = CtmsCallAnnouncement.objects.filter(office_id=office_id)
+        latest_id = office_calls.order_by('-id').values_list('id', flat=True).first() or 0
+
+        raw_after = (request.query_params.get('after') or '').strip()
+        if not raw_after.isdigit():
+            return Response({"cursor": latest_id, "calls": [], "has_more": False})
+
+        after = int(raw_after)
+        rows = list(
+            office_calls.filter(models.Q(id__gt=after) | models.Q(created_at__gte=now - self.LOOKBACK))
+            .order_by('id')[:self.BATCH + 1]
+        )
+        has_more = len(rows) > self.BATCH
+        rows = rows[:self.BATCH]
+        calls = [{
+            "id": r.id,
+            "kind": r.kind,
+            "queue_no": r.queue_no,
+            "is_priority": r.is_priority,
+            "counter": r.counter_name,
+            "personnel": r.personnel_name,
+            "created_at": r.created_at.isoformat(),
+            "age_seconds": max(0, round((now - r.created_at).total_seconds(), 1)),
+        } for r in rows]
+        cursor = max([after] + [r.id for r in rows])
+        return Response({"cursor": cursor, "calls": calls, "has_more": has_more})
 
 
 class PublicDisplayBoardView(APIView):

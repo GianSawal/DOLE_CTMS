@@ -556,6 +556,46 @@ class CtmsAssignmentHistory(models.Model):
         return f"{self.transaction_id} {self.event} {self.from_user_name} -> {self.to_user_name}"
 
 
+class CtmsCallAnnouncement(models.Model):
+    """
+    Append-only log of the calls the office TV announces (call, recall, resume at a window).
+    Each TV polls it with the last id it has seen, so calls made at the same moment by
+    different windows are all announced, in order. Rows are never consumed, so any number
+    of TVs can read the same office's calls; old rows are pruned after a few days.
+    """
+    KIND_CALL = 'CALL'
+    KIND_RECALL = 'RECALL'
+    KIND_RESUME = 'RESUME'
+    KIND_CHOICES = (
+        (KIND_CALL, 'Call'),
+        (KIND_RECALL, 'Recall'),
+        (KIND_RESUME, 'Resume'),
+    )
+
+    id = models.BigAutoField(primary_key=True)  # the polling cursor / announcement order
+    office = models.ForeignKey(CsmOffice, on_delete=models.PROTECT, related_name='+')
+    transaction = models.ForeignKey(CtmsTransaction, on_delete=models.CASCADE, related_name='call_announcements')
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, default=KIND_CALL)
+    queue_no = models.CharField(max_length=20)
+    is_priority = models.BooleanField(default=False)
+    counter_name = models.CharField(max_length=50, blank=True, default='')
+    personnel_name = models.CharField(max_length=200, blank=True, default='')
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = 'ctms_call_announcement'
+        verbose_name = 'CTMS Call Announcement'
+        verbose_name_plural = 'CTMS Call Announcements'
+        ordering = ['id']
+        indexes = [
+            models.Index(fields=['office', 'id']),
+            models.Index(fields=['office', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"#{self.id} {self.kind} {self.queue_no} @ {self.counter_name}"
+
+
 # =====================================================================
 # Audit Log Model
 # =====================================================================

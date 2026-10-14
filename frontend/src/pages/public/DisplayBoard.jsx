@@ -143,9 +143,6 @@ export default function DisplayBoard() {
     return currentVideoUrl ? parseVideoEmbedUrl(currentVideoUrl) : null;
   }, [currentVideoUrl]);
 
-  const prevServingRef = useRef([]);
-  const lastCalledRef = useRef(null);
-  const isInitialLoadRef = useRef(true);
 
   // Audio ducking functions: smoothly tone down video when queue call begins
   const duckAudio = (targetVolume = 0.08, durationMs = 300) => {
@@ -626,8 +623,6 @@ export default function DisplayBoard() {
     }
   };
 
-  const processedCallIdsRef = useRef(new Set());
-
   useEffect(() => {
     let isMounted = true;
 
@@ -635,32 +630,6 @@ export default function DisplayBoard() {
       try {
         const data = await publicApi.getDisplayBoard(officeId, displayKey);
         if (!isMounted) return;
-
-        // Only a call newer than anything already announced triggers the chime.
-        // When a client is marked Done or removed, the board falls back to an older
-        // client; that must not be announced again.
-        const callTime = (s) => (s?.called_at ? Date.parse(s.called_at) : 0);
-        const serving = data.serving || [];
-        const newestCall = serving.reduce((max, s) => Math.max(max, callTime(s)), 0);
-
-        if (isInitialLoadRef.current) {
-          lastCalledRef.current = newestCall;
-          isInitialLoadRef.current = false;
-        } else {
-          const fresh = serving
-            .filter(s => callTime(s) > (lastCalledRef.current || 0))
-            .sort((x, y) => callTime(y) - callTime(x))[0];
-          if (fresh && soundEnabled) {
-            announceNowServing({
-              queueNo: fresh.queue_no,
-              counter: fresh.counter,
-              personnel: fresh.assigned_personnel,
-              lang: langRef.current,
-            });
-          }
-          lastCalledRef.current = Math.max(lastCalledRef.current || 0, newestCall);
-        }
-        prevServingRef.current = serving;
 
         // ARTA video is linked locally — do not use server arta_video_url
         setDisplayData(data);
@@ -675,8 +644,88 @@ export default function DisplayBoard() {
     }
 
     fetchDisplay();
-    // Fast polling: 2500ms
+    // Board contents (windows, upcoming queue): every 2.5s, and right after any new call
     const interval = setInterval(fetchDisplay, 2500);
+
+    // ---- Voice announcements ----
+    // The server logs every call (call, recall, resume) with an increasing id. This TV polls
+    // for the calls after the last id it has seen and announces each one once, in order
+    // (announceNowServing plays them one after another). Before, the TV compared snapshots
+    // of the board and announced only the newest call per poll, so calls made at the same
+    // time by other windows were skipped.
+    const CALL_POLL_MS = 1000;
+    const CALL_RETRY_MAX_MS = 5000;
+    const STALE_CALL_SECONDS = 90;  // after a long outage, don't replay old calls
+    let callCursor = null;          // null until the first sync: calls before opening aren't replayed
+    const announcedIds = new Set();
+    let callPollTimer = null;
+    let callPollInFlight = false;
+    let callPollAgain = false;
+    let callFailures = 0;
+
+    const scheduleCallPoll = (ms) => {
+      if (!isMounted) return;
+      clearTimeout(callPollTimer);
+      callPollTimer = setTimeout(pollCalls, ms);
+    };
+
+    async function pollCalls() {
+      if (!isMounted) return;
+      if (callPollInFlight) {
+        callPollAgain = true;  // a broadcast asked for a poll meanwhile: run once more after this one
+        return;
+      }
+      callPollInFlight = true;
+      let nextDelay = CALL_POLL_MS;
+      try {
+        const res = await publicApi.getDisplayCalls(officeId, callCursor);
+        if (!isMounted) return;
+        if (callCursor === null) {
+          callCursor = res.cursor || 0;
+        } else {
+          let announcedAny = false;
+          for (const call of res.calls || []) {
+            if (announcedIds.has(call.id)) continue;
+            announcedIds.add(call.id);
+            if (call.age_seconds > STALE_CALL_SECONDS) continue;
+            announcedAny = true;
+            if (soundEnabled) {
+              announceNowServing({
+                queueNo: call.queue_no,
+                counter: call.counter,
+                personnel: call.personnel,
+                lang: langRef.current,
+                bypassDedupe: true,  // each logged call is announced once, by id (a recall is a new id)
+              });
+            }
+          }
+          callCursor = Math.max(callCursor, res.cursor || 0);
+          // Remember only recent ids (the server re-sends just the last few seconds)
+          if (announcedIds.size > 500) {
+            const keep = Array.from(announcedIds).slice(-200);
+            announcedIds.clear();
+            keep.forEach(id => announcedIds.add(id));
+          }
+          if (announcedAny) fetchDisplay();
+          if (res.has_more) nextDelay = 0;
+        }
+        callFailures = 0;
+      } catch (err) {
+        // The cursor is kept: once the connection is back, missed calls are fetched and announced
+        callFailures += 1;
+        nextDelay = Math.min(CALL_RETRY_MAX_MS, CALL_POLL_MS * 2 ** Math.min(callFailures, 3));
+        console.warn('Announcement poll failed:', err.message);
+      } finally {
+        callPollInFlight = false;
+        if (callPollAgain) {
+          callPollAgain = false;
+          nextDelay = 0;
+        }
+        scheduleCallPoll(nextDelay);
+      }
+    }
+
+    pollCalls();
 
     // Cross-tab broadcast listener for instant 0ms chime and voice announcement
     let bc = null;
@@ -687,19 +736,10 @@ export default function DisplayBoard() {
         bc.onmessage = (event) => {
           if (!isMounted) return;
           if (event.data?.type === 'QUEUE_CALLED') {
-            if (event.data?.callId) {
-              processedCallIdsRef.current.add(event.data.callId);
-            }
+            // A staff tab in this browser just called someone: check the call log now
+            // (announcing only from the log keeps each call to exactly one announcement)
             if (!event.data.officeId || String(event.data.officeId) === String(officeId)) {
-              if (soundEnabled) {
-                announceNowServing({
-                  queueNo: event.data.queueNo,
-                  counter: event.data.counter,
-                  personnel: event.data.personnel,
-                  lang: langRef.current,
-                });
-              }
-              // Immediately fetch updated display data
+              scheduleCallPoll(0);
               fetchDisplay();
             }
           }
@@ -722,21 +762,8 @@ export default function DisplayBoard() {
       if (e.key === 'dole_last_queue_call' && e.newValue) {
         try {
           const item = JSON.parse(e.newValue);
-          if (item.callId && processedCallIdsRef.current.has(item.callId)) {
-            return;
-          }
-          if (item.callId) {
-            processedCallIdsRef.current.add(item.callId);
-          }
           if (!item.officeId || String(item.officeId) === String(officeId)) {
-            if (soundEnabled) {
-              announceNowServing({
-                queueNo: item.queueNo,
-                counter: item.counter,
-                personnel: item.personnel,
-                lang: langRef.current,
-              });
-            }
+            scheduleCallPoll(0);
             fetchDisplay();
           }
         } catch { }
@@ -747,6 +774,7 @@ export default function DisplayBoard() {
     return () => {
       isMounted = false;
       clearInterval(interval);
+      clearTimeout(callPollTimer);
       cancelAllAnnouncements();
       if (bc) {
         try { bc.close(); } catch { }

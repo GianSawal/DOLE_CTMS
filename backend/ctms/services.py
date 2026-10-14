@@ -4,6 +4,7 @@ from django.db import models, transaction
 from django.utils import timezone
 from .models import (
     CsmOffice,
+    CtmsCallAnnouncement,
     CtmsCounter,
     CtmsOfficeQrConfig,
     CtmsTransaction,
@@ -248,6 +249,35 @@ def _ensure_not_serving_another(user, office, exclude_pk=None):
         )
 
 
+CALL_ANNOUNCEMENT_RETENTION = timedelta(days=3)
+
+
+def record_call_announcement(tx, kind):
+    """
+    Adds a call to the office TV's announcement log, in the caller's database transaction.
+    Only calls the TV shows are announced: at a window, and not reassigned clients
+    (those are served off the board).
+    """
+    from .models import CtmsAssignmentHistory
+
+    if not tx.counter_id:
+        return None
+    if tx.assignment_history.filter(event=CtmsAssignmentHistory.EVENT_TRANSFERRED).exists():
+        return None
+    entry = CtmsCallAnnouncement.objects.create(
+        office_id=tx.office_id,
+        transaction=tx,
+        kind=kind,
+        queue_no=tx.queue_no,
+        is_priority=tx.is_priority,
+        counter_name=tx.counter.name,
+        personnel_name=tx.assigned_personnel or '',
+    )
+    if entry.id % 200 == 0:  # occasional cleanup; the TVs only need the last few seconds
+        CtmsCallAnnouncement.objects.filter(created_at__lt=timezone.now() - CALL_ANNOUNCEMENT_RETENTION).delete()
+    return entry
+
+
 def _start_service(tx, user, window, event):
     snap = _snapshot(tx)
     now = timezone.now()
@@ -260,6 +290,9 @@ def _start_service(tx, user, window, event):
         tx.started_at = now
     tx.save(update_fields=['status', 'counter', 'assigned_to', 'assigned_personnel', 'called_at', 'started_at'])
     record_event(tx, event, actor=user, **snap)
+    from .models import CtmsAssignmentHistory
+    record_call_announcement(tx, CtmsCallAnnouncement.KIND_RESUME if event == CtmsAssignmentHistory.EVENT_RESUMED
+                             else CtmsCallAnnouncement.KIND_CALL)
     return tx
 
 
@@ -318,6 +351,7 @@ def call_transaction(tx, user):
             tx.assigned_to = user
             tx.assigned_personnel = personnel_display_name(user)[:200]
             tx.save(update_fields=['called_at', 'counter', 'assigned_to', 'assigned_personnel'])
+            record_call_announcement(tx, CtmsCallAnnouncement.KIND_RECALL)  # each recall is announced again
             return tx
 
         if tx.status in (CtmsTransaction.STATUS_PENDING, CtmsTransaction.STATUS_TRANSFERRED):

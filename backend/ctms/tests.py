@@ -24,6 +24,7 @@ from .models import (
     CtmsDisplayConfig,
     CtmsAssignmentHistory,
     CtmsOfficeProfile,
+    CtmsCallAnnouncement,
 )
 from .services import (
     create_transaction,
@@ -34,6 +35,8 @@ from .services import (
     requeue_transaction,
     cancel_transaction,
     current_office_code_period,
+    mark_pending,
+    transfer_transaction,
 )
 from .serializers import StaffTransactionSerializer
 
@@ -1868,3 +1871,110 @@ class ProjectReviewBugFixesTestCase(CsmTablesTestCase):
             'group_member_names': [f'Member {i}' for i in range(51)],
         }, format='json')
         self.assertEqual(res.status_code, 400)
+
+
+class TvCallAnnouncementTestCase(CsmTablesTestCase):
+    """Every call is logged for the TV, and the TV feed returns all of them, in order."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.office = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.service = CsmService.objects.create(name="SEnA", is_active=True, sort_order=1)
+        self.staff = []
+        for i in range(1, 7):
+            user = User.objects.create_user(username=f"w{i}", password="Pass-1234", is_staff=True, first_name=f"Staff{i}")
+            CtmsStaffOffice.objects.create(user=user, office=self.office)
+            CtmsCounter.objects.create(office=self.office, name=f"Window {i}", is_active=True, assigned_user=user)
+            self.staff.append(user)
+        self.url = f'/api/public/display/{self.office.id}/calls/'
+
+    def ticket(self, name="Client"):
+        return create_transaction(self.office, self.service, client_name=name)
+
+    def feed(self, after=None):
+        params = {} if after is None else {'after': after}
+        res = self.client.get(self.url, params)
+        self.assertEqual(res.status_code, 200)
+        return res.data
+
+    def test_simultaneous_calls_from_five_windows_are_all_in_the_feed_in_order(self):
+        cursor = self.feed()['cursor']
+        tickets = [self.ticket(f"C{i}") for i in range(5)]
+        for user in self.staff[:5]:
+            call_next_transaction(self.office, user)
+        calls = self.feed(cursor)['calls']
+        self.assertEqual([c['queue_no'] for c in calls], [t.queue_no for t in tickets])
+        self.assertEqual([c['counter'] for c in calls], [f"Window {i}" for i in range(1, 6)])
+        self.assertEqual([c['personnel'] for c in calls], [f"Staff{i}" for i in range(1, 6)])
+        self.assertEqual(len({c['id'] for c in calls}), 5)
+        self.assertEqual(calls, sorted(calls, key=lambda c: c['id']))
+
+    def test_first_sync_returns_only_the_cursor(self):
+        self.ticket()
+        call_next_transaction(self.office, self.staff[0])
+        data = self.feed()
+        self.assertEqual(data['calls'], [])
+        self.assertEqual(data['cursor'], CtmsCallAnnouncement.objects.latest('id').id)
+        bad = self.feed('abc')  # a malformed cursor is treated like a first sync
+        self.assertEqual(bad['calls'], [])
+
+    def test_recall_is_a_new_announcement(self):
+        cursor = self.feed()['cursor']
+        tx = call_transaction(self.ticket(), self.staff[0])
+        call_transaction(tx, self.staff[0])  # recall
+        calls = self.feed(cursor)['calls']
+        self.assertEqual([c['kind'] for c in calls], ['CALL', 'RECALL'])
+        self.assertEqual(calls[0]['queue_no'], calls[1]['queue_no'])
+        self.assertNotEqual(calls[0]['id'], calls[1]['id'])
+
+    def test_resume_is_announced_but_reassigned_clients_are_not(self):
+        cursor = self.feed()['cursor']
+        paused = call_transaction(self.ticket("Paused"), self.staff[0])
+        mark_pending(paused, actor=self.staff[0])
+        call_transaction(CtmsTransaction.objects.get(pk=paused.pk), self.staff[0])  # resume
+
+        moved = call_transaction(self.ticket("Moved"), self.staff[1])
+        transfer_transaction(moved, self.staff[1], self.staff[2])
+        call_transaction(CtmsTransaction.objects.get(pk=moved.pk), self.staff[2])  # served off the board
+
+        kinds = [(c['kind'], c['queue_no']) for c in self.feed(cursor)['calls']]
+        self.assertEqual(kinds, [('CALL', paused.queue_no), ('RESUME', paused.queue_no), ('CALL', moved.queue_no)])
+
+    def test_feed_is_not_consumed_so_every_tv_gets_the_calls(self):
+        cursor = self.feed()['cursor']
+        self.ticket()
+        call_next_transaction(self.office, self.staff[0])
+        tv1 = self.feed(cursor)['calls']
+        tv2 = APIClient().get(self.url, {'after': cursor}).data['calls']
+        self.assertEqual([c['id'] for c in tv1], [c['id'] for c in tv2])
+        self.assertEqual(len(tv1), 1)
+
+    def test_recent_calls_are_resent_for_late_commits_and_old_ones_are_not(self):
+        cursor = self.feed()['cursor']
+        self.ticket()
+        call_next_transaction(self.office, self.staff[0])
+        first = self.feed(cursor)
+        # Polling again from the new cursor still includes the last few seconds (the TV skips ids
+        # it already announced); this is what catches a call that committed out of id order.
+        self.assertEqual([c['id'] for c in self.feed(first['cursor'])['calls']], [c['id'] for c in first['calls']])
+        CtmsCallAnnouncement.objects.update(created_at=timezone.now() - timedelta(minutes=1))
+        self.assertEqual(self.feed(first['cursor'])['calls'], [])
+
+    def test_large_bursts_are_paged(self):
+        cursor = self.feed()['cursor']
+        tx = call_transaction(self.ticket(), self.staff[0])
+        for _ in range(54):
+            call_transaction(tx, self.staff[0])  # recalls
+        page1 = self.feed(cursor)
+        self.assertTrue(page1['has_more'])
+        self.assertEqual(len(page1['calls']), 50)
+        CtmsCallAnnouncement.objects.update(created_at=timezone.now() - timedelta(minutes=1))
+        page2 = self.feed(page1['cursor'])
+        self.assertFalse(page2['has_more'])
+        self.assertEqual(len(page2['calls']), 5)
+
+    def test_unknown_or_inactive_office_is_404(self):
+        self.assertEqual(self.client.get('/api/public/display/999999/calls/').status_code, 404)
+        CsmOffice.objects.filter(pk=self.office.pk).update(is_active=False)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
