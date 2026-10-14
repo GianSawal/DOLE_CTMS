@@ -35,7 +35,8 @@ export default function DisplayBoard() {
   // Secret key from the TV link on the Check-in QR page; unlocks the current check-in code.
   const [searchParams] = useSearchParams();
   const displayKey = searchParams.get('key') || '';
-  const [lang, setLang] = useState('en');
+  // The TV always shows English, light theme, with chime & voice on (no on-screen toggles)
+  const lang = 'en';
   const t = translations[lang];
   const langRef = useRef(lang);
   useEffect(() => {
@@ -45,19 +46,8 @@ export default function DisplayBoard() {
   const [displayData, setDisplayData] = useState(null);
 
   const [loading, setLoading] = useState(true);
-  const [soundEnabled, setSoundEnabled] = useState(() => {
-    const saved = localStorage.getItem('ctms_display_sound_enabled');
-    return saved !== null ? saved === 'true' : true;
-  });
-  const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('ctms_display_theme') || 'dark';
-  });
-
-  const toggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(nextTheme);
-    localStorage.setItem('ctms_display_theme', nextTheme);
-  };
+  const soundEnabled = true;
+  const theme = 'light';
 
   const sanitizeVideoUrl = (url) => {
     if (!url || typeof url !== 'string') return '';
@@ -636,26 +626,6 @@ export default function DisplayBoard() {
     }
   };
 
-  const handleToggleSound = async () => {
-    const nextState = !soundEnabled;
-    setSoundEnabled(nextState);
-    localStorage.setItem('ctms_display_sound_enabled', String(nextState));
-    if (nextState) {
-      await unlockAudioContext();
-      setAudioUnlocked(true);
-      const firstServing = displayData?.serving?.[0];
-      announceNowServing({
-        queueNo: firstServing?.queue_no || displayData?.next?.[0] || '042',
-        counter: firstServing?.counter || 'Window 1',
-        personnel: firstServing?.assigned_personnel || '',
-        lang: langRef.current,
-        bypassDedupe: true,
-      });
-    } else {
-      cancelAllAnnouncements();
-    }
-  };
-
   const processedCallIdsRef = useRef(new Set());
 
   useEffect(() => {
@@ -787,14 +757,6 @@ export default function DisplayBoard() {
       window.removeEventListener('storage', handleStorage);
     };
   }, [officeId, displayKey, soundEnabled]);
-
-  const toggleFullScreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => { });
-    } else {
-      document.exitFullscreen().catch(() => { });
-    }
-  };
 
   if (loading) {
     return (
@@ -1473,92 +1435,6 @@ export default function DisplayBoard() {
             </div>
           )}
 
-          {/* Light / Dark Mode Toggle Button */}
-          <button
-            onClick={toggleTheme}
-            className="btn btn-outline btn-sm"
-            style={{
-              color: themeStyles.btnColor,
-              borderColor: themeStyles.btnBorder,
-              backgroundColor: isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.08)',
-              boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-            }}
-            title={isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
-          >
-            <span>{isLight ? '🌙' : '☀️'}</span>
-            <span>{isLight ? 'Dark Mode' : 'Light Mode'}</span>
-          </button>
-
-          <button
-            onClick={handleToggleSound}
-            className="btn btn-outline btn-sm"
-            style={{
-              color: soundEnabled ? (isLight ? '#92400e' : '#ffffff') : themeStyles.btnColor,
-              borderColor: soundEnabled ? (isLight ? '#d97706' : 'var(--dole-gold)') : themeStyles.btnBorder,
-              backgroundColor: soundEnabled ? (isLight ? '#fef3c7' : 'rgba(217, 119, 6, 0.25)') : (isLight ? '#ffffff' : 'transparent'),
-              boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none',
-              fontWeight: 600,
-            }}
-            title={soundEnabled ? 'Click to mute airport chime & voice' : 'Click to enable airport announcement chime & voice'}
-          >
-            {soundEnabled ? '🔔 Chime & Voice ON' : '🔕 Sound OFF'}
-          </button>
-          {soundEnabled && (
-            <button
-              onClick={async () => {
-                await unlockAudioContext();
-                setAudioUnlocked(true);
-                const firstServing = displayData?.serving?.[0];
-                announceNowServing({
-                  queueNo: firstServing?.queue_no || displayData?.next?.[0] || '042',
-                  counter: firstServing?.counter || 'Window 1',
-                  personnel: firstServing?.assigned_personnel || 'Officer on Duty',
-                  lang: langRef.current,
-                  bypassDedupe: true,
-                });
-              }}
-              className="btn btn-outline btn-sm"
-              style={{
-                color: isLight ? '#92400e' : 'var(--dole-gold)',
-                borderColor: isLight ? '#d97706' : 'rgba(217, 119, 6, 0.5)',
-                backgroundColor: isLight ? '#fef3c7' : 'rgba(0, 0, 0, 0.3)',
-                boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none',
-                padding: '0.25rem 0.6rem',
-                fontSize: '0.75rem',
-              }}
-              title="Test airport chime and voice announcement on speakers"
-            >
-              ▶ Test Chime & Voice
-            </button>
-          )}
-          <button
-            onClick={() => setLang(lang === 'en' ? 'fil' : 'en')}
-            className="btn btn-outline btn-sm"
-            style={{
-              color: themeStyles.btnColor,
-              borderColor: themeStyles.btnBorder,
-              backgroundColor: isLight ? '#ffffff' : 'transparent',
-              boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none',
-            }}
-          >
-            🌐 {lang === 'en' ? 'Filipino' : 'English'}
-          </button>
-          <button
-            onClick={toggleFullScreen}
-            className="btn btn-outline btn-sm"
-            style={{
-              color: themeStyles.btnColor,
-              borderColor: themeStyles.btnBorder,
-              backgroundColor: isLight ? '#ffffff' : 'transparent',
-              boxShadow: isLight ? '0 1px 3px rgba(0, 0, 0, 0.05)' : 'none',
-            }}
-          >
-            ⛶ Fullscreen
-          </button>
         </div>
       </header>
 
