@@ -172,7 +172,7 @@ export async function parseFolderLink(folderUrl) {
 }
 
 /**
- * Saves a list of File objects to IndexedDB and returns working ObjectURL playlist items
+ * Returns working ObjectURL playlist items right away, and saves the files to IndexedDB in the background
  */
 export async function savePlaylistToIndexedDB(files, folderName = '', dirHandle = null) {
   const sorted = filterAndSortVideoFiles(files);
@@ -187,54 +187,58 @@ export async function savePlaylistToIndexedDB(files, folderName = '', dirHandle 
     url: URL.createObjectURL(file),
   }));
 
-  // Persist files and folder metadata into IndexedDB for reload persistence
-  try {
-    const db = await openDb();
-    const storesToUse = [STORE_NAME];
-    if (db.objectStoreNames.contains(META_STORE)) {
-      storesToUse.push(META_STORE);
-    }
-    const tx = db.transaction(storesToUse, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const metaStore = storesToUse.includes(META_STORE) ? tx.objectStore(META_STORE) : null;
-
-    // Queue clear and all put requests synchronously in the active transaction
-    store.clear();
-    for (let i = 0; i < sorted.length; i++) {
-      const file = sorted[i];
-      store.put({
-        id: i,
-        name: file.name,
-        size: file.size,
-        type: file.type || 'video/mp4',
-        blob: file,
-        order: i,
-      });
-    }
-
-    if (metaStore && folderName) {
-      metaStore.put(folderName, 'folder_name');
-    }
-    if (metaStore && dirHandle) {
-      metaStore.put(dirHandle, 'active_folder_handle');
-    }
-
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
-
+  // Copy the files into IndexedDB so they survive a page reload. This runs in the background:
+  // a folder of ARTA videos can be gigabytes, and playback must not wait for the copy.
+  // (The write is one transaction, so an interrupted copy keeps the previous playlist.)
+  (async () => {
     try {
-      localStorage.setItem('ctms_tv_has_local_folder', 'true');
-      localStorage.setItem('ctms_tv_has_local_video', 'true');
-      if (sorted[0]?.name) {
-        localStorage.setItem('ctms_tv_local_video_name', sorted[0].name);
+      const db = await openDb();
+      const storesToUse = [STORE_NAME];
+      if (db.objectStoreNames.contains(META_STORE)) {
+        storesToUse.push(META_STORE);
       }
-    } catch {}
-  } catch (err) {
-    console.warn('IndexedDB playlist storage note (in-memory ObjectURLs active):', err);
-  }
+      const tx = db.transaction(storesToUse, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const metaStore = storesToUse.includes(META_STORE) ? tx.objectStore(META_STORE) : null;
+
+      // Queue clear and all put requests synchronously in the active transaction
+      store.clear();
+      for (let i = 0; i < sorted.length; i++) {
+        const file = sorted[i];
+        store.put({
+          id: i,
+          name: file.name,
+          size: file.size,
+          type: file.type || 'video/mp4',
+          blob: file,
+          order: i,
+        });
+      }
+
+      if (metaStore && folderName) {
+        metaStore.put(folderName, 'folder_name');
+      }
+      if (metaStore && dirHandle) {
+        metaStore.put(dirHandle, 'active_folder_handle');
+      }
+
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+
+      try {
+        localStorage.setItem('ctms_tv_has_local_folder', 'true');
+        localStorage.setItem('ctms_tv_has_local_video', 'true');
+        if (sorted[0]?.name) {
+          localStorage.setItem('ctms_tv_local_video_name', sorted[0].name);
+        }
+      } catch {}
+    } catch (err) {
+      console.warn('IndexedDB playlist storage note (in-memory ObjectURLs active):', err);
+    }
+  })();
 
   return playlistItems;
 }
