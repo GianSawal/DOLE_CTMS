@@ -2149,3 +2149,110 @@ class RememberMeSignInTestCase(CsmTablesTestCase):
         User.objects.filter(pk=tv.pk).update(is_active=False)
         again = self.client.post('/api/staff/auth/refresh/', {'refresh': refreshed.data['refresh']}, format='json')
         self.assertEqual(again.status_code, 401)
+
+
+class RegistrationDeskAccountTestCase(CsmTablesTestCase):
+    """Registration Desk accounts: system admin only; register walk-ins for their own office; nothing else."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.aurora = CsmOffice.objects.create(name="Aurora Field Office", code="AUR", is_active=True)
+        self.bataan = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.ro3 = CsmOffice.objects.create(name="DOLE Regional Office III", code="RO3", is_active=True)
+        CtmsOfficeProfile.objects.update_or_create(office=self.ro3, defaults={'office_type': 'REGIONAL'})
+        self.service = CsmService.objects.create(name="SEnA", is_active=True, sort_order=1)
+        self.root = User.objects.create_superuser(username="root", password="Root-Pass-1")
+        self.regional_admin = User.objects.create_user(username="radmin", password="Admin-Pass-1", is_staff=True)
+        CtmsStaffOffice.objects.create(user=self.regional_admin, office=self.ro3)
+        DolePersonnel.objects.create(user=self.regional_admin, employee_id="radmin", first_name="Rita",
+                                     last_name="Admin", office=self.ro3, role=DolePersonnel.ROLE_ADMIN)
+
+    def create_desk(self, username="desk_aurora"):
+        self.client.force_authenticate(user=self.root)
+        res = self.client.post('/api/staff/users/', {
+            'username': username, 'password': 'Desk-Pass-1', 'confirm_password': 'Desk-Pass-1',
+            'role': 'REGISTRAR', 'office': self.aurora.id,
+        }, format='json')
+        self.client.force_authenticate(user=None)
+        return res
+
+    def desk(self):
+        return User.objects.get(username="desk_aurora")
+
+    def test_system_admin_creates_a_desk_account_that_is_not_staff(self):
+        res = self.create_desk()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['role'], 'REGISTRAR')
+        desk = self.desk()
+        self.assertFalse(desk.is_staff)
+        self.assertFalse(CtmsStaffOffice.objects.filter(user=desk).exists())
+        self.assertTrue(desk.dole_personnel.must_change_password)  # a person signs in at the desk
+
+    def test_regional_admin_cannot_create_or_see_desk_accounts(self):
+        self.create_desk()
+        self.client.force_authenticate(user=self.regional_admin)
+        res = self.client.post('/api/staff/users/', {'username': 'desk2', 'password': 'Desk-Pass-1',
+                                                     'role': 'REGISTRAR', 'office': self.aurora.id}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertNotIn('desk_aurora', [a['username'] for a in self.client.get('/api/staff/users/').data])
+
+    def test_sign_in_returns_the_registration_office(self):
+        self.create_desk()
+        res = self.client.post('/api/staff/auth/login/', {'username': 'desk_aurora', 'password': 'Desk-Pass-1'}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['user']['role'], 'REGISTRAR')
+        self.assertEqual(res.data['user']['registration']['office_id'], self.aurora.id)
+
+    def test_desk_registers_walkins_for_its_own_office_only(self):
+        self.create_desk()
+        self.client.force_authenticate(user=self.desk())
+        res = self.client.post('/api/staff/transactions/walkin/', {'office': self.aurora.id, 'service': self.service.id,
+                                                      'client_name': 'Juan', 'is_priority': True}, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        tx = CtmsTransaction.objects.get(pk=res.data['id'])
+        self.assertEqual((tx.office, tx.status, tx.source), (self.aurora, 'waiting', CtmsTransaction.SOURCE_STAFF))
+        self.assertTrue(CtmsAuditLog.objects.filter(action='CREATE_WALKIN', actor=self.desk()).exists())
+        other = self.client.post('/api/staff/transactions/walkin/', {'office': self.bataan.id, 'service': self.service.id,
+                                                        'client_name': 'Maria'}, format='json')
+        self.assertEqual(other.status_code, 403)
+
+    def test_registration_page_shows_the_waiting_count(self):
+        self.create_desk()
+        create_transaction(self.aurora, self.service, client_name="A")
+        create_transaction(self.aurora, self.service, client_name="B", is_priority=True)
+        create_transaction(self.bataan, self.service, client_name="C")
+        self.client.force_authenticate(user=self.desk())
+        data = self.client.get('/api/staff/registration/').data
+        self.assertEqual(data['office']['id'], self.aurora.id)
+        self.assertEqual((data['waiting_count'], data['priority_waiting']), (2, 1))
+
+    def test_desk_cannot_use_any_other_staff_page_or_action(self):
+        self.create_desk()
+        tx = create_transaction(self.aurora, self.service, client_name="Juan")
+        self.client.force_authenticate(user=self.desk())
+        for method, url in (
+            ('get', f'/api/staff/queue/?office={self.aurora.id}'),
+            ('post', '/api/staff/call-next/'),
+            ('post', f'/api/staff/transactions/{tx.id}/cancel/'),
+            ('get', '/api/staff/my-clients/'),
+            ('get', '/api/staff/transactions/'),
+            ('get', f'/api/staff/qr-config/?office={self.aurora.id}'),
+            ('get', '/api/staff/windows/'),
+            ('get', '/api/staff/users/'),
+            ('get', '/api/staff/reports/summary/'),
+            ('get', '/api/staff/audit-logs/'),
+        ):
+            res = getattr(self.client, method)(url, {'office': self.aurora.id}, format='json') if method == 'post' \
+                else self.client.get(url)
+            self.assertIn(res.status_code, (401, 403, 404), f"{method} {url} -> {res.status_code}")
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, 'waiting')
+
+    def test_desk_and_staff_roles_cannot_be_switched(self):
+        self.create_desk()
+        self.client.force_authenticate(user=self.root)
+        self.assertEqual(self.client.patch(f'/api/staff/users/{self.desk().id}/', {'role': 'PERSONNEL'},
+                                           format='json').status_code, 400)
+        self.assertEqual(self.client.patch(f'/api/staff/users/{self.desk().id}/', {'role': 'DISPLAY'},
+                                           format='json').status_code, 400)

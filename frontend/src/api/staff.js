@@ -21,6 +21,9 @@ export const staffApi = {
     body: JSON.stringify({ office: officeId }),
   }),
 
+  // Registration desk: its office and the number of clients waiting
+  getRegistrationDesk: () => apiRequest('/staff/registration/'),
+
   createWalkin: (data) => apiRequest('/staff/transactions/walkin/', {
     method: 'POST',
     body: JSON.stringify(data),

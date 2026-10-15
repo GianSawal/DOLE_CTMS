@@ -16,6 +16,7 @@ from .views import (
     StaffQueueView,
     StaffCreateWalkinView,
     StaffCallNextView,
+    RegistrationDeskView,
     StaffTransactionActionView,
     StaffTransactionsListView,
     StaffMyClientsView,
@@ -66,6 +67,7 @@ urlpatterns = [
     # Staff queue operations
     path('staff/queue/', StaffQueueView.as_view(), name='staff-queue'),
     path('staff/call-next/', StaffCallNextView.as_view(), name='staff-call-next'),
+    path('staff/registration/', RegistrationDeskView.as_view(), name='staff-registration'),
     path('staff/transactions/', StaffTransactionsListView.as_view(), name='staff-transactions-list'),
     path('staff/transactions/walkin/', StaffCreateWalkinView.as_view(), name='staff-walkin'),
     path('staff/my-clients/', StaffMyClientsView.as_view(), name='staff-my-clients'),

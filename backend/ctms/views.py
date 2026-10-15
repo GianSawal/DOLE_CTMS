@@ -66,6 +66,8 @@ from .permissions import (
     IsSystemAdmin,
     admin_scope_offices,
     is_display_account,
+    is_registration_account,
+    registration_office,
     office_type,
     staff_session,
 )
@@ -163,7 +165,8 @@ class StaffMeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if not request.user.is_staff and not is_display_account(request.user):
+        if not request.user.is_staff and not is_display_account(request.user) \
+                and not is_registration_account(request.user):
             return Response({"detail": "Forbidden: Staff account required."}, status=status.HTTP_403_FORBIDDEN)
         return Response(staff_session(request.user))
 
@@ -582,15 +585,28 @@ class StaffQueueView(APIView):
         })
 
 
+class IsStaffOrRegistrationDesk(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return IsStaffUser().has_permission(request, view) or is_registration_account(request.user)
+
+
+def walkin_offices(user):
+    """Offices `user` may register walk-ins for: a desk account only its own office."""
+    if is_registration_account(user):
+        office = registration_office(user)
+        return CsmOffice.objects.filter(pk=office.pk) if office else CsmOffice.objects.none()
+    return get_staff_offices(user)
+
+
 class StaffCreateWalkinView(APIView):
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsStaffOrRegistrationDesk]
 
     def post(self, request):
         serializer = CheckinRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        allowed_offices = get_staff_offices(request.user)
+        allowed_offices = walkin_offices(request.user)
         if not allowed_offices.filter(pk=data['office'].pk).exists():
             return Response({"detail": "Forbidden: You are not assigned to this office."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -631,6 +647,26 @@ class StaffCreateWalkinView(APIView):
             logger.exception("Walk-in registration failed")
             return Response({"detail": "Walk-in registration failed. Please try again."},
                             status=status.HTTP_400_BAD_REQUEST)
+
+
+class RegistrationDeskView(APIView):
+    """The Registration page's header: its office and how many clients are waiting (no names)."""
+    permission_classes = [IsStaffOrRegistrationDesk]
+
+    def get(self, request):
+        office = registration_office(request.user)
+        if not office:
+            office_id = request.query_params.get('office', '')
+            office = walkin_offices(request.user).filter(pk=office_id).first() if office_id.isdigit() else None
+        if not office:
+            return Response({"detail": "No office to register clients for."}, status=status.HTTP_403_FORBIDDEN)
+        waiting = CtmsTransaction.objects.filter(
+            office=office, status=CtmsTransaction.STATUS_WAITING, queue_date=timezone.localdate())
+        return Response({
+            "office": {"id": office.id, "name": office.name, "code": office.code},
+            "waiting_count": waiting.count(),
+            "priority_waiting": waiting.filter(is_priority=True).count(),
+        })
 
 
 class StaffCallNextView(APIView):
@@ -1492,7 +1528,7 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
 
     # ---------------------------------------------------------------- helpers
     def _queryset(self):
-        is_tv = models.Q(dole_personnel__role=DolePersonnel.ROLE_DISPLAY)
+        is_tv = models.Q(dole_personnel__role__in=DolePersonnel.NON_STAFF_ROLES)
         qs = (User.objects.filter(models.Q(is_staff=True) | is_tv)
               .select_related('dole_personnel', 'dole_personnel__office', 'occupied_window')
               .prefetch_related('staff_offices__office'))
@@ -1550,16 +1586,18 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
 
     def _resolve_role(self, data, office, current=None):
         role = self._clean(data, 'role').upper() or current or DolePersonnel.ROLE_PERSONNEL
-        if role not in (DolePersonnel.ROLE_PERSONNEL, DolePersonnel.ROLE_ADMIN, DolePersonnel.ROLE_DISPLAY):
-            raise ValueError("Role must be Personnel, Administrator or TV Display.")
+        if role not in (DolePersonnel.ROLE_PERSONNEL, DolePersonnel.ROLE_ADMIN) + DolePersonnel.NON_STAFF_ROLES:
+            raise ValueError("Role must be Personnel, Administrator, TV Display or Registration Desk.")
         if role == DolePersonnel.ROLE_ADMIN and office_type(office) != 'REGIONAL':
             raise ValueError("Administrator role is only available for regional office accounts.")
-        if role == DolePersonnel.ROLE_DISPLAY and not self.request.user.is_superuser:
-            raise ValueError("Only the system administrator can create TV Display accounts.")
-        # A TV sign-in and a staff sign-in differ in what they can reach: no switching either way
-        if current and (current == DolePersonnel.ROLE_DISPLAY) != (role == DolePersonnel.ROLE_DISPLAY):
-            raise ValueError("A TV Display account can't become a staff account, or the other way around. "
-                             "Create a new account instead.")
+        kind = dict(DolePersonnel.ROLE_CHOICES).get(role, role)
+        if role in DolePersonnel.NON_STAFF_ROLES and not self.request.user.is_superuser:
+            raise ValueError(f"Only the system administrator can create {kind} accounts.")
+        # TV, desk and staff sign-ins differ in what they can reach: no switching between them
+        single_purpose = (DolePersonnel.ROLE_DISPLAY, DolePersonnel.ROLE_REGISTRAR)
+        if current and current != role and (current in single_purpose or role in single_purpose):
+            raise ValueError(f"A {dict(DolePersonnel.ROLE_CHOICES).get(current, current)} account can't be changed "
+                             f"to {kind}. Create a new account instead.")
         return role
 
     def _active_clients(self, user):
@@ -1575,7 +1613,7 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
         if office_id:
             qs = qs.filter(models.Q(dole_personnel__office_id=office_id) | models.Q(staff_offices__office_id=office_id))
         role = (request.query_params.get('role') or '').upper()
-        if role in (DolePersonnel.ROLE_PERSONNEL, DolePersonnel.ROLE_ADMIN, DolePersonnel.ROLE_DISPLAY):
+        if role in (DolePersonnel.ROLE_PERSONNEL, DolePersonnel.ROLE_ADMIN) + DolePersonnel.NON_STAFF_ROLES:
             qs = qs.filter(dole_personnel__role=role)
         status_param = request.query_params.get('status')
         if status_param in ('active', 'inactive'):
@@ -1607,9 +1645,11 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
             office = self._resolve_office(data)
             role = self._resolve_role(data, office)
             is_tv = role == DolePersonnel.ROLE_DISPLAY
+            single_purpose = role in DolePersonnel.NON_STAFF_ROLES
             first_name, last_name = self._clean(data, 'first_name'), self._clean(data, 'last_name')
-            if is_tv:  # names are optional for a TV sign-in
-                first_name, last_name = first_name or 'TV Display', last_name or office.name[:100]
+            if single_purpose:  # names are optional for a TV or desk sign-in
+                default_first = 'TV Display' if is_tv else 'Registration Desk'
+                first_name, last_name = first_name or default_first, last_name or office.name[:100]
             if not first_name or not last_name:
                 raise ValueError("First and last name are required.")
             employee_id = self._clean(data, 'employee_id') or username
@@ -1618,21 +1658,21 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # A TV account is not staff and has no office assignment, so it never appears among
-        # personnel (windows, transfers, reports) and every staff endpoint refuses it.
+        # A TV or desk account is not staff and has no office assignment, so it never appears
+        # among personnel (windows, transfers, reports) and every staff endpoint refuses it.
         user = User.objects.create_user(
             username=username, password=password, email=self._clean(data, 'email'),
-            first_name=first_name[:150], last_name=last_name[:150], is_staff=not is_tv, is_active=True,
+            first_name=first_name[:150], last_name=last_name[:150], is_staff=not single_purpose, is_active=True,
         )
-        if not is_tv:
+        if not single_purpose:
             CtmsStaffOffice.objects.create(user=user, office=office)
         DolePersonnel.objects.create(
             user=user, employee_id=employee_id, first_name=first_name,
             middle_name=self._clean(data, 'middle_name'), last_name=last_name,
-            position='' if is_tv else self._clean(data, 'position'), office=office, role=role,
+            position='' if single_purpose else self._clean(data, 'position'), office=office, role=role,
             is_active=True, must_change_password=not is_tv,  # nobody types a new password on a TV
         )
-        kind = 'TV Display' if is_tv else role.title()
+        kind = dict(DolePersonnel.ROLE_CHOICES).get(role, role.title())
         self._audit('USER_CREATE', user, f"Created account '{user.username}' ({kind}, {office.name})", office=office)
         return Response(self._out(user), status=status.HTTP_201_CREATED)
 
@@ -1699,9 +1739,9 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
             changes['password'] = 'reset'
         user.save()
 
-        # Office assignment (single office per account); a TV account has none
+        # Office assignment (single office per account); TV and desk accounts have none
         is_tv = role == DolePersonnel.ROLE_DISPLAY
-        if not is_tv and ('office' in changes or not CtmsStaffOffice.objects.filter(user=user).exists()):
+        if role not in DolePersonnel.NON_STAFF_ROLES and ('office' in changes or not CtmsStaffOffice.objects.filter(user=user).exists()):
             CtmsStaffOffice.objects.filter(user=user).exclude(office=office).delete()
             CtmsStaffOffice.objects.get_or_create(user=user, office=office)
             CtmsCounter.objects.filter(assigned_user=user).exclude(office=office).update(assigned_user=None, assigned_at=None)

@@ -39,6 +39,7 @@ function formatDate(iso) {
 function RoleBadge({ account }) {
   if (account.role === 'SYSTEM_ADMIN') return <span className="badge" style={{ background: '#1e293b', color: '#fff' }}>System Admin</span>;
   if (account.role === 'DISPLAY') return <span className="badge" style={{ background: '#e0f2fe', color: '#075985' }}>TV Display</span>;
+  if (account.role === 'REGISTRAR') return <span className="badge" style={{ background: '#f3e8ff', color: '#6b21a8' }}>Registration Desk</span>;
   if (account.is_regional_admin) return <span className="badge badge-priority">Administrator</span>;
   return <span className="badge badge-waiting">Personnel</span>;
 }
@@ -102,6 +103,9 @@ export default function StaffUsers() {
   const adminAllowed = selectedOffice?.office_type === 'REGIONAL';
   // TV Display accounts (system admin only) just open their office's TV board after signing in
   const isTvForm = form.role === 'DISPLAY';
+  // Registration Desk accounts (system admin only) can only register walk-in clients
+  const isDeskForm = form.role === 'REGISTRAR';
+  const isSinglePurpose = isTvForm || isDeskForm;
   const canCreateTv = Boolean(me?.is_superuser);
 
   // An Administrator role only means something on a regional account.
@@ -120,7 +124,7 @@ export default function StaffUsers() {
       ...EMPTY_FORM,
       username: account.username,
       email: account.email || '',
-      role: ['ADMIN', 'DISPLAY'].includes(account.role) ? account.role : 'PERSONNEL',
+      role: ['ADMIN', 'DISPLAY', 'REGISTRAR'].includes(account.role) ? account.role : 'PERSONNEL',
       first_name: account.first_name || '',
       middle_name: account.middle_name || '',
       last_name: account.last_name || '',
@@ -160,7 +164,9 @@ export default function StaffUsers() {
         });
         flash('success', created.role === 'DISPLAY'
           ? `TV account ${created.username} created. Sign in with it on the office TV; it opens the TV display automatically.`
-          : `Account ${created.username} created. They will be asked to change the password at first login.`);
+          : created.role === 'REGISTRAR'
+            ? `Registration Desk account ${created.username} created. It opens only the Registration page; the password must be changed at first login.`
+            : `Account ${created.username} created. They will be asked to change the password at first login.`);
       } else {
         await staffApi.updateEmployee(formModal.account.id, payload);
         flash('success', `Account ${formModal.account.username} updated.`);
@@ -257,6 +263,7 @@ export default function StaffUsers() {
             <option value="PERSONNEL">Personnel</option>
             <option value="ADMIN">Administrator</option>
             {canCreateTv && <option value="DISPLAY">TV Display</option>}
+            {canCreateTv && <option value="REGISTRAR">Registration Desk</option>}
           </select>
           <select value={filters.status} onChange={(e) => setFilter('status', e.target.value)} aria-label="Status" style={{ minHeight: '44px' }}>
             <option value="">Active and inactive</option>
@@ -404,16 +411,17 @@ export default function StaffUsers() {
               )}
               <div>
                 <label htmlFor="acc-role">Role *</label>
-                {/* A TV account and a staff account can't be switched into each other */}
+                {/* TV, desk and staff accounts can't be switched into each other */}
                 <select id="acc-role" value={form.role} onChange={(e) => setField('role', e.target.value)}
-                  disabled={formModal.mode === 'edit' && isTvForm}>
-                  {!(formModal.mode === 'edit' && isTvForm) && (
+                  disabled={formModal.mode === 'edit' && isSinglePurpose}>
+                  {!(formModal.mode === 'edit' && isSinglePurpose) && (
                     <>
                       <option value="PERSONNEL">Personnel</option>
                       <option value="ADMIN" disabled={!adminAllowed}>Administrator{adminAllowed ? '' : ' (regional office only)'}</option>
                     </>
                   )}
                   {(isTvForm || (formModal.mode === 'create' && canCreateTv)) && <option value="DISPLAY">TV Display</option>}
+                  {(isDeskForm || (formModal.mode === 'create' && canCreateTv)) && <option value="REGISTRAR">Registration Desk</option>}
                 </select>
               </div>
             </div>
@@ -422,6 +430,11 @@ export default function StaffUsers() {
                 Sign in with this account on the office TV: it opens that office's TV display (with the check-in code)
                 automatically. It cannot open any staff page or act on clients.
               </p>
+            ) : isDeskForm ? (
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.5rem 0 1.4rem' }}>
+                This account only registers walk-in clients for its office and prints their slip. It cannot open any
+                other page or act on clients. The password must be changed at first login.
+              </p>
             ) : (
               <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.5rem 0 1.4rem' }}>
                 Administrators of the regional office manage accounts, services and reports for all offices.
@@ -429,12 +442,12 @@ export default function StaffUsers() {
               </p>
             )}
 
-            {isTvForm ? (
+            {isSinglePurpose ? (
               <>
-                <h3 style={sectionHeading}>TV display</h3>
+                <h3 style={sectionHeading}>{isTvForm ? 'TV display' : 'Registration desk'}</h3>
                 <div style={fieldGrid}>
                   <div>
-                    <label htmlFor="acc-office">Office whose TV this is *</label>
+                    <label htmlFor="acc-office">{isTvForm ? 'Office whose TV this is *' : 'Office it registers clients for *'}</label>
                     <select id="acc-office" required value={form.office} onChange={(e) => setField('office', e.target.value)}>
                       <option value="">Choose office…</option>
                       {offices.map(o => (

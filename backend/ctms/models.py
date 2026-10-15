@@ -203,11 +203,17 @@ class DolePersonnel(models.Model):
     # A sign-in for an office TV: it only opens that office's TV display. Not staff
     # (User.is_staff is False), so every staff page and action refuses it.
     ROLE_DISPLAY = 'DISPLAY'
+    # A sign-in for a registration desk: it only registers walk-in clients for its office.
+    # Not staff either, so every other staff page and action refuses it.
+    ROLE_REGISTRAR = 'REGISTRAR'
     ROLE_CHOICES = (
         (ROLE_PERSONNEL, 'Personnel'),
         (ROLE_ADMIN, 'Administrator'),
         (ROLE_DISPLAY, 'TV Display'),
+        (ROLE_REGISTRAR, 'Registration Desk'),
     )
+    # Single-purpose sign-ins: created by the system admin only, not staff, no office assignment
+    NON_STAFF_ROLES = (ROLE_DISPLAY, ROLE_REGISTRAR)
 
     id = models.BigAutoField(primary_key=True)
     user = models.OneToOneField(

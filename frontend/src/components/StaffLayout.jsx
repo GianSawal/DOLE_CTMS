@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   ListOrdered, UsersRound, LayoutGrid, History, QrCode,
-  UserCog, Layers, ChartColumn, ScrollText, LogOut, Menu, X, Building2, ChevronRight,
+  UserCog, Layers, ChartColumn, ScrollText, LogOut, Menu, X, Building2, ChevronRight, ClipboardPen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -30,6 +30,11 @@ const NAV = [
   },
 ];
 
+// A Registration Desk account sees only its Registration page
+const REGISTRATION_NAV = [
+  { section: 'Operations', items: [{ to: '/staff/registration', label: 'Registration', icon: ClipboardPen }] },
+];
+
 function initials(user) {
   const name = (user?.full_name || user?.username || '').trim();
   const parts = name.split(/\s+/).filter(Boolean);
@@ -39,6 +44,7 @@ function initials(user) {
 
 function roleLabel(user) {
   if (user?.is_superuser) return 'System Admin';
+  if (user?.role === 'REGISTRAR') return 'Registration Desk';
   if (user?.is_regional_admin) return 'Administrator';
   return user?.position || 'Personnel';
 }
@@ -54,11 +60,13 @@ export default function StaffLayout({ children }) {
   useEffect(() => { setOpen(false); }, [location.pathname]);
 
   const can = (permission) => !permission || user?.is_superuser || user?.permissions?.[permission];
-  const sections = NAV
+  const isDesk = user?.role === 'REGISTRAR';
+  const nav = isDesk ? REGISTRATION_NAV : NAV;
+  const sections = nav
     .map(s => ({ ...s, items: s.items.filter(i => can(i.permission)) }))
     .filter(s => s.items.length > 0);
 
-  const current = NAV.flatMap(s => s.items.map(i => ({ ...i, section: s.section })))
+  const current = nav.flatMap(s => s.items.map(i => ({ ...i, section: s.section })))
     .find(i => location.pathname.startsWith(i.to));
   const office = user?.primary_office || user?.assigned_offices?.[0];
 
@@ -71,7 +79,7 @@ export default function StaffLayout({ children }) {
     <div className="app-shell">
       <aside className={`app-sidebar${open ? ' is-open' : ''}`} aria-label="Main navigation">
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <NavLink to="/staff/queue" className="app-sidebar-brand">
+          <NavLink to={isDesk ? '/staff/registration' : '/staff/queue'} className="app-sidebar-brand">
             <img src="/dolelogo.png" alt="DOLE seal" />
             <span>
               <span className="app-sidebar-brand-title" style={{ display: 'block' }}>DOLE CTMS</span>

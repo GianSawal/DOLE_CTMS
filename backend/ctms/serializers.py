@@ -500,10 +500,14 @@ class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         self._remember = bool(attrs.get('remember'))
         data = super().validate(attrs)
-        from .permissions import display_session, is_display_account, staff_session
+        from .permissions import (display_session, is_display_account, is_registration_account,
+                                  registration_office, staff_session)
         if is_display_account(self.user):
             if not display_session(self.user):
                 raise serializers.ValidationError("This TV account's office is not active. Ask the system administrator.")
+        elif is_registration_account(self.user):
+            if not registration_office(self.user):
+                raise serializers.ValidationError("This registration account's office is not active. Ask the system administrator.")
         elif not self.user.is_staff:
             raise serializers.ValidationError("Access denied. Only DOLE staff members may log in.")
         data['user'] = staff_session(self.user)

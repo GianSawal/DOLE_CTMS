@@ -20,11 +20,43 @@ import StaffQr from './pages/staff/StaffQr';
 import StaffUsers from './pages/staff/StaffUsers';
 import StaffAuditLogs from './pages/staff/StaffAuditLogs';
 import StaffChangePassword from './pages/staff/StaffChangePassword';
+import StaffRegistration from './pages/staff/StaffRegistration';
 
 // Where a signed-in TV Display account belongs: its office's TV board (never the staff pages)
 function tvDisplayRedirect(user) {
   if (user?.role !== 'DISPLAY') return null;
   return <Navigate to={user.display?.url || '/staff/login'} replace />;
+}
+
+// A Registration Desk account only has the Registration page
+function registrationRedirect(user) {
+  if (user?.role !== 'REGISTRAR') return null;
+  return <Navigate to="/staff/registration" replace />;
+}
+
+function RegistrationRoute({ children }) {
+  const { user, isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: 'var(--text-muted)' }}>Verifying credentials...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/staff/login" replace />;
+  }
+
+  const tv = tvDisplayRedirect(user);
+  if (tv) return tv;
+
+  if (user?.must_change_password) {
+    return <Navigate to="/staff/change-password" replace />;
+  }
+
+  return <StaffLayout>{children}</StaffLayout>;
 }
 
 function ProtectedRoute({ children }) {
@@ -48,6 +80,9 @@ function ProtectedRoute({ children }) {
   if (user?.must_change_password) {
     return <Navigate to="/staff/change-password" replace />;
   }
+
+  const desk = registrationRedirect(user);
+  if (desk) return desk;
 
   return <StaffLayout>{children}</StaffLayout>;
 }
@@ -73,6 +108,9 @@ function PermissionRoute({ permission, children }) {
   if (user?.must_change_password) {
     return <Navigate to="/staff/change-password" replace />;
   }
+
+  const desk = registrationRedirect(user);
+  if (desk) return desk;
 
   // Mirrors the API's role checks; the server rejects these requests regardless.
   if (!user?.is_superuser && !user?.permissions?.[permission]) {
@@ -119,6 +157,14 @@ export default function App() {
 
           {/* Staff Auth & Protected Routes */}
           <Route path="/staff/login" element={<StaffLogin />} />
+          <Route
+            path="/staff/registration"
+            element={
+              <RegistrationRoute>
+                <StaffRegistration />
+              </RegistrationRoute>
+            }
+          />
           <Route
             path="/staff/queue"
             element={

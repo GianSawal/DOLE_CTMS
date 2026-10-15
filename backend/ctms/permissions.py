@@ -8,6 +8,8 @@ Role and office-type rules, in one place.
   access to their own office only (Queue, Windows, My Clients, TV, QR, Transactions).
 - TV Display accounts (created by the system admin only): not staff. Signing in just
   opens their office's TV display; every staff page and action refuses them.
+- Registration Desk accounts (created by the system admin only): not staff. They can only
+  register walk-in clients for their own office; every other staff page and action refuses them.
 
 Office type and role are separate: an ADMIN role on a provincial account grants nothing extra.
 """
@@ -44,6 +46,22 @@ def is_display_account(user):
         return False
     profile = personnel_profile(user)
     return bool(profile and profile.role == DolePersonnel.ROLE_DISPLAY)
+
+
+def is_registration_account(user):
+    """A sign-in for a registration desk (role REGISTRAR): registers walk-ins for its office only."""
+    if not user or not user.is_authenticated or user.is_superuser:
+        return False
+    profile = personnel_profile(user)
+    return bool(profile and profile.role == DolePersonnel.ROLE_REGISTRAR)
+
+
+def registration_office(user):
+    """The active office a Registration Desk account registers clients for, or None."""
+    if not is_registration_account(user):
+        return None
+    office = primary_office(user)
+    return office if office and office.is_active else None
 
 
 def display_session(user):
@@ -154,4 +172,8 @@ def staff_session(user):
     data.update(user_access(user))
     if is_display_account(user):
         data["display"] = display_session(user)
+    if is_registration_account(user):
+        office = registration_office(user)
+        data["registration"] = {"office_id": office.id, "office_name": office.name,
+                                "office_code": office.code} if office else None
     return data

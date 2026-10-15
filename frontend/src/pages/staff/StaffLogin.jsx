@@ -40,7 +40,9 @@ export default function StaffLogin() {
       setError('');
       const signedIn = await login(username.trim(), password, remember);
       // A TV Display account opens its office's TV board instead of the staff pages
-      navigate(signedIn?.role === 'DISPLAY' && signedIn.display ? signedIn.display.url : '/staff/queue');
+      // A Registration Desk account opens its Registration page
+      navigate(signedIn?.role === 'DISPLAY' && signedIn.display ? signedIn.display.url
+        : signedIn?.role === 'REGISTRAR' ? '/staff/registration' : '/staff/queue');
     } catch (err) {
       if (err.status === 429 && err.data?.code === 'ACCOUNT_LOCKED') {
         setError(err.message);
