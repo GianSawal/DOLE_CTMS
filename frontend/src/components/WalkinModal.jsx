@@ -57,14 +57,16 @@ export default function WalkinModal({ isOpen, onClose, officeId, onCreated }) {
     if (walkinIsGroup) {
       const parsedSize = parseInt(walkinGroupSize, 10);
       const count = isNaN(parsedSize) || parsedSize < 2 ? 2 : parsedSize;
-      const rep = (walkinRepName.trim().toLowerCase() === 'anonymous' || !walkinRepName.trim())
-        ? 'Anonymous'
-        : walkinRepName.trim();
+      const anonymousGroup = walkinRepName.trim().toLowerCase() === 'anonymous' || !walkinRepName.trim();
+      const rep = anonymousGroup ? 'Anonymous' : walkinRepName.trim();
       finalClientName = `${rep} (Group of ${count})`;
-      memberNames = walkinMemberNames.slice(0, count).map(n => n.trim()).filter(Boolean);
-      if (memberNames.length < count) {
-        setError('Please enter the name for every group member.');
-        return;
+      // An anonymous group stays anonymous: no member names are recorded, only the count
+      if (!anonymousGroup) {
+        memberNames = walkinMemberNames.slice(0, count).map(n => n.trim()).filter(Boolean);
+        if (memberNames.length < count) {
+          setError('Please enter the name for every group member.');
+          return;
+        }
       }
     } else {
       finalClientName = walkinName;
@@ -308,10 +310,17 @@ export default function WalkinModal({ isOpen, onClose, officeId, onCreated }) {
               </div>
             </div>
 
-            {/* Dynamic Member Name Inputs */}
+            {/* Dynamic Member Name Inputs (none for an anonymous group: every member stays anonymous) */}
             {(() => {
               const size = parseInt(walkinGroupSize, 10);
               const count = isNaN(size) || size < 2 ? 2 : Math.min(size, 50);
+              if (walkinRepName === 'Anonymous') {
+                return (
+                  <p style={{ fontSize: '0.8rem', color: 'var(--dole-blue)', background: 'rgba(3, 5, 186, 0.04)', border: '1px solid var(--dole-blue)', borderRadius: 'var(--radius-md)', padding: '0.6rem 0.75rem', margin: '0 0 1rem' }}>
+                    All {count} members are registered as Anonymous. No names are recorded.
+                  </p>
+                );
+              }
               return count > 0 && (
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>

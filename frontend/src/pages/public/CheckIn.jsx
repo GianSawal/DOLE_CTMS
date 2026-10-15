@@ -82,11 +82,13 @@ export default function CheckIn() {
       const count = isNaN(parsedSize) || parsedSize < 2 ? 2 : parsedSize;
       const rep = isAnonymous ? 'Anonymous' : (representativeName.trim() || 'Anonymous');
       finalClientName = `${rep} (Group of ${count})`;
-      // Collect and validate member names
-      groupMemberNamesList = memberNames.slice(0, count).map(n => n.trim()).filter(Boolean);
-      if (groupMemberNamesList.length < count) {
-        setError(lang === 'fil' ? 'Mangyaring ilagay ang pangalan ng bawat miyembro ng grupo.' : 'Please enter the name for every group member.');
-        return;
+      // An anonymous group stays anonymous: no member names are recorded, only the count
+      if (!isAnonymous) {
+        groupMemberNamesList = memberNames.slice(0, count).map(n => n.trim()).filter(Boolean);
+        if (groupMemberNamesList.length < count) {
+          setError(lang === 'fil' ? 'Mangyaring ilagay ang pangalan ng bawat miyembro ng grupo.' : 'Please enter the name for every group member.');
+          return;
+        }
       }
     } else {
       finalClientName = isAnonymous ? 'Anonymous' : clientName.trim();
@@ -774,10 +776,19 @@ export default function CheckIn() {
                     </div>
                   </div>
 
-                  {/* Dynamic Member Name Inputs */}
+                  {/* Dynamic Member Name Inputs (none for an anonymous group: every member stays anonymous) */}
                   {(() => {
                     const size = parseInt(groupSize, 10);
                     const count = isNaN(size) || size < 2 ? 2 : Math.min(size, 50);
+                    if (isAnonymous) {
+                      return (
+                        <p style={{ fontSize: '0.85rem', color: 'var(--dole-blue)', background: 'rgba(3, 5, 186, 0.04)', border: '1px solid var(--dole-blue)', borderRadius: 'var(--radius-md)', padding: '0.65rem 0.85rem', margin: '0 0 1.25rem' }}>
+                          {lang === 'fil'
+                            ? `Lahat ng ${count} miyembro ay nakarehistro bilang Anonymous. Walang pangalang itatala.`
+                            : `All ${count} members are registered as Anonymous. No names are recorded.`}
+                        </p>
+                      );
+                    }
                     return count > 0 && (
                       <div style={{ marginBottom: '1.25rem' }}>
                         <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, fontSize: '0.9rem' }}>
