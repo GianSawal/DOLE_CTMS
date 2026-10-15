@@ -874,7 +874,7 @@ export default function DisplayBoard() {
       {t.no_active_serving}
     </div>
   ) : (
-    <div style={{
+    <div className="tv-window-grid" style={{
       flex: '1 1 0',
       minHeight: 0,
       display: 'grid',
@@ -1019,7 +1019,7 @@ export default function DisplayBoard() {
   );
 
   const upcomingQueue = (
-        <section style={{
+        <section className="tv-upcoming" style={{
           backgroundColor: themeStyles.rightSectionBg,
           borderRadius: '16px',
           border: themeStyles.rightSectionBorder,
@@ -1093,7 +1093,7 @@ export default function DisplayBoard() {
 
   // ARTA video: the largest 16:9 player that fits its area
   const artaVideoPanel = (
-          <div style={{
+          <div className="tv-video" style={{
             backgroundColor: '#0b1120',
             borderRadius: '14px',
             border: '1px solid rgba(217, 119, 6, 0.45)',
@@ -1347,7 +1347,7 @@ export default function DisplayBoard() {
   );
 
   return (
-    <div style={{
+    <div className="tv-board" style={{
       height: '100vh',
       overflow: 'hidden',
       backgroundColor: themeStyles.pageBg,
@@ -1401,7 +1401,7 @@ export default function DisplayBoard() {
       )}
 
       {/* Top Banner */}
-      <header style={{
+      <header className="tv-header" style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -1473,7 +1473,7 @@ export default function DisplayBoard() {
       </header>
 
       {/* Three equal full-height columns: upcoming queue, ARTA video, now serving */}
-      <div style={{
+      <div className="tv-board-grid" style={{
         flex: 1,
         minHeight: 0,
         display: 'grid',
@@ -1482,7 +1482,7 @@ export default function DisplayBoard() {
       }}>
         {upcomingQueue}
         {artaVideoPanel}
-        <section style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, gap: '0.6rem' }}>
+        <section className="tv-now-serving" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, gap: '0.6rem' }}>
           {nowServingTitle}
           {windowCards}
         </section>

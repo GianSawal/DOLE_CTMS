@@ -313,7 +313,7 @@ export default function StaffAuditLogs() {
           marginBottom: '1.5rem',
           boxShadow: '0 1px 2px rgba(0, 0, 0, 0.03)',
         }}>
-          <div style={{
+          <div className="audit-filter-grid" style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: '0.85rem',
@@ -501,7 +501,7 @@ export default function StaffAuditLogs() {
           overflow: 'hidden',
         }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
                 <tr style={{
                   backgroundColor: '#f8fafc',
@@ -553,7 +553,7 @@ export default function StaffAuditLogs() {
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         {/* Timestamp */}
-                        <td style={{ padding: '0.9rem 1rem', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                        <td data-label="Timestamp" style={{ padding: '0.9rem 1rem', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
                           <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e293b' }}>
                             {log.formatted_time || log.timestamp}
                           </div>
@@ -565,7 +565,7 @@ export default function StaffAuditLogs() {
                         </td>
 
                         {/* Actor */}
-                        <td style={{ padding: '0.9rem 1rem', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                        <td data-label="Actor" style={{ padding: '0.9rem 1rem', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <div style={{
                               width: '26px',
@@ -597,7 +597,7 @@ export default function StaffAuditLogs() {
                         </td>
 
                         {/* Action Badge */}
-                        <td style={{ padding: '0.9rem 1rem', verticalAlign: 'top' }}>
+                        <td data-label="Action" style={{ padding: '0.9rem 1rem', verticalAlign: 'top' }}>
                           <span style={{
                             display: 'inline-block',
                             padding: '0.2rem 0.55rem',
@@ -614,7 +614,7 @@ export default function StaffAuditLogs() {
                         </td>
 
                         {/* Category */}
-                        <td style={{ padding: '0.9rem 1rem', verticalAlign: 'top' }}>
+                        <td data-label="Category" style={{ padding: '0.9rem 1rem', verticalAlign: 'top' }}>
                           <span style={{
                             display: 'inline-block',
                             padding: '0.18rem 0.5rem',
@@ -631,7 +631,7 @@ export default function StaffAuditLogs() {
                         </td>
 
                         {/* Target */}
-                        <td style={{ padding: '0.9rem 1rem', verticalAlign: 'top', maxWidth: '180px' }}>
+                        <td data-label="Target" style={{ padding: '0.9rem 1rem', verticalAlign: 'top', maxWidth: '180px' }}>
                           <div style={{
                             fontWeight: 600,
                             fontSize: '0.82rem',
@@ -643,7 +643,7 @@ export default function StaffAuditLogs() {
                         </td>
 
                         {/* Office & Division */}
-                        <td style={{ padding: '0.9rem 1rem', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                        <td data-label="Office &amp; Division" style={{ padding: '0.9rem 1rem', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                           <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e293b' }}>
                             {log.office_name || '—'}
                           </div>
@@ -664,14 +664,14 @@ export default function StaffAuditLogs() {
                         </td>
 
                         {/* Description */}
-                        <td style={{ padding: '0.9rem 1rem', verticalAlign: 'top', minWidth: '220px' }}>
+                        <td data-label="Description" style={{ padding: '0.9rem 1rem', verticalAlign: 'top', minWidth: '220px' }}>
                           <div style={{ fontSize: '0.82rem', color: '#334155', lineHeight: '1.4' }}>
                             {log.description || '—'}
                           </div>
                         </td>
 
                         {/* Details Modal Trigger */}
-                        <td style={{ padding: '0.9rem 1rem', verticalAlign: 'top', textAlign: 'center' }}>
+                        <td data-label="Details" style={{ padding: '0.9rem 1rem', verticalAlign: 'top', textAlign: 'center' }}>
                           <button
                             type="button"
                             onClick={() => setSelectedLog(log)}

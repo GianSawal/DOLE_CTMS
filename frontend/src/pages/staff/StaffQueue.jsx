@@ -490,7 +490,7 @@ export default function StaffQueue() {
               ) : (
                 <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
                   {visibleWaiting.map(({ tx, position }) => (
-                    <li key={tx.id} style={{
+                    <li key={tx.id} className="queue-waiting-row" style={{
                       border: position === 1 ? '2px solid var(--dole-blue)' : 'var(--border-hairline)',
                       background: position === 1 ? 'var(--dole-blue-subtle)' : '#fff',
                       borderRadius: 'var(--radius-md)',
@@ -513,7 +513,7 @@ export default function StaffQueue() {
                         </div>
                         <ConcernNote text={tx.concern_note} />
                       </div>
-                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <div className="queue-waiting-actions" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button className="btn btn-primary btn-sm" disabled={!canCall} title={callBlockedReason || undefined} onClick={() => handleCall(tx)}>Call</button>
                         <button className="btn btn-outline btn-sm" disabled={busy}
                           onClick={() => confirmThen(`Cancel Queue ${tx.queue_no}?`,

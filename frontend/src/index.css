@@ -791,3 +791,152 @@ label {
   border: 1px solid #d1fae5;
 }
 
+/* =====================================================================
+   Phones (< 640px): staff tables become stacked cards, rows stay readable.
+   Desktop layouts are unchanged. (!important overrides inline styles.)
+   ===================================================================== */
+@media (max-width: 640px) {
+  /* Tables: one card per row, each cell labelled with its column name */
+  table.responsive-table {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  table.responsive-table thead {
+    display: none;
+  }
+  table.responsive-table,
+  table.responsive-table tbody,
+  table.responsive-table tr,
+  table.responsive-table td {
+    display: block;
+  }
+  table.responsive-table tbody tr {
+    padding: 0.75rem 1rem;
+    border-top: 1px solid #e2e8f0;
+  }
+  table.responsive-table tbody tr:first-child {
+    border-top: none;
+  }
+  /* Label on the left; the cell's own content stacked on the right */
+  table.responsive-table td[data-label] {
+    display: grid;
+    grid-template-columns: minmax(0, 34%) minmax(0, 1fr);
+    align-items: start;
+    column-gap: 0.75rem;
+    row-gap: 0;
+    padding: 0.4rem 0 !important;
+    text-align: right !important;
+    white-space: normal !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+    border: none !important;
+  }
+  table.responsive-table td[data-label]::before {
+    content: attr(data-label);
+    grid-column: 1;
+    grid-row: 1 / span 12;
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #64748b);
+    padding-top: 0.15rem;
+  }
+  table.responsive-table td[data-label] > * {
+    grid-column: 2;
+    justify-self: end;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  table.responsive-table td[data-label] > * + * {
+    margin-top: 0.2rem;
+  }
+  table.responsive-table td[data-label] select {
+    justify-self: stretch;
+  }
+  table.responsive-table td[data-label="Timeline"] > div {
+    text-align: left;
+  }
+
+  /* Queue page: the Call / Cancel / Delete buttons go under the client's details */
+  .queue-waiting-row {
+    grid-template-columns: 1fr !important;
+    gap: 0.55rem !important;
+  }
+  .queue-waiting-actions {
+    justify-content: flex-start !important;
+  }
+
+  /* My Clients: the three tabs stay on one row */
+  .myclients-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+  }
+  .myclients-tabs [role="tab"] {
+    padding: 0.6rem 0.7rem !important;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Audit Log filters: one per line */
+  .audit-filter-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .audit-filter-grid > * {
+    grid-column: auto !important;
+    min-width: 0 !important;
+  }
+}
+
+/* =====================================================================
+   TV board opened on a phone or tablet (< 900px): the three columns stack
+   (now serving first) and the page scrolls. Real TVs are unaffected.
+   ===================================================================== */
+@media (max-width: 900px) {
+  .tv-board {
+    height: auto !important;
+    min-height: 100vh;
+    overflow: visible !important;
+    padding: 1rem !important;
+  }
+  .tv-header {
+    margin-bottom: 1rem !important;
+    padding-bottom: 0.75rem !important;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .tv-header h1 {
+    font-size: 1.6rem !important;
+  }
+  .tv-board-grid {
+    flex: none !important;
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+  .tv-now-serving {
+    order: -1;
+  }
+  .tv-now-serving,
+  .tv-upcoming {
+    min-height: auto !important;
+  }
+  .tv-window-grid {
+    flex: none !important;
+    grid-template-columns: 1fr !important;
+    grid-auto-rows: auto !important;
+  }
+  .tv-window-grid > * {
+    min-height: 150px !important;
+  }
+  .tv-upcoming {
+    flex: none !important;
+    height: 380px;
+  }
+  .tv-video {
+    flex: none !important;
+    height: 360px;
+  }
+}

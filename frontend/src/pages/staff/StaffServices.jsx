@@ -83,7 +83,7 @@ export default function StaffServices() {
         <Notice notice={notice} onDismiss={() => setNotice(null)} />
 
         <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.92rem', minWidth: '560px' }}>
+          <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.92rem', minWidth: '560px' }}>
             <thead>
               <tr style={{ background: '#f8fafc', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 <th style={{ padding: '0.75rem 1rem' }}>Service</th>
@@ -98,11 +98,11 @@ export default function StaffServices() {
                 <tr><td colSpan={3} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No services match.</td></tr>
               ) : services.map(s => (
                 <tr key={s.id} style={{ borderTop: 'var(--border-hairline)' }}>
-                  <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)', fontWeight: 600 }}>{s.name}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+                  <td data-label="Service" style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)', fontWeight: 600 }}>{s.name}</td>
+                  <td data-label="Status" style={{ padding: '0.75rem 1rem' }}>
                     <span className={s.is_active ? 'badge badge-done' : 'badge badge-waiting'}>{s.is_active ? 'Active' : 'Inactive'}</span>
                   </td>
-                  <td style={{ padding: '0.5rem 1rem' }}>
+                  <td data-label="Division" style={{ padding: '0.5rem 1rem' }}>
                     <select
                       value={s.division ?? ''}
                       disabled={savingId === s.id}

@@ -166,7 +166,7 @@ export default function StaffMyClients() {
           </div>
         </PageHeader>
 
-        <div role="tablist" aria-label="My Clients" style={{ display: 'flex', gap: '0.4rem', borderBottom: '2px solid var(--border-color)', marginBottom: '1rem', flexWrap: 'wrap' }}>
+        <div role="tablist" aria-label="My Clients" className="myclients-tabs" style={{ display: 'flex', gap: '0.4rem', borderBottom: '2px solid var(--border-color)', marginBottom: '1rem', flexWrap: 'wrap' }}>
           {TABS.map(t => {
             const isActive = t.key === tab;
             const count = data.counts?.[t.key] ?? 0;

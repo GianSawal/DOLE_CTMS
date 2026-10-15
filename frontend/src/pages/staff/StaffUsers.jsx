@@ -269,7 +269,7 @@ export default function StaffUsers() {
 
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', minWidth: '860px' }}>
+          <table className="responsive-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', minWidth: '860px' }}>
             <thead>
               <tr style={{ background: '#f8fafc', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 <th style={{ padding: '0.75rem 1rem' }}>Name</th>
@@ -288,26 +288,26 @@ export default function StaffUsers() {
                 <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No accounts match these filters.</td></tr>
               ) : pageAccounts.map(a => (
                 <tr key={a.id} style={{ borderTop: 'var(--border-hairline)', opacity: a.is_active ? 1 : 0.6 }}>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+                  <td data-label="Name" style={{ padding: '0.75rem 1rem' }}>
                     <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{a.full_name}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                       {a.username}{a.employee_id && a.employee_id !== a.username ? ` · ID ${a.employee_id}` : ''}
                     </div>
                   </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+                  <td data-label="Office" style={{ padding: '0.75rem 1rem' }}>
                     <div>{a.office_name || '—'}</div>
                     {a.window_name && <div style={{ fontSize: '0.78rem', color: '#047857', fontWeight: 600 }}>At {a.window_name}</div>}
                   </td>
-                  <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{a.position || '—'}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}><RoleBadge account={a} /></td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+                  <td data-label="Position" style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{a.position || '—'}</td>
+                  <td data-label="Role" style={{ padding: '0.75rem 1rem' }}><RoleBadge account={a} /></td>
+                  <td data-label="Status" style={{ padding: '0.75rem 1rem' }}>
                     <span className={a.is_active ? 'badge badge-done' : 'badge badge-waiting'}>{a.is_active ? 'Active' : 'Inactive'}</span>
                     {a.must_change_password && a.is_active && (
                       <div style={{ fontSize: '0.72rem', color: '#b45309', marginTop: '0.2rem' }}>Must change password</div>
                     )}
                   </td>
-                  <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatDate(a.last_login)}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+                  <td data-label="Last login" style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatDate(a.last_login)}</td>
+                  <td data-label="Actions" style={{ padding: '0.75rem 1rem' }}>
                     <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                       <button className="btn btn-outline btn-sm" onClick={() => openEdit(a)}>Edit</button>
                       <button className="btn btn-outline btn-sm" onClick={() => { setResetTarget(a); setResetPassword(''); setResetConfirm(''); setResetError(''); }}>Reset Password</button>
