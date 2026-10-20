@@ -2256,3 +2256,54 @@ class RegistrationDeskAccountTestCase(CsmTablesTestCase):
                                            format='json').status_code, 400)
         self.assertEqual(self.client.patch(f'/api/staff/users/{self.desk().id}/', {'role': 'DISPLAY'},
                                            format='json').status_code, 400)
+
+
+class ServerVoiceTestCase(CsmTablesTestCase):
+    """The TV's server-made announcement audio (ctms/tts.py); the browser voice is the fallback."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.office = CsmOffice.objects.create(name="Aurora Field Office", code="AUR", is_active=True)
+        self.other = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        service = CsmService.objects.create(name="SEnA", is_active=True, sort_order=1)
+        staff = User.objects.create_user(username="ana", password="Ana-Pass-1", is_staff=True,
+                                         first_name="Wilson", last_name="Dayrit")
+        CtmsStaffOffice.objects.create(user=staff, office=self.office)
+        CtmsCounter.objects.create(office=self.office, name="TSSD 1", is_active=True, assigned_user=staff)
+        call_transaction(create_transaction(self.office, service, client_name="Juan", is_priority=True), staff)
+        self.call = CtmsCallAnnouncement.objects.get()
+
+    def test_announcement_wording_is_clear(self):
+        from . import tts
+        self.assertEqual(tts.announcement_text('001', 'TSSD 1', 'Wilson Dayrit'),
+                         "Queue number, zero zero one. Please proceed to, T S S D 1. Please look for Wilson Dayrit.")
+        self.assertEqual(tts.announcement_text('P-003', 'IMSD'),
+                         "Queue number, Priority, P, zero zero three. Please proceed to, I M S D.")
+        self.assertEqual(tts.spoken_window('Window 4'), 'Window 4')
+
+    def test_no_server_voice_means_404_and_the_tv_uses_the_browser_voice(self):
+        with mock.patch('ctms.tts.synthesize', return_value=None), mock.patch('ctms.tts.is_enabled', return_value=False):
+            url = f'/api/public/display/{self.office.id}/calls/{self.call.id}/audio/'
+            self.assertEqual(self.client.get(url).status_code, 404)
+            self.assertFalse(self.client.get(f'/api/public/display/{self.office.id}/calls/').data['server_voice'])
+
+    def test_call_audio_is_the_spoken_announcement(self):
+        with mock.patch('ctms.tts.synthesize', return_value=b'RIFF-fake') as synth, \
+                mock.patch('ctms.tts.is_enabled', return_value=True):
+            res = self.client.get(f'/api/public/display/{self.office.id}/calls/{self.call.id}/audio/')
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res['Content-Type'], 'audio/wav')
+            self.assertEqual(res.content, b'RIFF-fake')
+            self.assertEqual(synth.call_args[0][0], "Queue number, Priority, P, zero zero one. Please proceed to, "
+                                                   "T S S D 1. Please look for Wilson Dayrit.")
+            self.assertTrue(self.client.get(f'/api/public/display/{self.office.id}/calls/').data['server_voice'])
+            # Another office's address can't read this office's calls
+            self.assertEqual(self.client.get(f'/api/public/display/{self.other.id}/calls/{self.call.id}/audio/').status_code, 404)
+
+    def test_sound_check_says_only_the_fixed_sentence(self):
+        from . import tts
+        with mock.patch('ctms.tts.synthesize', return_value=b'RIFF-fake') as synth:
+            res = self.client.get(f'/api/public/display/{self.office.id}/voice-check/', {'text': 'anything else'})
+            self.assertEqual(res.status_code, 200)
+            synth.assert_called_once_with(tts.SOUND_CHECK_TEXT)

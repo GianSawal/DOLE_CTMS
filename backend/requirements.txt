@@ -11,3 +11,4 @@ qrcode==8.2
 Pillow==12.3.0
 gunicorn==23.0.0
 whitenoise==6.9.0
+piper-tts==1.8.0  # offline announcement voice for the TV (ctms/tts.py)

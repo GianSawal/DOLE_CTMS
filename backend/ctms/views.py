@@ -385,9 +385,10 @@ class PublicDisplayCallsView(APIView):
         office_calls = CtmsCallAnnouncement.objects.filter(office_id=office_id)
         latest_id = office_calls.order_by('-id').values_list('id', flat=True).first() or 0
 
+        from . import tts
         raw_after = (request.query_params.get('after') or '').strip()
         if not raw_after.isdigit():
-            return Response({"cursor": latest_id, "calls": [], "has_more": False})
+            return Response({"cursor": latest_id, "calls": [], "has_more": False, "server_voice": tts.is_enabled()})
 
         after = int(raw_after)
         rows = list(
@@ -407,7 +408,38 @@ class PublicDisplayCallsView(APIView):
             "age_seconds": max(0, round((now - r.created_at).total_seconds(), 1)),
         } for r in rows]
         cursor = max([after] + [r.id for r in rows])
-        return Response({"cursor": cursor, "calls": calls, "has_more": has_more})
+        return Response({"cursor": cursor, "calls": calls, "has_more": has_more, "server_voice": tts.is_enabled()})
+
+
+class PublicDisplayCallAudioView(APIView):
+    """The spoken announcement for one logged call, as WAV audio (server voice, ctms/tts.py).
+    404 when the server voice is off; the TV then uses the browser's voice."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, office_id, call_id):
+        from . import tts
+        call = get_object_or_404(CtmsCallAnnouncement, pk=call_id, office_id=office_id)
+        audio = tts.synthesize(tts.announcement_text(call.queue_no, call.counter_name, call.personnel_name))
+        if audio is None:
+            raise Http404("Server voice is not enabled.")
+        response = HttpResponse(audio, content_type='audio/wav')
+        response['Cache-Control'] = 'no-store'  # a changed voice must be heard at once
+        return response
+
+
+class PublicDisplayVoiceCheckView(APIView):
+    """The server voice saying a fixed sound-check sentence, played when the TV's sound is switched on."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, office_id):
+        from . import tts
+        get_object_or_404(CsmOffice, pk=office_id, is_active=True)
+        audio = tts.synthesize(tts.SOUND_CHECK_TEXT)
+        if audio is None:
+            raise Http404("Server voice is not enabled.")
+        response = HttpResponse(audio, content_type='audio/wav')
+        response['Cache-Control'] = 'no-store'  # a changed voice must be heard at once
+        return response
 
 
 class PublicDisplayBoardView(APIView):

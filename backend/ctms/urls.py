@@ -8,6 +8,8 @@ from .views import (
     PublicTicketDetailView,
     PublicDisplayBoardView,
     PublicDisplayCallsView,
+    PublicDisplayCallAudioView,
+    PublicDisplayVoiceCheckView,
     StaffLoginView,
     StaffTokenRefreshView,
     StaffMeView,
@@ -56,6 +58,10 @@ urlpatterns = [
     path('public/tickets/<str:ticket_token>/', PublicTicketDetailView.as_view(), name='public-ticket-detail'),
     path('public/display/<int:office_id>/', PublicDisplayBoardView.as_view(), name='public-display-board'),
     path('public/display/<int:office_id>/calls/', PublicDisplayCallsView.as_view(), name='public-display-calls'),
+    path('public/display/<int:office_id>/calls/<int:call_id>/audio/', PublicDisplayCallAudioView.as_view(),
+         name='public-display-call-audio'),
+    path('public/display/<int:office_id>/voice-check/', PublicDisplayVoiceCheckView.as_view(),
+         name='public-display-voice-check'),
 
     # Staff authentication
     path('staff/auth/login/', StaffLoginView.as_view(), name='staff-login'),

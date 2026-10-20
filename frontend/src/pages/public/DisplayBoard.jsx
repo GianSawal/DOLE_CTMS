@@ -11,6 +11,7 @@ import {
   CHIME_BROADCAST_CHANNEL,
   ANNOUNCEMENT_START_EVENT,
   ANNOUNCEMENT_END_EVENT,
+  ANNOUNCEMENT_ITEM_EVENT,
 } from '../../utils/airportChime';
 import { parseVideoEmbedUrl } from '../../components/ArtaVideoModal';
 import {
@@ -41,6 +42,18 @@ export default function DisplayBoard() {
   const accountKey = user?.role === 'DISPLAY' && String(user.display?.office_id) === String(officeId)
     ? user.display.key : '';
   const displayKey = accountKey || searchParams.get('key') || '';
+  // Read through a ref by the polling loop, so a key change doesn't restart it (and drop
+  // announcements still waiting to be read out)
+  const displayKeyRef = useRef(displayKey);
+  // Whether the server has an announcement voice (from the call feed); else the browser's voice is used
+  const serverVoiceRef = useRef(false);
+  // The client the voice is announcing right now ({ queueNo, counter }), highlighted on the board
+  const [announcing, setAnnouncing] = useState(null);
+  useEffect(() => {
+    const onItem = (e) => setAnnouncing(e.detail || null);
+    window.addEventListener(ANNOUNCEMENT_ITEM_EVENT, onItem);
+    return () => window.removeEventListener(ANNOUNCEMENT_ITEM_EVENT, onItem);
+  }, []);
   // The TV always shows English, light theme, with chime & voice on (no on-screen toggles)
   const lang = 'en';
   const t = translations[lang];
@@ -634,7 +647,7 @@ export default function DisplayBoard() {
 
     async function fetchDisplay() {
       try {
-        const data = await publicApi.getDisplayBoard(officeId, displayKey);
+        const data = await publicApi.getDisplayBoard(officeId, displayKeyRef.current);
         if (!isMounted) return;
 
         // ARTA video is linked locally — do not use server arta_video_url
@@ -686,33 +699,41 @@ export default function DisplayBoard() {
       try {
         const res = await publicApi.getDisplayCalls(officeId, callCursor);
         if (!isMounted) return;
+        serverVoiceRef.current = Boolean(res.server_voice);
         if (callCursor === null) {
           callCursor = res.cursor || 0;
         } else {
-          let announcedAny = false;
+          const fresh = [];
           for (const call of res.calls || []) {
             if (announcedIds.has(call.id)) continue;
             announcedIds.add(call.id);
             if (call.age_seconds > STALE_CALL_SECONDS) continue;
-            announcedAny = true;
+            fresh.push(call);
+          }
+          callCursor = Math.max(callCursor, res.cursor || 0);
+          if (fresh.length) {
+            // Show the called clients on the board first, so each chime comes with its client
+            await fetchDisplay();
+            if (!isMounted) return;
             if (soundEnabled) {
-              announceNowServing({
+              fresh.forEach(call => announceNowServing({
                 queueNo: call.queue_no,
                 counter: call.counter,
                 personnel: call.personnel,
+                isPriority: call.is_priority,
+                // The server's voice when it has one (else the browser's voice is used)
+                audioUrl: res.server_voice ? `/api/public/display/${officeId}/calls/${call.id}/audio/` : null,
                 lang: langRef.current,
                 bypassDedupe: true,  // each logged call is announced once, by id (a recall is a new id)
-              });
+              }));
             }
           }
-          callCursor = Math.max(callCursor, res.cursor || 0);
           // Remember only recent ids (the server re-sends just the last few seconds)
           if (announcedIds.size > 500) {
             const keep = Array.from(announcedIds).slice(-200);
             announcedIds.clear();
             keep.forEach(id => announcedIds.add(id));
           }
-          if (announcedAny) fetchDisplay();
           if (res.has_more) nextDelay = 0;
         }
         callFailures = 0;
@@ -790,7 +811,14 @@ export default function DisplayBoard() {
       }
       window.removeEventListener('storage', handleStorage);
     };
-  }, [officeId, displayKey, soundEnabled]);
+  }, [officeId, soundEnabled]);
+
+  // A new TV key (e.g. after signing in): refresh the board with it, without restarting the loop
+  useEffect(() => {
+    if (displayKeyRef.current === displayKey) return;
+    displayKeyRef.current = displayKey;
+    publicApi.getDisplayBoard(officeId, displayKey).then(setDisplayData).catch(() => {});
+  }, [officeId, displayKey]);
 
   if (loading) {
     return (
@@ -885,7 +913,10 @@ export default function DisplayBoard() {
       {windows.map(w => {
         const clients = w.clients || (w.current ? [w.current] : []);
         const cur = clients[0] || null;
-        const isFresh = cur && cur.called_at && cur.called_at === displayData?.latest_called_at;
+        // Highlighted: the client being announced right now (else the latest call)
+        const isFresh = announcing
+          ? w.name === announcing.counter && clients.some(c => c.queue_no === announcing.queueNo)
+          : Boolean(cur && cur.called_at && cur.called_at === displayData?.latest_called_at);
         const single = cur && clients.length === 1 && !cur.reassigned;
         const accent = cur?.is_priority ? (isLight ? '#d97706' : 'var(--dole-gold)') : (isLight ? '#1e40af' : '#3b82f6');
         const numberColor = (c) => (c.is_priority ? (isLight ? '#b45309' : 'var(--dole-gold)') : themeStyles.queueNoColor);
@@ -1369,6 +1400,8 @@ export default function DisplayBoard() {
               queueNo: firstServing?.queue_no || displayData?.next?.[0] || '042',
               counter: firstServing?.counter || 'Window 1',
               personnel: firstServing?.assigned_personnel || 'Officer on Duty',
+              // With a server voice, its sound check is what plays after the chime
+              audioUrl: serverVoiceRef.current ? `/api/public/display/${officeId}/voice-check/` : null,
               lang: langRef.current,
               bypassDedupe: true,
             });

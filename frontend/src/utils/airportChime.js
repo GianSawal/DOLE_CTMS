@@ -184,6 +184,8 @@ export async function playAirportChime(presetKey = 'classic4') {
 
 export const ANNOUNCEMENT_START_EVENT = 'dole_announcement_start';
 export const ANNOUNCEMENT_END_EVENT = 'dole_announcement_end';
+// Fired as each announcement starts, with { queueNo, counter } (null when all are done)
+export const ANNOUNCEMENT_ITEM_EVENT = 'dole_announcement_item';
 
 // Keep reference to active SpeechSynthesisUtterance to prevent garbage collection mid-speech
 let activeUtterance = null;
@@ -262,76 +264,127 @@ export function formatAnnouncementText({ queueNo, counter, personnel, lang = 'en
 }
 
 /**
- * Speaks a single queue announcement via Web Speech API and returns a Promise that
- * resolves ONLY when the text-to-speech finishes completely (with watchdog safety).
+ * Picks the announcement voice. Voices that run on this computer come first: Chrome's
+ * "Google ..." voices are online-only and go silent without an internet connection,
+ * which left a chime with no announcement after it.
  */
-export function speakQueueAnnouncementAsync({ queueNo, counter, personnel, lang = 'en' }) {
-  return new Promise((resolve) => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) {
-      resolve();
-      return;
+function pickVoice(voices, lang) {
+  if (!voices || !voices.length) return null;
+  const local = voices.filter(v => v.localService);
+  const pools = local.length ? [local, voices] : [voices];
+  for (const pool of pools) {
+    if (lang === 'fil') {
+      const fil = pool.find(v => v.lang.startsWith('fil') || v.lang.startsWith('tl'));
+      if (fil) return fil;
     }
+    const voice =
+      pool.find(v => v.lang === 'en-PH') ||
+      pool.find(v => (v.lang === 'en-US' || v.lang.startsWith('en')) && /Natural|Microsoft|Samantha|Zira|David|Google/.test(v.name)) ||
+      pool.find(v => v.lang.startsWith('en'));
+    if (voice) return voice;
+  }
+  return local[0] || voices[0];
+}
 
+/**
+ * Clears whatever the browser's speech engine still holds (an utterance that never
+ * reported its end). Left in place, it silently swallowed every later announcement.
+ */
+function resetSpeechEngine() {
+  try {
+    const synth = window.speechSynthesis;
+    if (synth && (synth.speaking || synth.pending)) synth.cancel();
+    if (synth && synth.paused) synth.resume();
+  } catch {}
+}
+
+function speakOnce(text, lang, voice, queueNo) {
+  return new Promise((resolve) => {
+    let finished = false;
+    let watchdogTimer = null;
+    const finish = (ok) => {
+      if (finished) return;
+      finished = true;
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      activeUtterance = null;
+      resolve(ok);
+    };
     try {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-
-      const text = formatAnnouncementText({ queueNo, counter, personnel, lang });
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 0.88; // Deliberate, clear PA announcement pace
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
       utterance.lang = lang === 'fil' ? 'fil-PH' : 'en-US';
+      if (voice) utterance.voice = voice;
 
-      let isFinished = false;
-      let watchdogTimer = null;
-
-      const finishSpeech = () => {
-        if (isFinished) return;
-        isFinished = true;
-        if (watchdogTimer) {
-          clearTimeout(watchdogTimer);
-          watchdogTimer = null;
-        }
-        activeUtterance = null;
-        resolve();
-      };
-
-      utterance.onend = finishSpeech;
+      let started = false;
+      utterance.onstart = () => { started = true; };
+      utterance.onend = () => finish(true);
       utterance.onerror = (err) => {
-        console.debug('SpeechSynthesis error event:', err);
-        finishSpeech();
+        console.debug('SpeechSynthesis error event:', err?.error || err);
+        finish(false);
       };
 
-      // Watchdog timer: estimated duration + 4s safety buffer (max 15s)
+      // Watchdog: estimated duration + safety buffer (max 15s). If the engine never reports
+      // the end, it is reset so the next announcement is not stuck behind this one.
       const maxDuration = Math.min(15000, Math.max(7000, text.length * 160));
       watchdogTimer = setTimeout(() => {
         console.debug('Speech watchdog timer triggered for queue:', queueNo);
-        finishSpeech();
+        resetSpeechEngine();
+        finish(started);
       }, maxDuration);
 
-      const voices = window.speechSynthesis.getVoices();
-      if (voices && voices.length > 0) {
-        if (lang === 'fil') {
-          const filVoice = voices.find(v => v.lang.startsWith('fil') || v.lang.startsWith('tl'));
-          if (filVoice) utterance.voice = filVoice;
-        }
-        if (!utterance.voice) {
-          const preferredVoice =
-            voices.find(v => v.lang === 'en-PH') ||
-            voices.find(v => (v.lang === 'en-US' || v.lang.startsWith('en')) && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft') || v.name.includes('Samantha') || v.name.includes('Zira'))) ||
-            voices.find(v => v.lang.startsWith('en')) ||
-            voices[0];
-          if (preferredVoice) utterance.voice = preferredVoice;
-        }
-      }
-
-      activeUtterance = utterance;
+      activeUtterance = utterance; // keeps it from being garbage-collected mid-speech
       window.speechSynthesis.speak(utterance);
     } catch (err) {
       console.debug('Speech synthesis start exception:', err);
-      resolve();
+      finish(false);
+    }
+  });
+}
+
+/**
+ * Speaks a single queue announcement via Web Speech API and returns a Promise that
+ * resolves ONLY when the text-to-speech finishes (with watchdog safety). If the chosen
+ * voice fails, it is said once more with this computer's default voice.
+ */
+export async function speakQueueAnnouncementAsync({ queueNo, counter, personnel, lang = 'en' }) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  const text = formatAnnouncementText({ queueNo, counter, personnel, lang });
+  resetSpeechEngine();
+  const voice = pickVoice(window.speechSynthesis.getVoices(), lang);
+  const ok = await speakOnce(text, lang, voice, queueNo);
+  if (!ok && voice && !voice.default) {
+    resetSpeechEngine();
+    await speakOnce(text, lang, null, queueNo);
+  }
+}
+
+/**
+ * Plays the server-made announcement audio. Resolves true when it played to the end,
+ * false when it could not be loaded or played (the caller then uses the browser's voice).
+ */
+function playAnnouncementAudio(audio) {
+  return new Promise((resolve) => {
+    if (!audio) { resolve(false); return; }
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      audio.onended = null;
+      audio.onerror = null;
+      resolve(ok);
+    };
+    const timer = setTimeout(() => { try { audio.pause(); } catch {} finish(false); }, 20000);
+    audio.onended = () => finish(true);
+    audio.onerror = () => finish(false);
+    try {
+      audio.currentTime = 0;
+      const p = audio.play();
+      if (p && p.catch) p.catch(() => finish(false));
+    } catch {
+      finish(false);
     }
   });
 }
@@ -363,6 +416,9 @@ async function processAnnouncementQueue() {
 
   if (announcementQueue.length === 0) {
     // All announcements in the queue have completed
+    try {
+      window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_ITEM_EVENT, { detail: null }));
+    } catch {}
     if (isAudioDucked) {
       isAudioDucked = false;
       try {
@@ -385,6 +441,23 @@ async function processAnnouncementQueue() {
       item.onDuckStart?.();
     }
 
+    // Tell the board which client is being announced, so it highlights that window
+    try {
+      window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_ITEM_EVENT, {
+        detail: { queueNo: item.queueNo, counter: item.counter },
+      }));
+    } catch {}
+
+    // Start loading the server voice (if any) now, so it is ready when the chime ends
+    let serverAudio = null;
+    if (item.audioUrl) {
+      try {
+        serverAudio = new Audio(item.audioUrl);
+        serverAudio.preload = 'auto';
+        serverAudio.load();
+      } catch { serverAudio = null; }
+    }
+
     // 2. Play the airport chime and wait for the chimes to ring out cleanly (~1.85s)
     await playAirportChime();
     await new Promise((resolve) => {
@@ -392,13 +465,16 @@ async function processAnnouncementQueue() {
     });
     currentChimeTimeout = null;
 
-    // 3. Play the speech announcement and await its full completion!
-    await speakQueueAnnouncementAsync({
-      queueNo: item.queueNo,
-      counter: item.counter,
-      personnel: item.personnel,
-      lang: item.lang,
-    });
+    // 3. The announcement: the server's voice, or the browser's own voice if that fails
+    const played = await playAnnouncementAudio(serverAudio);
+    if (!played) {
+      await speakQueueAnnouncementAsync({
+        queueNo: item.queueNo,
+        counter: item.counter,
+        personnel: item.personnel,
+        lang: item.lang,
+      });
+    }
 
     item.onDuckEnd?.();
 
@@ -420,7 +496,7 @@ async function processAnnouncementQueue() {
  * Enqueues a call/recall announcement into the FIFO queue.
  * Guarantees that queue numbers never overlap or cut each other off.
  */
-export function announceNowServing({ queueNo, counter, personnel, lang = 'en', onDuckStart, onDuckEnd, bypassDedupe = false }) {
+export function announceNowServing({ queueNo, counter, personnel, lang = 'en', isPriority = false, audioUrl = null, onDuckStart, onDuckEnd, bypassDedupe = false }) {
   if (!queueNo) return;
 
   // Deduplicate rapid repeat events within 3.5 seconds
@@ -428,14 +504,11 @@ export function announceNowServing({ queueNo, counter, personnel, lang = 'en', o
     return;
   }
 
-  announcementQueue.push({
-    queueNo,
-    counter,
-    personnel,
-    lang,
-    onDuckStart,
-    onDuckEnd,
-  });
+  const item = { queueNo, counter, personnel, lang, isPriority: Boolean(isPriority), audioUrl, onDuckStart, onDuckEnd };
+  // Priority calls go ahead of regular ones still waiting; otherwise first called, first announced
+  const insertAt = item.isPriority ? announcementQueue.findIndex(q => !q.isPriority) : -1;
+  if (insertAt === -1) announcementQueue.push(item);
+  else announcementQueue.splice(insertAt, 0, item);
 
   processAnnouncementQueue();
 }
@@ -456,6 +529,9 @@ export function cancelAllAnnouncements() {
   }
   activeUtterance = null;
   isAnnouncing = false;
+  try {
+    window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_ITEM_EVENT, { detail: null }));
+  } catch {}
   if (isAudioDucked) {
     isAudioDucked = false;
     try {
