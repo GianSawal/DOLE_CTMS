@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { staffApi } from '../../api/staff';
 import Modal from '../../components/Modal';
-import ReassignModal from '../../components/ReassignModal';
 import DoneModal from '../../components/DoneModal';
 import TransactionHistoryModal from '../../components/TransactionHistoryModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
@@ -12,7 +11,7 @@ const POLL_MS = 5000;
 
 const TABS = [
   { key: 'ongoing', label: 'Ongoing', hint: 'Clients you are serving, or that were transferred to you and are waiting for you to start.' },
-  { key: 'pending', label: 'Pending', hint: 'Clients you paused, e.g. waiting for requirements. They stay with you until you resume or reassign them.' },
+  { key: 'pending', label: 'Pending', hint: 'Clients you paused, e.g. waiting for requirements. They stay with you until you resume or complete them.' },
   { key: 'done', label: 'Done', hint: 'Transactions you completed (latest 200).' },
 ];
 
@@ -36,7 +35,6 @@ export default function StaffMyClients() {
   const [busyId, setBusyId] = useState(null);
   const [notice, setNotice] = useState(null);
 
-  const [reassignTx, setReassignTx] = useState(null);
   const [historyTxId, setHistoryTxId] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
   const [pendingTx, setPendingTx] = useState(null);
@@ -108,11 +106,12 @@ export default function StaffMyClients() {
     setPendingReason('');
   };
 
-  const confirmRequeue = (tx) => setConfirmModal({
-    title: `Return Queue ${tx.queue_no} to the queue?`,
-    message: 'The client goes back to the shared waiting line, unassigned, so any window can call them.',
-    confirmLabel: 'Return to Queue',
-    onConfirm: () => act(tx, 'requeue', `Queue ${tx.queue_no} returned to the queue.`),
+  const confirmDelete = (tx) => setConfirmModal({
+    title: `Delete Queue ${tx.queue_no}?`,
+    message: 'Only for duplicate or mistaken tickets. This permanently removes the transaction and its history.',
+    confirmLabel: 'Delete Ticket',
+    danger: true,
+    onConfirm: () => act(tx, 'delete', `Queue ${tx.queue_no} deleted.`),
   });
 
   const myWindow = data.my_window;
@@ -144,10 +143,7 @@ export default function StaffMyClients() {
           <button className="btn btn-success btn-sm" disabled={busy} onClick={() => setDoneTx(tx)}>Done</button>
         )}
         {tx.status !== 'done' && (
-          <>
-            <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => setReassignTx(tx)}>Reassign</button>
-            <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => confirmRequeue(tx)}>Return to Queue</button>
-          </>
+          <button className="btn btn-outline btn-sm" style={{ color: 'var(--dole-red-dark)' }} disabled={busy} onClick={() => confirmDelete(tx)}>Delete</button>
         )}
         <button className="btn btn-outline btn-sm" onClick={() => setHistoryTxId(tx.id)}>View</button>
       </div>
@@ -270,16 +266,6 @@ export default function StaffMyClients() {
         )}
       </main>
 
-      <ReassignModal
-        tx={reassignTx}
-        onClose={() => setReassignTx(null)}
-        onTransferred={(updated, person) => {
-          setReassignTx(null);
-          flash('success', `Queue ${updated.queue_no} transferred to ${person.name}.`);
-          fetchData();
-        }}
-      />
-
       <TransactionHistoryModal txId={historyTxId} onClose={() => setHistoryTxId(null)} />
 
       <DoneModal
@@ -295,7 +281,7 @@ export default function StaffMyClients() {
       <Modal isOpen={!!pendingTx} onClose={() => setPendingTx(null)} title={pendingTx ? `Move Queue ${pendingTx.queue_no} to Pending` : ''} maxWidth="460px">
         <form onSubmit={submitPending}>
           <p style={{ marginTop: 0, color: 'var(--ui-text-2)', lineHeight: 1.5 }}>
-            The client stays with you under Pending until you resume, complete, or reassign them.
+            The client stays with you under Pending until you resume or complete them.
           </p>
           <NoteField
             id="mc-pending-reason"
@@ -314,7 +300,7 @@ export default function StaffMyClients() {
         <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{confirmModal?.message}</p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.5rem' }}>
           <button className="btn btn-outline" onClick={() => setConfirmModal(null)}>Back</button>
-          <button className="btn btn-primary" onClick={() => { const action = confirmModal.onConfirm; setConfirmModal(null); action(); }}>
+          <button className={confirmModal?.danger ? 'btn btn-danger' : 'btn btn-primary'} onClick={() => { const action = confirmModal.onConfirm; setConfirmModal(null); action(); }}>
             {confirmModal?.confirmLabel}
           </button>
         </div>

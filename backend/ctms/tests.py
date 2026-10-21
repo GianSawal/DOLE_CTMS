@@ -376,6 +376,22 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         self.assertIsNotNone(audit)
         self.assertIn("Deleted Queue", audit.description)
 
+    def test_delete_ongoing_ticket_but_not_finished_one(self):
+        staff_client = APIClient()
+        staff_client.force_authenticate(user=self.staff_user)
+
+        serving = create_transaction(self.office, self.service, client_name="Duplicate")
+        CtmsTransaction.objects.filter(pk=serving.pk).update(status=CtmsTransaction.STATUS_SERVING)
+        res = staff_client.post(f"/api/staff/transactions/{serving.id}/delete/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(CtmsTransaction.objects.filter(id=serving.id).exists())
+
+        done = create_transaction(self.office, self.service, client_name="Finished")
+        CtmsTransaction.objects.filter(pk=done.pk).update(status=CtmsTransaction.STATUS_DONE)
+        res = staff_client.post(f"/api/staff/transactions/{done.id}/delete/")
+        self.assertEqual(res.status_code, status.HTTP_409_CONFLICT)
+        self.assertTrue(CtmsTransaction.objects.filter(id=done.id).exists())
+
     def test_transaction_start_and_done_date_saving(self):
         """
         Verify that:
@@ -1158,9 +1174,10 @@ class Stage3SharedQueueTestCase(CsmTablesTestCase):
         self.assertEqual(res.status_code, 409)
         self.assertIn("cannot change from Waiting to Done", res.data['detail'])
 
-    def test_only_waiting_tickets_can_be_deleted(self):
+    def test_finished_tickets_cannot_be_deleted(self):
         tx = create_transaction(self.bataan, self.svc_tssd1)
         self._as(self.ana).post(f'/api/staff/transactions/{tx.id}/call/')
+        self._as(self.ana).post(f'/api/staff/transactions/{tx.id}/done/')
         self.assertEqual(self.client.post(f'/api/staff/transactions/{tx.id}/delete/').status_code, 409)
 
 

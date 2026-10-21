@@ -769,9 +769,13 @@ class StaffTransactionActionView(APIView):
                 tx = services.cancel_transaction(tx, actor=request.user)
 
             elif action == 'delete':
-                if tx.status != CtmsTransaction.STATUS_WAITING:
-                    return Response({"detail": "Only waiting tickets can be deleted. Cancel or complete it instead."},
+                # Finished records (done, no-show, cancelled) are kept for reports.
+                deletable = (CtmsTransaction.STATUS_WAITING, CtmsTransaction.STATUS_SERVING,
+                             CtmsTransaction.STATUS_TRANSFERRED, CtmsTransaction.STATUS_PENDING)
+                if tx.status not in deletable:
+                    return Response({"detail": "Finished transactions cannot be deleted."},
                                     status=status.HTTP_409_CONFLICT)
+                prev_status = tx.get_status_display()
                 q_no = tx.queue_no
                 t_no = tx.transaction_no
                 s_name = tx.service.name if tx.service else ''
@@ -789,11 +793,12 @@ class StaffTransactionActionView(APIView):
                     target_repr=f"Queue #{q_no} ({t_no})",
                     office=t_office,
                     division_name=t_div,
-                    description=f"Deleted Queue #{q_no} ({t_no}) from waiting line",
+                    description=f"Deleted Queue #{q_no} ({t_no}) while {prev_status.lower()}",
                     details={
                         'queue_no': q_no,
                         'transaction_no': t_no,
                         'service': s_name,
+                        'status': prev_status,
                     }
                 )
                 tx.delete()
