@@ -4,8 +4,8 @@ import Modal from './Modal';
 import { NoteField } from './ui';
 
 /**
- * Refers a client to another office: this ticket closes as Referred and a new one
- * joins that office's waiting line. The client's concern is required.
+ * Refers a client to another office: this ticket closes as Referred, and the client
+ * joins that office's waiting line when they arrive there. The client's concern is required.
  * Calls `onReferred(updatedTx)` after a successful referral.
  */
 export default function ReferModal({ tx, onClose, onReferred }) {
@@ -54,8 +54,9 @@ export default function ReferModal({ tx, onClose, onReferred }) {
       {tx && (
         <form onSubmit={submit}>
           <p style={{ marginTop: 0, color: 'var(--text-secondary)', lineHeight: 1.5, fontSize: '0.92rem' }}>
-            {tx.client_name || 'This client'} · {tx.service_name}. This ticket closes as <strong>Referred</strong>, and the
-            client joins the other office's waiting line right away with a new queue number.
+            {tx.client_name || 'This client'} · {tx.service_name}. This ticket closes as <strong>Referred</strong>. The other
+            office sees the client as <strong>on the way</strong>; they join its waiting line, with a new queue number, when
+            they arrive (by scanning that office's check-in QR, or when its staff confirm the arrival). The referral is valid for 3 days.
           </p>
 
           {error && (

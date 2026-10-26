@@ -294,11 +294,34 @@ class CheckinRequestSerializer(serializers.Serializer):
         return attrs
 
 
-def referral_of(tx):
-    """The ticket created when `tx` was referred to another office, or None."""
-    if tx.status != CtmsTransaction.STATUS_REFERRED:
+def referral_status(tx):
+    """
+    Where a referred ticket's client stands: (arrived_ticket or None, expired). The other
+    office's ticket exists only once the client has arrived there.
+    """
+    from django.utils import timezone
+    from .services import referral_expires_at
+    arrived = CtmsTransaction.objects.select_related('office').filter(referred_from=tx).first()
+    expires = referral_expires_at(tx)
+    return arrived, bool(not arrived and expires and expires < timezone.now())
+
+
+def referral_destination(tx):
+    """Common referral details of a referred ticket, or None if it wasn't referred."""
+    if tx.status != CtmsTransaction.STATUS_REFERRED or not tx.referral_office_id:
         return None
-    return CtmsTransaction.objects.select_related('office').filter(referred_from=tx).first()
+    from .services import referral_expires_at
+    arrived, expired = referral_status(tx)
+    service = tx.referral_service or tx.service
+    return arrived, {
+        'office_id': tx.referral_office_id,
+        'office_name': tx.referral_office.name,
+        'service_name': service.name if service else '',
+        'arrived': bool(arrived),
+        'expired': expired,
+        'expires_at': referral_expires_at(tx),
+        'queue_no': arrived.queue_no if arrived else None,
+    }
 
 
 class TicketPublicSerializer(serializers.ModelSerializer):
@@ -342,11 +365,12 @@ class TicketPublicSerializer(serializers.ModelSerializer):
         return obj.counter.name if obj.counter else None
 
     def get_referred_to(self, obj):
-        # The client's new ticket at the office they were referred to
-        new_tx = referral_of(obj)
-        if not new_tx:
+        # Where the client was sent; their new ticket there once they have arrived
+        found = referral_destination(obj)
+        if not found:
             return None
-        return {'office_name': new_tx.office.name, 'queue_no': new_tx.queue_no, 'ticket_token': new_tx.ticket_token}
+        arrived, data = found
+        return {**data, 'ticket_token': arrived.ticket_token if arrived else None}
 
     def get_referred_from_office(self, obj):
         if not obj.referred_from_id:
@@ -453,20 +477,22 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             return None
         from .models import CtmsAssignmentHistory as H
         source = CtmsTransaction.objects.select_related('office').filter(pk=obj.referred_from_id).first()
-        received = obj.assignment_history.filter(event=H.EVENT_REFERRAL_RECEIVED).first()
+        referred = (source.assignment_history.filter(event=H.EVENT_REFERRED).order_by('-id').first()
+                    if source else None)
         return {
             'office_name': source.office.name if source else '',
             'queue_no': source.queue_no if source else '',
             'transaction_no': source.transaction_no if source else '',
-            'by': received.actor_name if received else '',
+            'by': referred.actor_name if referred else '',
         }
 
     def get_referred_to(self, obj):
-        """Where a referred ticket's client was sent."""
-        new_tx = referral_of(obj)
-        if not new_tx:
+        """Where a referred ticket's client was sent, and their ticket there once they arrived."""
+        found = referral_destination(obj)
+        if not found:
             return None
-        return {'office_name': new_tx.office.name, 'queue_no': new_tx.queue_no, 'transaction_no': new_tx.transaction_no}
+        arrived, data = found
+        return {**data, 'transaction_no': arrived.transaction_no if arrived else None}
 
     def get_service_duration_display(self, obj):
         secs = obj.service_duration_seconds

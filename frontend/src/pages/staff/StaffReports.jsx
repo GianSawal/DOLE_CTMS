@@ -256,7 +256,8 @@ export default function StaffReports() {
               <span style={{ fontSize: '1rem', fontWeight: 600 }}> in</span>
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-              Sent to / received from other offices
+              Sent to / arrived from other offices
+              {summary?.total_referred_not_arrived ? ` · ${summary.total_referred_not_arrived} sent did not arrive` : ''}
             </div>
           </div>
         </div>

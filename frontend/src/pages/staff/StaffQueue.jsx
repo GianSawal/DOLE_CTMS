@@ -22,6 +22,15 @@ const sectionTitle = {
   margin: '0 0 0.75rem',
 };
 
+const subTitle = {
+  fontSize: '0.72rem',
+  fontWeight: 800,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  color: '#6d28d9',
+  margin: '0.25rem 0 0.4rem',
+};
+
 function minutesSince(iso) {
   if (!iso) return null;
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
@@ -193,6 +202,9 @@ export default function StaffQueue() {
   const act = (tx, action, successText, payload) =>
     run(() => staffApi.transactionAction(tx.id, action, payload), successText);
 
+  const markArrived = (ref) => run(() => staffApi.markReferralArrived(ref.id),
+    tx => `${ref.client_name || 'The referred client'} joined the line as Queue ${tx.queue_no}.`);
+
   const confirmThen = (title, message, confirmLabel, onConfirm, danger = true) =>
     setConfirmModal({ title, message, confirmLabel, onConfirm, danger });
 
@@ -229,6 +241,9 @@ export default function StaffQueue() {
   const referredWaiting = line.filter(({ tx }) => tx.referred_from);
   const ownWaitingCount = waiting.length - referredWaiting.length;
   const visibleWaiting = line.filter(({ tx }) => !tx.referred_from && matchesFilter(tx));
+  // Referred here but still travelling: not in the line until they arrive
+  const expectedReferrals = queueData.expected_referrals || [];
+  const referredTotal = expectedReferrals.length + referredWaiting.length;
   const othersServing = (queueData.serving || []).filter(tx => !myCurrent || tx.id !== myCurrent.id);
   const pendingList = queueData.pending || [];
   const officeName = queueData.office?.name || offices.find(o => String(o.id) === String(selectedOffice))?.name || '';
@@ -554,14 +569,53 @@ export default function StaffQueue() {
                     Referred Clients
                     <span style={{
                       fontSize: '0.72rem', fontWeight: 800, padding: '0.05rem 0.5rem', borderRadius: 'var(--radius-full)',
-                      background: referredWaiting.length > 0 ? '#6d28d9' : '#e2e8f0',
-                      color: referredWaiting.length > 0 ? '#fff' : '#475569',
-                    }}>{referredWaiting.length}</span>
+                      background: referredTotal > 0 ? '#6d28d9' : '#e2e8f0',
+                      color: referredTotal > 0 ? '#fff' : '#475569',
+                    }}>{referredTotal}</span>
                   </h2>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Sent here by other offices</span>
                 </div>
+
+                <h3 style={subTitle}>On the way · {expectedReferrals.length}</h3>
+                <p style={{ margin: '0 0 0.5rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Not in the line yet, so they can't be called. They join it when they scan this office's check-in QR,
+                  or when you press Arrived.
+                </p>
+                {expectedReferrals.length === 0 ? (
+                  <div style={{ padding: '0.75rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Nobody is on the way.</div>
+                ) : (
+                  <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
+                    {expectedReferrals.map(ref => (
+                      <li key={ref.id} style={{
+                        border: '1px dashed #c4b5fd', background: '#faf5ff', borderRadius: 'var(--radius-md)',
+                        padding: '0.7rem 0.9rem', display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.75rem', alignItems: 'center',
+                      }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <strong style={{ fontSize: '0.95rem' }}>{ref.client_name || 'No name given'}</strong>
+                            {ref.is_priority && <span className="badge badge-priority">Priority</span>}
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              referred {formatMinutes(minutesSince(ref.referred_at))}{minutesSince(ref.referred_at) >= 1 ? ' ago' : ''}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.85rem', marginTop: '0.2rem', color: 'var(--text-secondary)' }}>{ref.service_name}</div>
+                          <ReferralNote tx={{
+                            referred_from: { office_name: ref.from_office_name, by: ref.referred_by },
+                            referral_note: ref.referral_note,
+                          }} />
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+                            Valid until {new Date(ref.expires_at).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                          </div>
+                        </div>
+                        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => markArrived(ref)}>Arrived</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <h3 style={{ ...subTitle, marginTop: '1rem' }}>Arrived · in line · {referredWaiting.length}</h3>
                 {referredWaiting.length === 0 ? (
-                  <div style={{ padding: '1.25rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>No referred clients are waiting.</div>
+                  <div style={{ padding: '0.75rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>No referred clients are waiting.</div>
                 ) : (
                   <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
                     {referredWaiting.map(renderWaitingRow)}
@@ -595,8 +649,8 @@ export default function StaffQueue() {
         onClose={() => setReferTx(null)}
         onReferred={(updated) => {
           setReferTx(null);
-          flash('success', `Queue ${updated.queue_no} referred to ${updated.referred_to?.office_name || 'the other office'}`
-            + (updated.referred_to ? ` as Queue ${updated.referred_to.queue_no}.` : '.'));
+          flash('success', `Queue ${updated.queue_no} referred to ${updated.referred_to?.office_name || 'the other office'}. `
+            + 'The client joins their line on arrival.');
           fetchQueue();
         }}
       />

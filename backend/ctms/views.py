@@ -232,6 +232,31 @@ class PublicOfficeDetailView(APIView):
         })
 
 
+def checkin_refusal(office, office_code):
+    """
+    The response refusing a client's QR check-in at `office`, or None when it may proceed.
+    Used for new check-ins and for referred clients joining the line on arrival.
+    """
+    # Guard: verify client QR check-in is enabled for this office (e.g. within office hours)
+    qr_config = getattr(office, 'qr_config', None)
+    if not qr_config:
+        qr_config = CtmsOfficeQrConfig.objects.filter(office=office).first()
+    if qr_config and not qr_config.is_qr_enabled:
+        msg = qr_config.disabled_message or "Online registration is currently closed beyond office hours."
+        return Response({"detail": msg, "message": msg, "code": "QR_DISABLED"}, status=status.HTTP_403_FORBIDDEN)
+
+    # Guard: the printed QR poster never changes, so a photo of it works anywhere. When
+    # enabled, require this hour's code shown on the TV / board inside the office.
+    if qr_config and qr_config.requires_office_code:
+        if not services.office_code_matches(qr_config, office_code):
+            if record_office_code_failure(office.id):
+                # Someone is guessing codes: replace this office's code (the TV shows the new one)
+                services.get_or_rotate_office_code(qr_config, force=True)
+            msg = "Incorrect check-in code. Please enter the 4-digit code shown on the screen or board at the office."
+            return Response({"detail": msg, "message": msg, "code": "OFFICE_CODE_INVALID"}, status=status.HTTP_403_FORBIDDEN)
+    return None
+
+
 class PublicCheckinView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_classes = [CheckinThrottle]
@@ -242,23 +267,9 @@ class PublicCheckinView(APIView):
         data = serializer.validated_data
 
         office = data['office']
-        # Guard: verify client QR check-in is enabled for this office (e.g. within office hours)
-        qr_config = getattr(office, 'qr_config', None)
-        if not qr_config:
-            qr_config = CtmsOfficeQrConfig.objects.filter(office=office).first()
-        if qr_config and not qr_config.is_qr_enabled:
-            msg = qr_config.disabled_message or "Online registration is currently closed beyond office hours."
-            return Response({"detail": msg, "message": msg, "code": "QR_DISABLED"}, status=status.HTTP_403_FORBIDDEN)
-
-        # Guard: the printed QR poster never changes, so a photo of it works anywhere. When
-        # enabled, require this hour's code shown on the TV / board inside the office.
-        if qr_config and qr_config.requires_office_code:
-            if not services.office_code_matches(qr_config, data.get('office_code')):
-                if record_office_code_failure(office.id):
-                    # Someone is guessing codes: replace this office's code (the TV shows the new one)
-                    services.get_or_rotate_office_code(qr_config, force=True)
-                msg = "Incorrect check-in code. Please enter the 4-digit code shown on the screen or board at the office."
-                return Response({"detail": msg, "message": msg, "code": "OFFICE_CODE_INVALID"}, status=status.HTTP_403_FORBIDDEN)
+        refusal = checkin_refusal(office, data.get('office_code'))
+        if refusal:
+            return refusal
 
         # A client registering alone must give a name or choose "Anonymous" (groups always
         # send a representative name). Staff walk-ins may leave it blank.
@@ -295,6 +306,49 @@ class PublicTicketDetailView(APIView):
     def get(self, request, ticket_token):
         tx = get_object_or_404(CtmsTransaction, ticket_token=ticket_token)
         return Response(TicketPublicSerializer(tx).data)
+
+
+class PublicReferralArriveView(APIView):
+    """
+    A referred client checks in at the office they were sent to (they scanned its QR):
+    they join its line now, under the same rules as any QR check-in there.
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [CheckinThrottle]
+
+    def post(self, request, ticket_token):
+        tx = get_object_or_404(CtmsTransaction.objects.select_related('referral_office'), ticket_token=ticket_token)
+        if tx.status != CtmsTransaction.STATUS_REFERRED or not tx.referral_office_id:
+            return Response({"detail": "This ticket was not referred to another office."}, status=status.HTTP_409_CONFLICT)
+        refusal = checkin_refusal(tx.referral_office, request.data.get('office_code'))
+        if refusal:
+            return refusal
+        try:
+            new_tx = services.receive_referral(tx)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        _log_referral_arrival(request, tx, new_tx, actor=None)
+        return Response({"ticket_token": new_tx.ticket_token, "queue_no": new_tx.queue_no}, status=status.HTTP_201_CREATED)
+
+
+def _log_referral_arrival(request, src, new_tx, actor):
+    log_audit_event(
+        action='REFERRAL_ARRIVED',
+        category=CtmsAuditLog.CATEGORY_QUEUE,
+        actor=actor,
+        actor_username='' if actor else 'Client',
+        actor_role='' if actor else 'QR check-in',
+        request=request,
+        target_type='Transaction',
+        target_id=new_tx.id,
+        target_repr=f"Queue #{new_tx.queue_no} ({new_tx.transaction_no})",
+        office=new_tx.office,
+        division_name=new_tx.service.division.name if new_tx.service and new_tx.service.division else '',
+        description=(f"Referred client from {src.office.name} arrived and joined the line as Queue #{new_tx.queue_no}"
+                     f" ({'confirmed by staff' if actor else 'QR check-in'})"),
+        details={'from_office': src.office.name, 'from_transaction_no': src.transaction_no,
+                 'queue_no': new_tx.queue_no, 'note': new_tx.referral_note},
+    )
 
 
 SERVICE_DESCRIPTIONS = {
@@ -615,6 +669,8 @@ class StaffQueueView(APIView):
             "my_window": {"id": my_window.id, "name": my_window.name} if my_window else None,
             "my_window_id": my_window.id if my_window else None,
             "my_current": StaffTransactionSerializer(my_current).data if my_current else None,
+            # Referred here by other offices, still on the way: not in the line until they arrive
+            "expected_referrals": [expected_referral_payload(tx) for tx in services.expected_referrals(office)],
         })
 
 
@@ -824,29 +880,23 @@ class StaffTransactionActionView(APIView):
                     if not service:
                         raise ValueError("Choose an active service.")
                 note = str(request.data.get('note', ''))
-                tx, new_tx = services.refer_transaction(tx, request.user, to_office, note, service=service)
-                details = {
-                    'from_office': tx.office.name, 'from_transaction_no': tx.transaction_no,
-                    'to_office': new_tx.office.name, 'to_transaction_no': new_tx.transaction_no,
-                    'to_queue_no': new_tx.queue_no, 'service': new_tx.service.name, 'note': new_tx.referral_note,
-                }
-                for t, act_code, desc in (
-                    (tx, 'REFER_CLIENT', f"Referred Queue #{tx.queue_no} to {new_tx.office.name} (new Queue #{new_tx.queue_no})"),
-                    (new_tx, 'RECEIVE_REFERRAL', f"Received referral from {tx.office.name}: Queue #{new_tx.queue_no}"),
-                ):
-                    log_audit_event(
-                        action=act_code,
-                        category=CtmsAuditLog.CATEGORY_QUEUE,
-                        actor=request.user,
-                        request=request,
-                        target_type='Transaction',
-                        target_id=t.id,
-                        target_repr=f"Queue #{t.queue_no} ({t.transaction_no})",
-                        office=t.office,
-                        division_name=t.service.division.name if t.service and t.service.division else '',
-                        description=desc,
-                        details=details,
-                    )
+                tx = services.refer_transaction(tx, request.user, to_office, note, service=service)
+                log_audit_event(
+                    action='REFER_CLIENT',
+                    category=CtmsAuditLog.CATEGORY_QUEUE,
+                    actor=request.user,
+                    request=request,
+                    target_type='Transaction',
+                    target_id=tx.id,
+                    target_repr=f"Queue #{tx.queue_no} ({tx.transaction_no})",
+                    office=tx.office,
+                    division_name=tx.service.division.name if tx.service and tx.service.division else '',
+                    description=f"Referred Queue #{tx.queue_no} to {tx.referral_office.name}",
+                    details={
+                        'to_office': tx.referral_office.name, 'service': tx.referral_service.name,
+                        'note': tx.referral_note,
+                    },
+                )
 
             elif action == 'transfer':
                 to_user = User.objects.filter(pk=request.data.get('to_user')).first()
@@ -967,6 +1017,41 @@ class StaffMyClientsView(APIView):
             "results": StaffTransactionSerializer(qs, many=True).data,
             "my_window": {"id": window.id, "name": window.name, "office": window.office_id} if window else None,
         })
+
+
+def expected_referral_payload(tx):
+    """A referred client on the way to another office, as that office's staff see it."""
+    referred = tx.assignment_history.filter(event=CtmsAssignmentHistory.EVENT_REFERRED).order_by('-id').first()
+    service = tx.referral_service or tx.service
+    return {
+        "id": tx.id,
+        "client_name": tx.client_name,
+        "group_member_names": tx.group_member_names,
+        "is_priority": tx.is_priority,
+        "service_name": service.name if service else '',
+        "from_office_name": tx.office.name,
+        "from_queue_no": tx.queue_no,
+        "from_transaction_no": tx.transaction_no,
+        "referral_note": tx.referral_note,
+        "referred_by": referred.actor_name if referred else '',
+        "referred_at": tx.closed_at,
+        "expires_at": services.referral_expires_at(tx),
+    }
+
+
+class StaffReferralArrivedView(APIView):
+    """Staff of the receiving office confirm a referred client has arrived: they join the line now."""
+    permission_classes = [IsStaffUser]
+
+    def post(self, request, pk):
+        tx = get_object_or_404(CtmsTransaction.objects.select_related('office', 'referral_office'), pk=pk,
+                               referral_office__in=get_staff_offices(request.user))
+        try:
+            new_tx = services.receive_referral(tx, actor=request.user)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        _log_referral_arrival(request, tx, new_tx, actor=request.user)
+        return Response(StaffTransactionSerializer(new_tx).data, status=status.HTTP_201_CREATED)
 
 
 class StaffTransferRecipientsView(APIView):
@@ -1120,7 +1205,11 @@ class StaffReportsSummaryView(APIView):
         total_serving = qs.filter(status=CtmsTransaction.STATUS_SERVING).count()
         total_no_show = qs.filter(status=CtmsTransaction.STATUS_NO_SHOW).count()
         total_cancelled = qs.filter(status=CtmsTransaction.STATUS_CANCELLED).count()
-        total_referred_out = qs.filter(status=CtmsTransaction.STATUS_REFERRED).count()
+        referred_out = qs.filter(status=CtmsTransaction.STATUS_REFERRED)
+        total_referred_out = referred_out.count()
+        # Sent away, never arrived, and the referral has lapsed
+        total_referred_not_arrived = referred_out.filter(
+            referred_to__isnull=True, closed_at__lt=timezone.now() - services.REFERRAL_VALID_FOR).count()
         total_referred_in = qs.filter(referred_from__isnull=False).count()
 
         # Avg wait time: check-in to the FIRST call (started_at). called_at is moved by every
@@ -1163,6 +1252,7 @@ class StaffReportsSummaryView(APIView):
             "total_cancelled": total_cancelled,
             "total_referred_out": total_referred_out,
             "total_referred_in": total_referred_in,
+            "total_referred_not_arrived": total_referred_not_arrived,
             "avg_wait_min": avg_wait_min,
             "avg_service_min": avg_service_min,
             "surveyed_count": surveyed_count,

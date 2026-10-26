@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { publicApi } from '../../api/public';
 import Header from '../../components/Header';
 import { translations } from '../../locales/translations';
+import { rememberReferral, forgetReferral } from '../../utils/pendingReferrals';
 
 // The office's CSM survey page, carrying the client's SURVEY CODE (?code=T2TW) so the
 // CSM can pre-fill it instead of making the client type it.
@@ -32,6 +33,10 @@ export default function Ticket() {
     async function fetchTicket() {
       try {
         const data = await publicApi.getTicket(ticketToken);
+        // While the client is on the way, remember the referral for the other office's check-in page
+        const ref = data.status === 'referred' ? data.referred_to : null;
+        if (ref && !ref.arrived && !ref.expired) rememberReferral(ticketToken, ref.office_id);
+        else forgetReferral(ticketToken);
         if (isMounted) {
           setTicket(data);
           setError('');
@@ -136,13 +141,13 @@ export default function Ticket() {
             {t.queue_number}
           </div>
 
-          {/* Huge Queue Number */}
+          {/* Huge Queue Number (small on a referred ticket: the number to remember is the new office's) */}
           <div className="mono" style={{
-            fontSize: '4.5rem',
+            fontSize: ticket.status === 'referred' ? '2rem' : '4.5rem',
             fontWeight: 900,
             lineHeight: 1,
             margin: '0.5rem 0',
-            color: ticket.status === 'serving' ? 'var(--dole-blue)' : 'var(--text-primary)',
+            color: ticket.status === 'serving' ? 'var(--dole-blue)' : (ticket.status === 'referred' ? 'var(--text-muted)' : 'var(--text-primary)'),
             letterSpacing: '-0.03em',
           }}>
             {ticket.queue_no}
@@ -214,13 +219,35 @@ export default function Ticket() {
               <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.25rem' }}>
                 {ticket.referred_to.office_name}
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>{t.referred_new_number}</div>
-              <div className="mono" style={{ fontSize: '2.25rem', fontWeight: 900, color: '#6d28d9', lineHeight: 1.1 }}>
-                {ticket.referred_to.queue_no}
+              <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                {ticket.referred_to.service_name}
               </div>
-              <Link to={`/t/${ticket.referred_to.ticket_token}`} className="btn btn-primary w-full" style={{ marginTop: '1rem' }}>
-                {t.open_new_ticket}
-              </Link>
+
+              {ticket.referred_to.arrived ? (
+                <>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>{t.referred_new_number}</div>
+                  <div className="mono" style={{ fontSize: '3.5rem', fontWeight: 900, color: '#6d28d9', lineHeight: 1.05 }}>
+                    {ticket.referred_to.queue_no}
+                  </div>
+                  <Link to={`/t/${ticket.referred_to.ticket_token}`} className="btn btn-primary w-full" style={{ marginTop: '1rem' }}>
+                    {t.open_new_ticket}
+                  </Link>
+                </>
+              ) : ticket.referred_to.expired ? (
+                <p style={{ margin: '0.9rem 0 0', fontWeight: 600, color: 'var(--dole-red-dark)', lineHeight: 1.45 }}>
+                  {t.referred_expired}
+                </p>
+              ) : (
+                <>
+                  <p style={{ margin: '0.9rem 0 0', fontSize: '0.92rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                    {t.referred_scan_hint}
+                  </p>
+                  <p style={{ margin: '0.6rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {t.referred_valid_until}{' '}
+                    {new Date(ticket.referred_to.expires_at).toLocaleString(lang === 'fil' ? 'fil-PH' : 'en-PH', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  </p>
+                </>
+              )}
             </div>
           )}
 
@@ -267,12 +294,14 @@ export default function Ticket() {
               <span style={{ color: 'var(--text-muted)' }}>{t.transaction_no}:</span>
               <span className="mono" style={{ fontWeight: 700 }}>{ticket.transaction_no}</span>
             </div>
-            <div className="flex justify-between">
-              <span style={{ color: 'var(--text-muted)' }}>{t.claim_code}:</span>
-              <span className="mono" style={{ fontWeight: 800, letterSpacing: '0.1em', color: 'var(--dole-blue)' }}>
-                {ticket.claim_code}
-              </span>
-            </div>
+            {ticket.status !== 'referred' && (
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-muted)' }}>{t.claim_code}:</span>
+                <span className="mono" style={{ fontWeight: 800, letterSpacing: '0.1em', color: 'var(--dole-blue)' }}>
+                  {ticket.claim_code}
+                </span>
+              </div>
+            )}
           </div>
 
           {ticket.status !== 'referred' && (

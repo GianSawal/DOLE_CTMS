@@ -7,6 +7,11 @@ export const publicApi = {
     body: JSON.stringify(data),
   }),
   getTicket: (ticketToken) => apiRequest(`/public/tickets/${ticketToken}/`),
+  // A referred client has arrived at the office they were sent to: join its line
+  arriveReferral: (ticketToken, officeCode = '') => apiRequest(`/public/tickets/${ticketToken}/arrive/`, {
+    method: 'POST',
+    body: JSON.stringify({ office_code: officeCode }),
+  }),
   // `key` is the office's secret TV key; only with it does the board include the check-in code.
   getDisplayBoard: (officeId, key) => apiRequest(
     `/public/display/${officeId}/${key ? `?key=${encodeURIComponent(key)}` : ''}`

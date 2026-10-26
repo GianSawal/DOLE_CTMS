@@ -4,6 +4,7 @@ import { publicApi } from '../../api/public';
 import Header from '../../components/Header';
 import SearchableServiceSelect from '../../components/SearchableServiceSelect';
 import { translations } from '../../locales/translations';
+import { referralsTo, forgetReferral } from '../../utils/pendingReferrals';
 
 export default function CheckIn() {
   const { officeId } = useParams();
@@ -32,6 +33,56 @@ export default function CheckIn() {
   const [concernError, setConcernError] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsAgreedCheckbox, setTermsAgreedCheckbox] = useState(false);
+  // A referral to this office that this phone is carrying: { token, ticket }
+  const [referral, setReferral] = useState(null);
+  const [skipReferral, setSkipReferral] = useState(false);
+  const [joining, setJoining] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const token of referralsTo(officeId)) {
+        try {
+          const ticket = await publicApi.getTicket(token);
+          const ref = ticket.status === 'referred' ? ticket.referred_to : null;
+          if (ref && !ref.arrived && !ref.expired && String(ref.office_id) === String(officeId)) {
+            if (!cancelled) setReferral({ token, ticket });
+            return;
+          }
+          forgetReferral(token);
+        } catch (err) {
+          if (err.status === 404) forgetReferral(token);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [officeId]);
+
+  const joinLine = async (e) => {
+    e.preventDefault();
+    if (officeData?.requires_office_code && officeCode.length !== 4) {
+      setOfficeCodeError(true);
+      setError(t.office_code_required);
+      return;
+    }
+    try {
+      setJoining(true);
+      setError('');
+      const res = await publicApi.arriveReferral(referral.token, officeCode);
+      forgetReferral(referral.token);
+      navigate(`/t/${res.ticket_token}`);
+    } catch (err) {
+      if (err.data?.code === 'OFFICE_CODE_INVALID') {
+        setOfficeCodeError(true);
+        setOfficeCode('');
+        setError(t.office_code_invalid);
+      } else {
+        setError(err.message || 'Could not join the line. Please ask DOLE staff for assistance.');
+      }
+    } finally {
+      setJoining(false);
+    }
+  };
 
   useEffect(() => {
     async function fetchOffice() {
@@ -287,6 +338,65 @@ export default function CheckIn() {
               </button>
             </div>
           </div>
+        </main>
+      </div>
+    );
+  }
+
+  // A client referred here, scanning this office's QR on the same phone: one tap joins the line
+  if (referral && !skipReferral) {
+    const ref = referral.ticket.referred_to;
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <Header lang={lang} setLang={setLang} title={officeData?.office?.name} subtitle="Department of Labor and Employment" />
+        <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+          <form onSubmit={joinLine} className="card" style={{ width: '100%', maxWidth: '480px', padding: '2rem', textAlign: 'center', borderTop: '6px solid #6d28d9' }}>
+            <img src="/dolelogo.png" alt="DOLE Official Seal" className="dole-logo-img"
+              style={{ width: '56px', height: '56px', margin: '0 auto 0.75rem', display: 'block' }} />
+            <span className="badge badge-referred">{t.referral_join_title}</span>
+            <h2 style={{ fontSize: '1.35rem', margin: '0.75rem 0 0.25rem' }}>{officeData?.office?.name}</h2>
+            <p style={{ margin: 0, color: 'var(--text-secondary)' }}>{ref.service_name}</p>
+            <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              {t.referral_join_from} {referral.ticket.office_name}
+            </p>
+
+            {error && (
+              <div role="alert" style={{ backgroundColor: 'var(--dole-red-light)', border: '1px solid #fecaca', color: 'var(--dole-red)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem', margin: '1.25rem 0 0', fontSize: '0.9rem', textAlign: 'left' }}>
+                {error}
+              </div>
+            )}
+
+            {officeData?.requires_office_code && (
+              <div style={{ marginTop: '1.25rem', textAlign: 'left' }}>
+                <label htmlFor="referral-office-code">{t.office_code_label} *</label>
+                <input
+                  id="referral-office-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{4}"
+                  maxLength={4}
+                  required
+                  value={officeCode}
+                  onChange={(e) => { setOfficeCode(e.target.value.replace(/\D/g, '').slice(0, 4)); setOfficeCodeError(false); }}
+                  placeholder="0000"
+                  aria-invalid={officeCodeError}
+                  style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '0.5em', textAlign: 'center', maxWidth: '220px', borderColor: officeCodeError ? 'var(--dole-red)' : undefined }}
+                />
+                <p style={{ fontSize: '0.8rem', color: officeCodeError ? 'var(--dole-red)' : 'var(--text-muted)', marginTop: '0.35rem' }}>
+                  {t.office_code_help}
+                </p>
+              </div>
+            )}
+
+            <button type="submit" className="btn btn-primary btn-lg w-full" disabled={joining} style={{ marginTop: '1.5rem' }}>
+              {joining ? t.referral_joining : t.referral_join_btn}
+            </button>
+            <button type="button" onClick={() => { setSkipReferral(true); setError(''); }}
+              style={{ marginTop: '1rem', border: 'none', background: 'none', color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.85rem' }}>
+              {t.referral_join_other}
+            </button>
+          </form>
         </main>
       </div>
     );

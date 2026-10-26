@@ -6,6 +6,7 @@ from .views import (
     PublicOfficeDetailView,
     PublicCheckinView,
     PublicTicketDetailView,
+    PublicReferralArriveView,
     PublicDisplayBoardView,
     PublicDisplayCallsView,
     PublicDisplayCallAudioView,
@@ -23,6 +24,7 @@ from .views import (
     StaffTransactionsListView,
     StaffMyClientsView,
     StaffTransferRecipientsView,
+    StaffReferralArrivedView,
     StaffTransactionHistoryView,
     StaffReportsSummaryView,
     StaffQrCodeView,
@@ -56,6 +58,7 @@ urlpatterns = [
     path('public/offices/<int:office_id>/', PublicOfficeDetailView.as_view(), name='public-office-detail'),
     path('public/checkin/', PublicCheckinView.as_view(), name='public-checkin'),
     path('public/tickets/<str:ticket_token>/', PublicTicketDetailView.as_view(), name='public-ticket-detail'),
+    path('public/tickets/<str:ticket_token>/arrive/', PublicReferralArriveView.as_view(), name='public-referral-arrive'),
     path('public/display/<int:office_id>/', PublicDisplayBoardView.as_view(), name='public-display-board'),
     path('public/display/<int:office_id>/calls/', PublicDisplayCallsView.as_view(), name='public-display-calls'),
     path('public/display/<int:office_id>/calls/<int:call_id>/audio/', PublicDisplayCallAudioView.as_view(),
@@ -79,6 +82,7 @@ urlpatterns = [
     path('staff/my-clients/', StaffMyClientsView.as_view(), name='staff-my-clients'),
     path('staff/transactions/<int:pk>/history/', StaffTransactionHistoryView.as_view(), name='staff-transaction-history'),
     path('staff/transactions/<int:pk>/transfer-recipients/', StaffTransferRecipientsView.as_view(), name='staff-transfer-recipients'),
+    path('staff/referrals/<int:pk>/arrived/', StaffReferralArrivedView.as_view(), name='staff-referral-arrived'),
     path('staff/transactions/<int:pk>/<str:action>/', StaffTransactionActionView.as_view(), name='staff-transaction-action'),
 
     # Reports, QR, and TV Display Video

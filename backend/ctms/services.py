@@ -513,13 +513,32 @@ def transfer_transaction(tx, actor, to_user, reason=''):
         return tx
 
 
+# A referred client has this long to arrive at the other office before the referral lapses
+REFERRAL_VALID_FOR = timedelta(days=3)
+
+
+def referral_expires_at(tx):
+    return tx.closed_at + REFERRAL_VALID_FOR if tx.closed_at else None
+
+
+def expected_referrals(office, now=None):
+    """Referred tickets whose client is on the way to `office`: not arrived yet and not lapsed."""
+    now = now or timezone.now()
+    return (CtmsTransaction.objects
+            .filter(referral_office=office, status=CtmsTransaction.STATUS_REFERRED,
+                    referred_to__isnull=True, closed_at__gte=now - REFERRAL_VALID_FOR)
+            .select_related('office', 'referral_service')
+            .order_by('closed_at', 'id'))
+
+
 def refer_transaction(tx, actor, to_office, note, service=None):
     """
     Sends a client to another office. This ticket closes as Referred (no CSM survey: the
-    client rates the office that finishes the transaction), and a new linked ticket joins
-    `to_office`'s waiting line at once, with that office's next queue number. `note` is the
-    client's concern, required so the receiving office need not ask again.
-    Returns (referred_tx, new_tx).
+    client rates the office that finishes the transaction) and `to_office` is told the
+    client is on the way. The client joins that office's line only on arrival (see
+    receive_referral), so they are never called while travelling and nobody already
+    waiting there is skipped. `note` is the client's concern, required so the receiving
+    office need not ask again.
     """
     from .models import CtmsAssignmentHistory, CtmsNotification
 
@@ -543,38 +562,67 @@ def refer_transaction(tx, actor, to_office, note, service=None):
         tx.status = CtmsTransaction.STATUS_REFERRED
         tx.closed_at = timezone.now()
         tx.counter = None  # frees the window
-        tx.save(update_fields=['status', 'closed_at', 'counter'])
+        tx.referral_office = to_office
+        tx.referral_service = service
+        tx.referral_note = note
+        tx.save(update_fields=['status', 'closed_at', 'counter', 'referral_office', 'referral_service', 'referral_note'])
         record_event(tx, CtmsAssignmentHistory.EVENT_REFERRED, actor=actor, reason=note, **snap)
 
-        new_tx = create_transaction(
-            to_office, service,
-            client_name=tx.client_name,
-            is_priority=tx.is_priority,
-            source=tx.source,
-            group_member_names=tx.group_member_names,
-            concern_note=tx.concern_note,
-        )
-        new_tx.referred_from = tx
-        new_tx.referral_note = note
-        new_tx.save(update_fields=['referred_from', 'referral_note'])
-        record_event(new_tx, CtmsAssignmentHistory.EVENT_REFERRAL_RECEIVED, actor=actor, reason=note)
-
         sender = personnel_display_name(actor) or 'A colleague'
+        name = tx.client_name or 'A client'
         CtmsNotification.objects.bulk_create([
             CtmsNotification(
                 recipient=user,
-                transaction=new_tx,
+                transaction=tx,
                 notification_type='REFERRAL',
-                title=f"Client Referred to Your Office: Queue #{new_tx.queue_no}",
-                message=(f"{sender} of {tx.office.name} referred a client ({service.name}). "
-                         f"Queue #{new_tx.queue_no} is now in your waiting line. Concern: {note}"),
-                queue_no=new_tx.queue_no,
+                title=f"Referred Client on the Way: {name}",
+                message=(f"{sender} of {tx.office.name} referred {name} ({service.name}) to your office. "
+                         f"They join your line when they arrive. Concern: {note}"),
+                queue_no='',
                 service_name=service.name,
                 assigned_at=timezone.now(),
             )
             for user in transfer_recipients(to_office)
         ])
-        return tx, new_tx
+        return tx
+
+
+def receive_referral(referred_tx, actor=None):
+    """
+    The referred client has arrived at the other office: creates their ticket there with
+    that office's next queue number, behind everyone already waiting (priority clients
+    still go first). `actor` is the staff who confirmed the arrival, or None when the
+    client checked in themselves. Returns the new ticket.
+    """
+    from .models import CtmsAssignmentHistory
+
+    with transaction.atomic():
+        src = (CtmsTransaction.objects.select_for_update()
+               .select_related('referral_office', 'referral_service').get(pk=referred_tx.pk))
+        if src.status != CtmsTransaction.STATUS_REFERRED or not src.referral_office_id:
+            raise ValueError("This ticket was not referred to another office.")
+        if CtmsTransaction.objects.filter(referred_from=src).exists():
+            raise ValueError("This client has already joined the line.")
+        if referral_expires_at(src) < timezone.now():
+            raise ValueError("This referral has expired. Please check in again at the office.")
+
+        new_tx = create_transaction(
+            src.referral_office, src.referral_service or src.service,
+            client_name=src.client_name,
+            is_priority=src.is_priority,
+            source=src.source,
+            group_member_names=src.group_member_names,
+            concern_note=src.concern_note,
+        )
+        new_tx.referred_from = src
+        new_tx.referral_note = src.referral_note
+        new_tx.save(update_fields=['referred_from', 'referral_note'])
+        event = record_event(new_tx, CtmsAssignmentHistory.EVENT_REFERRAL_RECEIVED, actor=actor,
+                             reason=src.referral_note)
+        if not actor:
+            event.actor_name = 'Client (QR check-in)'
+            event.save(update_fields=['actor_name'])
+        return new_tx
 
 
 # =====================================================================

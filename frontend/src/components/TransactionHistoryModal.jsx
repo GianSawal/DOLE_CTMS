@@ -10,7 +10,7 @@ function formatDateTime(iso) {
 function describe(e, tx) {
   switch (e.event) {
     case 'REFERRED': return `${e.actor_name} referred the client to ${tx.referred_to?.office_name || 'another office'}`;
-    case 'REFERRAL_IN': return `${e.actor_name} referred the client here from ${tx.referred_from?.office_name || 'another office'}`;
+    case 'REFERRAL_IN': return `The client arrived from ${tx.referred_from?.office_name || 'another office'} and joined the line (${e.actor_name.startsWith('Client') ? 'QR check-in' : `confirmed by ${e.actor_name}`})`;
     case 'CALLED': return `${e.to_user_name} called the client${e.to_counter_name ? ` to ${e.to_counter_name}` : ''}`;
     case 'TRANSFERRED': return `${e.from_user_name || e.actor_name} transferred the client to ${e.to_user_name}`;
     case 'PENDING': return `${e.actor_name} moved the client to Pending`;
@@ -60,7 +60,11 @@ export default function TransactionHistoryModal({ txId, onClose }) {
             {tx.referred_to && (
               <>
                 <dt style={{ color: 'var(--text-muted)' }}>Referred to</dt>
-                <dd style={{ margin: 0 }}>{tx.referred_to.office_name} · Queue {tx.referred_to.queue_no} ({tx.referred_to.transaction_no})</dd>
+                <dd style={{ margin: 0 }}>
+                  {tx.referred_to.office_name} · {tx.referred_to.arrived
+                    ? `arrived, Queue ${tx.referred_to.queue_no} (${tx.referred_to.transaction_no})`
+                    : tx.referred_to.expired ? 'did not arrive' : 'on the way'}
+                </dd>
               </>
             )}
             {tx.status === 'done' && (

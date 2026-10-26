@@ -465,7 +465,16 @@ class CtmsTransaction(models.Model):
     survey_token = models.CharField(max_length=32, unique=True, db_index=True)
     claim_code = models.CharField(max_length=4)
 
-    # Set on a ticket created by a referral: the other office's ticket it continues
+    # Referrals. On the referred (closed) ticket: where the client was sent and for what.
+    # The other office's ticket is created only when the client arrives there, so nobody is
+    # called while still travelling; until then the referral is "expected" by that office.
+    referral_office = models.ForeignKey(
+        CsmOffice, on_delete=models.PROTECT, null=True, blank=True, related_name='incoming_referrals',
+    )
+    referral_service = models.ForeignKey(
+        CsmService, on_delete=models.PROTECT, null=True, blank=True, related_name='+',
+    )
+    # On the ticket created at arrival: the referred ticket it continues
     referred_from = models.OneToOneField(
         'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referred_to',
     )
@@ -533,7 +542,7 @@ class CtmsAssignmentHistory(models.Model):
     EVENT_NO_SHOW = 'NO_SHOW'
     EVENT_CANCELLED = 'CANCELLED'
     EVENT_REFERRED = 'REFERRED'              # this office sent the client to another office
-    EVENT_REFERRAL_RECEIVED = 'REFERRAL_IN'  # this ticket was created by another office's referral
+    EVENT_REFERRAL_RECEIVED = 'REFERRAL_IN'  # a referred client arrived: this ticket joined the line
 
     EVENT_CHOICES = (
         (EVENT_CALLED, 'Called'),
@@ -546,7 +555,7 @@ class CtmsAssignmentHistory(models.Model):
         (EVENT_NO_SHOW, 'No-show'),
         (EVENT_CANCELLED, 'Cancelled'),
         (EVENT_REFERRED, 'Referred to another office'),
-        (EVENT_REFERRAL_RECEIVED, 'Referral received'),
+        (EVENT_REFERRAL_RECEIVED, 'Referred client arrived'),
     )
 
     id = models.BigAutoField(primary_key=True)

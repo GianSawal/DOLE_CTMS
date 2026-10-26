@@ -26,6 +26,12 @@ const STATUS_BADGE = {
 
 const FINISHED = ['done', 'referred'];
 
+// Where a referred client stands at the office they were sent to
+function referralState(ref) {
+  if (ref.arrived) return `arrived, Queue ${ref.queue_no}`;
+  return ref.expired ? 'did not arrive' : 'on the way';
+}
+
 function formatDateTime(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -262,7 +268,7 @@ export default function StaffMyClients() {
                       {tx.status === 'done'
                         ? `Completed ${formatDateTime(tx.done_at)}${tx.is_surveyed ? ' · CSM answered' : ''}`
                         : tx.status === 'referred'
-                          ? `Referred ${formatDateTime(tx.closed_at)}${tx.referred_to ? ` to ${tx.referred_to.office_name} (Queue ${tx.referred_to.queue_no})` : ''}`
+                          ? `Referred ${formatDateTime(tx.closed_at)}${tx.referred_to ? ` to ${tx.referred_to.office_name} · ${referralState(tx.referred_to)}` : ''}`
                           : `Checked in ${formatDateTime(tx.checked_in_at)}`}
                     </div>
                     <ReferralNote tx={tx} />
@@ -284,8 +290,8 @@ export default function StaffMyClients() {
         onClose={() => setReferTx(null)}
         onReferred={(updated) => {
           setReferTx(null);
-          flash('success', `Queue ${updated.queue_no} referred to ${updated.referred_to?.office_name || 'the other office'}`
-            + (updated.referred_to ? ` as Queue ${updated.referred_to.queue_no}.` : '.'));
+          flash('success', `Queue ${updated.queue_no} referred to ${updated.referred_to?.office_name || 'the other office'}. `
+            + 'The client joins their line on arrival.');
           fetchData();
         }}
       />

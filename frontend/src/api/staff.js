@@ -200,7 +200,9 @@ export const staffApi = {
     method: 'POST',
     body: JSON.stringify({ to_user: toUser, reason }),
   }),
-  // Sends the client to another office's waiting line; `note` (the client's concern) is required
+  // A client referred here has arrived: they join this office's line now
+  markReferralArrived: (id) => apiRequest(`/staff/referrals/${id}/arrived/`, { method: 'POST' }),
+  // Sends the client to another office (they join its line on arrival); `note` (the client's concern) is required
   referTransaction: (id, toOffice, note, service = null) => apiRequest(`/staff/transactions/${id}/refer/`, {
     method: 'POST',
     body: JSON.stringify({ to_office: toOffice, note, service }),
