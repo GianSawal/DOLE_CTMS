@@ -16,7 +16,14 @@ function write(list) {
   try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* storage unavailable */ }
 }
 
+// A device signed in as staff or a registration desk is shared by many clients: it must not
+// carry one client's referral to the next person who checks in on it.
+function isSharedDevice() {
+  try { return Boolean(localStorage.getItem('ctms_user')); } catch { return false; }
+}
+
 export function rememberReferral(ticketToken, officeId) {
+  if (isSharedDevice()) return;
   const list = read().filter(r => r.token !== ticketToken);
   write([...list, { token: ticketToken, officeId: String(officeId) }]);
 }

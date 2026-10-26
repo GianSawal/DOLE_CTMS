@@ -87,6 +87,12 @@ export default function PrintSlip({ transaction, onClose }) {
               </div>
             </div>
           )}
+          {transaction.referred_from && (
+            <div>
+              <strong>Referred from:</strong> {transaction.referred_from.office_name}
+              {' '}(<span className="mono">{transaction.referred_from.transaction_no}</span>)
+            </div>
+          )}
           <div>
             <strong>Tx No:</strong> <span className="mono">{transaction.transaction_no}</span>
           </div>
@@ -124,6 +130,9 @@ export default function PrintSlip({ transaction, onClose }) {
         }}>
           <strong>DOLE CSM Survey Requirement:</strong><br />
           Once your transaction is marked <em>Done</em>, rate our service at the CSM kiosk using your <strong>Transaction No.</strong> and <strong>Survey Code</strong>.
+          {transaction.referred_from && (
+            <> Your survey code is the same as on your first slip; answer the survey for <strong>{transaction.office_name}</strong>.</>
+          )}
         </div>
       </div>
 

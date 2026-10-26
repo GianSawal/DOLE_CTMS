@@ -616,7 +616,10 @@ def receive_referral(referred_tx, actor=None):
         )
         new_tx.referred_from = src
         new_tx.referral_note = src.referral_note
-        new_tx.save(update_fields=['referred_from', 'referral_note'])
+        # Same survey code as the first slip, so a client with only that slip can rate this office
+        # (the CSM looks a code up within the office whose survey form is open)
+        new_tx.claim_code = src.claim_code
+        new_tx.save(update_fields=['referred_from', 'referral_note', 'claim_code'])
         event = record_event(new_tx, CtmsAssignmentHistory.EVENT_REFERRAL_RECEIVED, actor=actor,
                              reason=src.referral_note)
         if not actor:

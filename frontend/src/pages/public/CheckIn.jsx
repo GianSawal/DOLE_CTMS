@@ -357,7 +357,8 @@ export default function CheckIn() {
             <h2 style={{ fontSize: '1.35rem', margin: '0.75rem 0 0.25rem' }}>{officeData?.office?.name}</h2>
             <p style={{ margin: 0, color: 'var(--text-secondary)' }}>{ref.service_name}</p>
             <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              {t.referral_join_from} {referral.ticket.office_name}
+              {t.referral_join_from} {referral.ticket.office_name} · <span className="mono">{referral.ticket.transaction_no}</span>
+              {' '}({t.queue_number} {referral.ticket.queue_no})
             </p>
 
             {error && (

@@ -8,6 +8,7 @@ import WalkinModal from '../../components/WalkinModal';
 import ReassignModal from '../../components/ReassignModal';
 import DoneModal from '../../components/DoneModal';
 import ReferModal from '../../components/ReferModal';
+import ArrivingReferrals from '../../components/ArrivingReferrals';
 import { broadcastQueueCall } from '../../utils/airportChime';
 import { PageHeader, Notice, NoteField, LatestNote, ConcernNote, ReferralNote } from '../../components/ui';
 
@@ -202,8 +203,12 @@ export default function StaffQueue() {
   const act = (tx, action, successText, payload) =>
     run(() => staffApi.transactionAction(tx.id, action, payload), successText);
 
-  const markArrived = (ref) => run(() => staffApi.markReferralArrived(ref.id),
-    tx => `${ref.client_name || 'The referred client'} joined the line as Queue ${tx.queue_no}.`);
+  // The client may have no phone: hand them the new queue slip (same survey code as their first slip)
+  const markArrived = (ref) => run(async () => {
+    const tx = await staffApi.markReferralArrived(ref.id);
+    setPrintedTx(tx);
+    return tx;
+  }, tx => `${ref.client_name || 'The referred client'} joined the line as Queue ${tx.queue_no}. Hand them the new slip.`);
 
   const confirmThen = (title, message, confirmLabel, onConfirm, danger = true) =>
     setConfirmModal({ title, message, confirmLabel, onConfirm, danger });
@@ -579,39 +584,9 @@ export default function StaffQueue() {
                 <h3 style={subTitle}>On the way · {expectedReferrals.length}</h3>
                 <p style={{ margin: '0 0 0.5rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                   Not in the line yet, so they can't be called. They join it when they scan this office's check-in QR,
-                  or when you press Arrived.
+                  or when you press Arrived (e.g. they show their first slip). Arrived prints their new queue slip.
                 </p>
-                {expectedReferrals.length === 0 ? (
-                  <div style={{ padding: '0.75rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Nobody is on the way.</div>
-                ) : (
-                  <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
-                    {expectedReferrals.map(ref => (
-                      <li key={ref.id} style={{
-                        border: '1px dashed #c4b5fd', background: '#faf5ff', borderRadius: 'var(--radius-md)',
-                        padding: '0.7rem 0.9rem', display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.75rem', alignItems: 'center',
-                      }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <strong style={{ fontSize: '0.95rem' }}>{ref.client_name || 'No name given'}</strong>
-                            {ref.is_priority && <span className="badge badge-priority">Priority</span>}
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              referred {formatMinutes(minutesSince(ref.referred_at))}{minutesSince(ref.referred_at) >= 1 ? ' ago' : ''}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '0.85rem', marginTop: '0.2rem', color: 'var(--text-secondary)' }}>{ref.service_name}</div>
-                          <ReferralNote tx={{
-                            referred_from: { office_name: ref.from_office_name, by: ref.referred_by },
-                            referral_note: ref.referral_note,
-                          }} />
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
-                            Valid until {new Date(ref.expires_at).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                          </div>
-                        </div>
-                        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => markArrived(ref)}>Arrived</button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <ArrivingReferrals referrals={expectedReferrals} busy={busy} onArrived={markArrived} />
 
                 <h3 style={{ ...subTitle, marginTop: '1rem' }}>Arrived · in line · {referredWaiting.length}</h3>
                 {referredWaiting.length === 0 ? (

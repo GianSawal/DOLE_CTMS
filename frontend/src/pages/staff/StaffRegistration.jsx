@@ -6,12 +6,14 @@ import { PageHeader, Notice } from '../../components/ui';
 import WalkinModal from '../../components/WalkinModal';
 import Modal from '../../components/Modal';
 import PrintSlip from '../../components/PrintSlip';
+import ArrivingReferrals from '../../components/ArrivingReferrals';
 
 const REFRESH_MS = 10000;
 
 /**
  * Registration desk: registers walk-in clients into the office's shared queue and prints
- * their slip. The only page a Registration Desk account can open.
+ * their slip, and confirms clients other offices referred here when they arrive.
+ * The only page a Registration Desk account can open.
  */
 export default function StaffRegistration() {
   const { user } = useAuth();
@@ -20,6 +22,7 @@ export default function StaffRegistration() {
   const [registering, setRegistering] = useState(false);
   const [printedTx, setPrintedTx] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [confirming, setConfirming] = useState(false);
 
   const loadDesk = useCallback(async () => {
     try {
@@ -38,6 +41,23 @@ export default function StaffRegistration() {
 
   const office = desk?.office || user?.registration;
   const officeId = desk?.office?.id || user?.registration?.office_id;
+
+  const referrals = desk?.expected_referrals || [];
+
+  const handleArrived = async (ref) => {
+    try {
+      setConfirming(true);
+      setNotice(null);
+      const tx = await staffApi.markReferralArrived(ref.id);
+      setPrintedTx(tx);
+      setNotice({ type: 'success', text: `${ref.client_name || 'The referred client'} joined the line as Queue ${tx.queue_no}. Hand them the new slip.` });
+    } catch (err) {
+      setNotice({ type: 'error', text: err.message || 'Could not confirm the arrival.' });
+    } finally {
+      setConfirming(false);
+      loadDesk();
+    }
+  };
 
   const handleCreated = (tx) => {
     setRegistering(false);
@@ -77,6 +97,17 @@ export default function StaffRegistration() {
         >
           <ClipboardPen size={22} aria-hidden="true" /> Register Client
         </button>
+
+        <section className="card" style={{ marginTop: '1.25rem', borderTop: '5px solid #6d28d9' }}>
+          <h2 style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#6d28d9', margin: '0 0 0.35rem' }}>
+            Arriving referrals · {referrals.length}
+          </h2>
+          <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+            Clients other offices sent here. When one arrives and shows their first slip, press Arrived: they join the
+            line and get a new slip with this office's queue number.
+          </p>
+          <ArrivingReferrals referrals={referrals} busy={confirming} onArrived={handleArrived} />
+        </section>
 
         <WalkinModal
           isOpen={registering}

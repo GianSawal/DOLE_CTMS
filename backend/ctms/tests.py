@@ -2502,3 +2502,30 @@ class ReferralTestCase(CsmTablesTestCase):
         self.assertEqual(bataan['survey_rate_percent'], 0)  # not a Done ticket, so not in the survey rate
         aurora = self._as(admin).get(f'/api/staff/reports/summary/?office={self.aurora.id}').data
         self.assertEqual((aurora['total_referred_out'], aurora['total_referred_in']), (0, 1))
+
+    def test_new_ticket_keeps_the_first_slips_survey_code(self):
+        tx = self._referred()
+        self._arrive(tx)
+        self.assertEqual(CtmsTransaction.objects.get(referred_from=tx).claim_code, tx.claim_code)
+
+    def _desk(self, office, username):
+        user = User.objects.create_user(username=username, password="pw")
+        DolePersonnel.objects.create(user=user, employee_id=username, first_name="Desk", last_name=office.code,
+                                     office=office, role=DolePersonnel.ROLE_REGISTRAR)
+        return user
+
+    def test_registration_desk_confirms_arrivals_for_its_own_office(self):
+        tx = self._referred(client_name="Juan")
+        aurora_desk = self._desk(self.aurora, "desk_aur")
+        bataan_desk = self._desk(self.bataan, "desk_bat")
+
+        desk = self._as(aurora_desk).get('/api/staff/registration/').data
+        self.assertEqual([e['id'] for e in desk['expected_referrals']], [tx.id])
+        self.assertEqual(desk['expected_referrals'][0]['from_transaction_no'], tx.transaction_no)
+        self.assertEqual(self._as(bataan_desk).get('/api/staff/registration/').data['expected_referrals'], [])
+
+        self.assertEqual(self._as(bataan_desk).post(f'/api/staff/referrals/{tx.id}/arrived/').status_code, 404)
+        res = self._as(aurora_desk).post(f'/api/staff/referrals/{tx.id}/arrived/')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['office_name'], "Aurora Field Office")
+        self.assertEqual(res.data['claim_code'], tx.claim_code)  # printed on the new slip

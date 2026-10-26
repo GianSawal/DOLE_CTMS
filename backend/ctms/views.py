@@ -739,7 +739,10 @@ class StaffCreateWalkinView(APIView):
 
 
 class RegistrationDeskView(APIView):
-    """The Registration page's header: its office and how many clients are waiting (no names)."""
+    """
+    The Registration page's header: its office and how many clients are waiting (no names),
+    plus the clients other offices referred here who are on the way, to confirm on arrival.
+    """
     permission_classes = [IsStaffOrRegistrationDesk]
 
     def get(self, request):
@@ -755,6 +758,7 @@ class RegistrationDeskView(APIView):
             "office": {"id": office.id, "name": office.name, "code": office.code},
             "waiting_count": waiting.count(),
             "priority_waiting": waiting.filter(is_priority=True).count(),
+            "expected_referrals": [expected_referral_payload(tx) for tx in services.expected_referrals(office)],
         })
 
 
@@ -1040,12 +1044,15 @@ def expected_referral_payload(tx):
 
 
 class StaffReferralArrivedView(APIView):
-    """Staff of the receiving office confirm a referred client has arrived: they join the line now."""
-    permission_classes = [IsStaffUser]
+    """
+    The receiving office's staff or registration desk confirm a referred client has arrived
+    (e.g. they showed their first slip): they join the line now.
+    """
+    permission_classes = [IsStaffOrRegistrationDesk]
 
     def post(self, request, pk):
         tx = get_object_or_404(CtmsTransaction.objects.select_related('office', 'referral_office'), pk=pk,
-                               referral_office__in=get_staff_offices(request.user))
+                               referral_office__in=walkin_offices(request.user))
         try:
             new_tx = services.receive_referral(tx, actor=request.user)
         except ValueError as e:
