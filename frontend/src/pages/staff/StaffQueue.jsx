@@ -91,7 +91,6 @@ export default function StaffQueue() {
   const [pendingReason, setPendingReason] = useState('');
   const [reassignTx, setReassignTx] = useState(null);
   const [referTx, setReferTx] = useState(null);
-  const [waitingTab, setWaitingTab] = useState('waiting'); // 'waiting' | 'referred'
   // View-only filter for the waiting list; remembered on this computer
   const [waitingFilter, setWaitingFilter] = useState(loadWaitingFilter);
   const [divisions, setDivisions] = useState([]);
@@ -225,12 +224,11 @@ export default function StaffQueue() {
   // Keep each ticket's real place in the full line (#3 stays #3 when filtered)
   const matchesFilter = (tx) => inDivision(tx.division_id)
     && (!waitingFilter.service || String(tx.service) === String(waitingFilter.service));
-  // Clients referred from another office get their own tab; both tabs are the same line
-  const referredCount = waiting.filter(tx => tx.referred_from).length;
-  const tabTotal = waitingTab === 'referred' ? referredCount : waiting.length - referredCount;
-  const visibleWaiting = waiting
-    .map((tx, idx) => ({ tx, position: idx + 1 }))
-    .filter(({ tx }) => Boolean(tx.referred_from) === (waitingTab === 'referred') && matchesFilter(tx));
+  // Clients referred from another office are listed in their own card; both are the same line
+  const line = waiting.map((tx, idx) => ({ tx, position: idx + 1 }));
+  const referredWaiting = line.filter(({ tx }) => tx.referred_from);
+  const ownWaitingCount = waiting.length - referredWaiting.length;
+  const visibleWaiting = line.filter(({ tx }) => !tx.referred_from && matchesFilter(tx));
   const othersServing = (queueData.serving || []).filter(tx => !myCurrent || tx.id !== myCurrent.id);
   const pendingList = queueData.pending || [];
   const officeName = queueData.office?.name || offices.find(o => String(o.id) === String(selectedOffice))?.name || '';
@@ -243,6 +241,50 @@ export default function StaffQueue() {
       : waiting.length === 0
         ? 'Nobody is waiting.'
         : '';
+
+  // One ticket in the waiting line; #position is its place in the whole line
+  const renderWaitingRow = ({ tx, position }) => (
+    <li key={tx.id} className="queue-waiting-row" style={{
+      border: position === 1 ? '2px solid var(--dole-blue)' : 'var(--border-hairline)',
+      background: position === 1 ? 'var(--dole-blue-subtle)' : '#fff',
+      borderRadius: 'var(--radius-md)',
+      padding: '0.7rem 0.9rem',
+      display: 'grid',
+      gridTemplateColumns: '1fr auto',
+      gap: '0.75rem',
+      alignItems: 'center',
+    }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>#{position}</span>
+          <strong style={{ fontFamily: 'var(--font-mono)', fontSize: '1.2rem', color: 'var(--text-primary)' }}>{tx.queue_no}</strong>
+          {tx.is_priority && <span className="badge badge-priority">Priority</span>}
+          <DivisionTag name={tx.division_name} />
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>waiting {formatMinutes(minutesSince(tx.checked_in_at))}</span>
+        </div>
+        <div style={{ fontSize: '0.85rem', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <ClientName tx={tx} /> · <span style={{ color: 'var(--text-secondary)' }}>{tx.service_name}</span>
+        </div>
+        <ReferralNote tx={tx} />
+        <ConcernNote text={tx.concern_note} />
+      </div>
+      <div className="queue-waiting-actions" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <button className="btn btn-primary btn-sm" disabled={!canCall} title={callBlockedReason || undefined} onClick={() => handleCall(tx)}>Call</button>
+        <button className="btn btn-outline btn-sm" disabled={busy}
+          onClick={() => confirmThen(`Cancel Queue ${tx.queue_no}?`,
+            'The ticket leaves the queue and is recorded as cancelled.',
+            'Cancel Ticket', () => act(tx, 'cancel', `Queue ${tx.queue_no} cancelled.`))}>
+          Cancel
+        </button>
+        <button className="btn btn-outline btn-sm" style={{ color: 'var(--dole-red-dark)' }} disabled={busy}
+          onClick={() => confirmThen(`Delete Queue ${tx.queue_no}?`,
+            'Only for duplicate or mistaken tickets. This permanently removes the ticket.',
+            'Delete Ticket', () => act(tx, 'delete', `Queue ${tx.queue_no} deleted.`))}>
+          Delete
+        </button>
+      </div>
+    </li>
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-ground)' }}>
@@ -441,156 +483,92 @@ export default function StaffQueue() {
               </section>
             </div>
 
-            {/* Right: shared waiting line */}
-            <section className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
-                <h2 style={sectionTitle}>Waiting Queue</h2>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Priority first, then first come, first served</span>
-              </div>
+            {/* Right: shared waiting line, with clients referred from other offices listed apart */}
+            <div style={{ display: 'grid', gap: '1.25rem' }}>
+              <section className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
+                  <h2 style={sectionTitle}>Waiting Queue</h2>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Priority first, then first come, first served</span>
+                </div>
 
-              <div role="tablist" aria-label="Waiting queue" style={{ display: 'flex', gap: '0.4rem', borderBottom: '2px solid var(--border-color)', marginBottom: '0.75rem' }}>
-                {[
-                  { key: 'waiting', label: 'Waiting', count: waiting.length - referredCount },
-                  { key: 'referred', label: 'Referred', count: referredCount },
-                ].map(t => {
-                  const isActive = t.key === waitingTab;
-                  return (
-                    <button
-                      key={t.key}
-                      type="button"
-                      role="tab"
-                      aria-selected={isActive}
-                      onClick={() => setWaitingTab(t.key)}
-                      style={{
-                        padding: '0.5rem 0.9rem',
-                        border: 'none',
-                        borderBottom: `3px solid ${isActive ? 'var(--dole-blue)' : 'transparent'}`,
-                        marginBottom: '-2px',
-                        background: 'none',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: '0.9rem',
-                        fontWeight: isActive ? 800 : 600,
-                        color: isActive ? 'var(--dole-blue)' : 'var(--text-secondary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                      }}
-                    >
-                      {t.label}
-                      <span style={{
-                        fontSize: '0.72rem',
-                        fontWeight: 800,
-                        padding: '0.05rem 0.45rem',
-                        borderRadius: 'var(--radius-full)',
-                        background: isActive ? 'var(--dole-blue)' : (t.key === 'referred' && t.count > 0 ? '#6d28d9' : '#e2e8f0'),
-                        color: isActive || (t.key === 'referred' && t.count > 0) ? '#fff' : '#475569',
-                      }}>{t.count}</span>
+                {/* View filter: show only tickets for one division and/or service */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                  <select
+                    aria-label="Filter waiting list by division"
+                    value={waitingFilter.division}
+                    onChange={(e) => {
+                      const division = e.target.value;
+                      // Drop a chosen service that isn't in the new division
+                      const svc = services.find(x => String(x.id) === String(waitingFilter.service));
+                      const keep = svc && (!division || (division === 'none' ? !svc.division : String(svc.division) === division));
+                      updateWaitingFilter({ division, service: keep ? waitingFilter.service : '' });
+                    }}
+                    style={{ minHeight: '38px' }}
+                  >
+                    <option value="">All divisions</option>
+                    {divisions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    <option value="none">No division</option>
+                  </select>
+                  <select
+                    aria-label="Filter waiting list by service"
+                    value={waitingFilter.service}
+                    onChange={(e) => updateWaitingFilter({ ...waitingFilter, service: e.target.value })}
+                    style={{ minHeight: '38px' }}
+                  >
+                    <option value="">All services</option>
+                    {serviceOptions.map(svc => <option key={svc.id} value={svc.id}>{svc.name}</option>)}
+                  </select>
+                </div>
+                {waitingFiltered && (
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
+                    fontSize: '0.8rem', color: 'var(--text-secondary)', background: '#f8fafc',
+                    border: 'var(--border-hairline)', borderRadius: 'var(--radius-md)', padding: '0.45rem 0.7rem', marginBottom: '0.6rem',
+                  }}>
+                    <span>
+                      Showing <strong>{visibleWaiting.length}</strong> of {ownWaitingCount} waiting.
+                      {' '}<span style={{ color: 'var(--text-muted)' }}>Call Next Client still calls #1 in the whole line; use Call on a ticket below to serve this filter.</span>
+                    </span>
+                    <button type="button" className="btn btn-outline btn-sm" onClick={() => updateWaitingFilter({ division: '', service: '' })}>
+                      Clear filter
                     </button>
-                  );
-                })}
-              </div>
+                  </div>
+                )}
 
-              {/* View filter: show only tickets for one division and/or service */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '0.6rem' }}>
-                <select
-                  aria-label="Filter waiting list by division"
-                  value={waitingFilter.division}
-                  onChange={(e) => {
-                    const division = e.target.value;
-                    // Drop a chosen service that isn't in the new division
-                    const svc = services.find(x => String(x.id) === String(waitingFilter.service));
-                    const keep = svc && (!division || (division === 'none' ? !svc.division : String(svc.division) === division));
-                    updateWaitingFilter({ division, service: keep ? waitingFilter.service : '' });
-                  }}
-                  style={{ minHeight: '38px' }}
-                >
-                  <option value="">All divisions</option>
-                  {divisions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  <option value="none">No division</option>
-                </select>
-                <select
-                  aria-label="Filter waiting list by service"
-                  value={waitingFilter.service}
-                  onChange={(e) => updateWaitingFilter({ ...waitingFilter, service: e.target.value })}
-                  style={{ minHeight: '38px' }}
-                >
-                  <option value="">All services</option>
-                  {serviceOptions.map(svc => <option key={svc.id} value={svc.id}>{svc.name}</option>)}
-                </select>
-              </div>
-              {waitingFiltered && (
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
-                  fontSize: '0.8rem', color: 'var(--text-secondary)', background: '#f8fafc',
-                  border: 'var(--border-hairline)', borderRadius: 'var(--radius-md)', padding: '0.45rem 0.7rem', marginBottom: '0.6rem',
-                }}>
-                  <span>
-                    Showing <strong>{visibleWaiting.length}</strong> of {tabTotal} {waitingTab === 'referred' ? 'referred' : 'waiting'}.
-                    {' '}<span style={{ color: 'var(--text-muted)' }}>Call Next Client still calls #1 in the whole line; use Call on a ticket below to serve this filter.</span>
-                  </span>
-                  <button type="button" className="btn btn-outline btn-sm" onClick={() => updateWaitingFilter({ division: '', service: '' })}>
-                    Clear filter
-                  </button>
-                </div>
-              )}
+                {ownWaitingCount === 0 ? (
+                  <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nobody is waiting right now.</div>
+                ) : visibleWaiting.length === 0 ? (
+                  <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    Nobody is waiting for this {waitingFilter.service ? 'service' : 'division'} right now.
+                  </div>
+                ) : (
+                  <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
+                    {visibleWaiting.map(renderWaitingRow)}
+                  </ol>
+                )}
+              </section>
 
-              {tabTotal === 0 ? (
-                <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  {waitingTab === 'referred' ? 'No clients referred from other offices are waiting.' : 'Nobody is waiting right now.'}
+              <section className="card" style={{ borderTop: '5px solid #6d28d9' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <h2 style={{ ...sectionTitle, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    Referred Clients
+                    <span style={{
+                      fontSize: '0.72rem', fontWeight: 800, padding: '0.05rem 0.5rem', borderRadius: 'var(--radius-full)',
+                      background: referredWaiting.length > 0 ? '#6d28d9' : '#e2e8f0',
+                      color: referredWaiting.length > 0 ? '#fff' : '#475569',
+                    }}>{referredWaiting.length}</span>
+                  </h2>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Sent here by other offices</span>
                 </div>
-              ) : visibleWaiting.length === 0 ? (
-                <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Nobody {waitingTab === 'referred' ? 'referred' : 'is waiting'} for this {waitingFilter.service ? 'service' : 'division'} right now.
-                </div>
-              ) : (
-                <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
-                  {visibleWaiting.map(({ tx, position }) => (
-                    <li key={tx.id} className="queue-waiting-row" style={{
-                      border: position === 1 ? '2px solid var(--dole-blue)' : 'var(--border-hairline)',
-                      background: position === 1 ? 'var(--dole-blue-subtle)' : '#fff',
-                      borderRadius: 'var(--radius-md)',
-                      padding: '0.7rem 0.9rem',
-                      display: 'grid',
-                      gridTemplateColumns: '1fr auto',
-                      gap: '0.75rem',
-                      alignItems: 'center',
-                    }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>#{position}</span>
-                          <strong style={{ fontFamily: 'var(--font-mono)', fontSize: '1.2rem', color: 'var(--text-primary)' }}>{tx.queue_no}</strong>
-                          {tx.is_priority && <span className="badge badge-priority">Priority</span>}
-                          {tx.referred_from && <span className="badge badge-referred">Referral</span>}
-                          <DivisionTag name={tx.division_name} />
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>waiting {formatMinutes(minutesSince(tx.checked_in_at))}</span>
-                        </div>
-                        <div style={{ fontSize: '0.85rem', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          <ClientName tx={tx} /> · <span style={{ color: 'var(--text-secondary)' }}>{tx.service_name}</span>
-                        </div>
-                        <ReferralNote tx={tx} />
-                        <ConcernNote text={tx.concern_note} />
-                      </div>
-                      <div className="queue-waiting-actions" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-primary btn-sm" disabled={!canCall} title={callBlockedReason || undefined} onClick={() => handleCall(tx)}>Call</button>
-                        <button className="btn btn-outline btn-sm" disabled={busy}
-                          onClick={() => confirmThen(`Cancel Queue ${tx.queue_no}?`,
-                            'The ticket leaves the queue and is recorded as cancelled.',
-                            'Cancel Ticket', () => act(tx, 'cancel', `Queue ${tx.queue_no} cancelled.`))}>
-                          Cancel
-                        </button>
-                        <button className="btn btn-outline btn-sm" style={{ color: 'var(--dole-red-dark)' }} disabled={busy}
-                          onClick={() => confirmThen(`Delete Queue ${tx.queue_no}?`,
-                            'Only for duplicate or mistaken tickets. This permanently removes the ticket.',
-                            'Delete Ticket', () => act(tx, 'delete', `Queue ${tx.queue_no} deleted.`))}>
-                          Delete
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </section>
+                {referredWaiting.length === 0 ? (
+                  <div style={{ padding: '1.25rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>No referred clients are waiting.</div>
+                ) : (
+                  <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
+                    {referredWaiting.map(renderWaitingRow)}
+                  </ol>
+                )}
+              </section>
+            </div>
           </div>
         )}
       </main>
