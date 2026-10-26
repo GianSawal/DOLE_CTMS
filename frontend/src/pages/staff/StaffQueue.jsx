@@ -91,6 +91,7 @@ export default function StaffQueue() {
   const [pendingReason, setPendingReason] = useState('');
   const [reassignTx, setReassignTx] = useState(null);
   const [referTx, setReferTx] = useState(null);
+  const [waitingTab, setWaitingTab] = useState('waiting'); // 'waiting' | 'referred'
   // View-only filter for the waiting list; remembered on this computer
   const [waitingFilter, setWaitingFilter] = useState(loadWaitingFilter);
   const [divisions, setDivisions] = useState([]);
@@ -222,10 +223,14 @@ export default function StaffQueue() {
   const serviceOptions = services.filter(svc => inDivision(svc.division));
   const waitingFiltered = Boolean(waitingFilter.division || waitingFilter.service);
   // Keep each ticket's real place in the full line (#3 stays #3 when filtered)
+  const matchesFilter = (tx) => inDivision(tx.division_id)
+    && (!waitingFilter.service || String(tx.service) === String(waitingFilter.service));
+  // Clients referred from another office get their own tab; both tabs are the same line
+  const referredCount = waiting.filter(tx => tx.referred_from).length;
+  const tabTotal = waitingTab === 'referred' ? referredCount : waiting.length - referredCount;
   const visibleWaiting = waiting
     .map((tx, idx) => ({ tx, position: idx + 1 }))
-    .filter(({ tx }) => inDivision(tx.division_id)
-      && (!waitingFilter.service || String(tx.service) === String(waitingFilter.service)));
+    .filter(({ tx }) => Boolean(tx.referred_from) === (waitingTab === 'referred') && matchesFilter(tx));
   const othersServing = (queueData.serving || []).filter(tx => !myCurrent || tx.id !== myCurrent.id);
   const pendingList = queueData.pending || [];
   const officeName = queueData.office?.name || offices.find(o => String(o.id) === String(selectedOffice))?.name || '';
@@ -443,6 +448,49 @@ export default function StaffQueue() {
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Priority first, then first come, first served</span>
               </div>
 
+              <div role="tablist" aria-label="Waiting queue" style={{ display: 'flex', gap: '0.4rem', borderBottom: '2px solid var(--border-color)', marginBottom: '0.75rem' }}>
+                {[
+                  { key: 'waiting', label: 'Waiting', count: waiting.length - referredCount },
+                  { key: 'referred', label: 'Referred', count: referredCount },
+                ].map(t => {
+                  const isActive = t.key === waitingTab;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => setWaitingTab(t.key)}
+                      style={{
+                        padding: '0.5rem 0.9rem',
+                        border: 'none',
+                        borderBottom: `3px solid ${isActive ? 'var(--dole-blue)' : 'transparent'}`,
+                        marginBottom: '-2px',
+                        background: 'none',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        fontSize: '0.9rem',
+                        fontWeight: isActive ? 800 : 600,
+                        color: isActive ? 'var(--dole-blue)' : 'var(--text-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                      }}
+                    >
+                      {t.label}
+                      <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 800,
+                        padding: '0.05rem 0.45rem',
+                        borderRadius: 'var(--radius-full)',
+                        background: isActive ? 'var(--dole-blue)' : (t.key === 'referred' && t.count > 0 ? '#6d28d9' : '#e2e8f0'),
+                        color: isActive || (t.key === 'referred' && t.count > 0) ? '#fff' : '#475569',
+                      }}>{t.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* View filter: show only tickets for one division and/or service */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '0.6rem' }}>
                 <select
@@ -478,7 +526,7 @@ export default function StaffQueue() {
                   border: 'var(--border-hairline)', borderRadius: 'var(--radius-md)', padding: '0.45rem 0.7rem', marginBottom: '0.6rem',
                 }}>
                   <span>
-                    Showing <strong>{visibleWaiting.length}</strong> of {waiting.length} waiting.
+                    Showing <strong>{visibleWaiting.length}</strong> of {tabTotal} {waitingTab === 'referred' ? 'referred' : 'waiting'}.
                     {' '}<span style={{ color: 'var(--text-muted)' }}>Call Next Client still calls #1 in the whole line; use Call on a ticket below to serve this filter.</span>
                   </span>
                   <button type="button" className="btn btn-outline btn-sm" onClick={() => updateWaitingFilter({ division: '', service: '' })}>
@@ -487,11 +535,13 @@ export default function StaffQueue() {
                 </div>
               )}
 
-              {waiting.length === 0 ? (
-                <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>Nobody is waiting right now.</div>
+              {tabTotal === 0 ? (
+                <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  {waitingTab === 'referred' ? 'No clients referred from other offices are waiting.' : 'Nobody is waiting right now.'}
+                </div>
               ) : visibleWaiting.length === 0 ? (
                 <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Nobody is waiting for this {waitingFilter.service ? 'service' : 'division'} right now.
+                  Nobody {waitingTab === 'referred' ? 'referred' : 'is waiting'} for this {waitingFilter.service ? 'service' : 'division'} right now.
                 </div>
               ) : (
                 <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
