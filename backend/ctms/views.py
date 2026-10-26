@@ -22,7 +22,9 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .security import login_locked, record_office_code_failure, video_upload_error
+from .security import (
+    end_all_sessions, login_locked, mark_ended_on_purpose, record_office_code_failure, video_upload_error,
+)
 from .models import (
     CANONICAL_DIVISIONS,
     CsmDivision,
@@ -60,6 +62,7 @@ from .serializers import (
     StaffTokenObtainPairSerializer,
     StaffTokenRefreshSerializer,
     CtmsAuditLogSerializer,
+    remember_refresh_token,
 )
 from .throttling import CheckinThrottle, LoginThrottle
 from .permissions import (
@@ -156,7 +159,9 @@ class StaffLogoutView(APIView):
 
     def post(self, request):
         try:
-            RefreshToken(str(request.data.get('refresh') or '')).blacklist()
+            token = RefreshToken(str(request.data.get('refresh') or ''))
+            mark_ended_on_purpose([token['jti']])  # a signed-out token gets no grace renewal
+            token.blacklist()
         except Exception:
             pass  # already expired, revoked, or malformed: nothing left to revoke
         return Response(status=status.HTTP_205_RESET_CONTENT)
@@ -1918,6 +1923,9 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
             user.set_password(password)
             changes['password'] = 'reset'
         user.save()
+        if password or not user.is_active:
+            # A new password or a disabled account must not leave other sign-ins working
+            end_all_sessions(user)
 
         # Office assignment (single office per account); TV and desk accounts have none
         is_tv = role == DolePersonnel.ROLE_DISPLAY
@@ -1985,6 +1993,7 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(password)
         user.save()
+        end_all_sessions(user)  # whoever had the old password is signed out everywhere
         if is_display_account(user):
             self._audit('USER_PASSWORD_RESET', user, f"Reset password for '{user.username}'")
             return Response({"status": "success", "message": f"New password set for {user.username}. Sign in on the TV with it."})
@@ -2035,10 +2044,21 @@ class StaffChangePasswordView(APIView):
 
         DolePersonnel.objects.filter(user=user).update(must_change_password=False)
 
+        # Sign out every other browser, and give this one a fresh sign-in (keeping "Remember me")
+        end_all_sessions(user)
+        refresh = RefreshToken.for_user(user)
+        try:
+            if RefreshToken(str(request.data.get('refresh') or ''), verify=False).get('remember'):
+                remember_refresh_token(refresh)
+        except Exception:
+            pass  # no or unreadable current token: a normal-length sign-in
+
         return Response({
             "status": "success",
             "message": "Password updated successfully. You can now access the staff portal.",
             "must_change_password": False,
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
         })
 
 

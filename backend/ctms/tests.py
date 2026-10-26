@@ -2529,3 +2529,113 @@ class ReferralTestCase(CsmTablesTestCase):
         self.assertEqual(res.status_code, 201, res.data)
         self.assertEqual(res.data['office_name'], "Aurora Field Office")
         self.assertEqual(res.data['claim_code'], tx.claim_code)  # printed on the new slip
+
+
+class ClientIdentThrottleTestCase(CsmTablesTestCase):
+    """A client can't escape the check-in limit by faking X-Forwarded-For; real clients stay separate."""
+
+    def setUp(self):
+        cache.clear()
+        self.office = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.service = CsmService.objects.create(name="SEnA", is_active=True, sort_order=1)
+        self.client = APIClient()
+
+    def _checkin(self, **meta):
+        return self.client.post('/api/public/checkin/', {
+            'office': self.office.id, 'service': self.service.id, 'client_name': 'Juan',
+        }, format='json', **meta).status_code
+
+    def _limit(self):
+        from .throttling import CheckinThrottle
+        return CheckinThrottle().parse_rate(CheckinThrottle().get_rate())[0]
+
+    def test_faked_forwarded_for_does_not_reset_the_limit(self):
+        limit = self._limit()
+        # Through nginx (in Docker): the client's fake entries come first, nginx appends the real address
+        codes = [self._checkin(HTTP_X_FORWARDED_FOR=f'10.99.{i}.1, 203.0.113.5', REMOTE_ADDR='172.18.0.3')
+                 for i in range(limit + 3)]
+        self.assertEqual(codes.count(201), limit)
+        self.assertEqual(codes.count(429), 3)
+
+    def test_behind_two_proxies_too(self):
+        limit = self._limit()
+        codes = [self._checkin(HTTP_X_FORWARDED_FOR=f'10.99.{i}.1, 203.0.113.5, 172.18.0.2', REMOTE_ADDR='172.18.0.3')
+                 for i in range(limit + 1)]
+        self.assertEqual(codes.count(429), 1)
+
+    def test_real_clients_are_counted_separately(self):
+        limit = self._limit()
+        for i in range(limit):
+            self.assertEqual(self._checkin(HTTP_X_FORWARDED_FOR='203.0.113.5', REMOTE_ADDR='172.18.0.3'), 201)
+        self.assertEqual(self._checkin(HTTP_X_FORWARDED_FOR='203.0.113.6', REMOTE_ADDR='172.18.0.3'), 201)
+        self.assertEqual(self._checkin(REMOTE_ADDR='192.168.1.20'), 201)  # no proxy at all
+
+
+class SessionEndingTestCase(CsmTablesTestCase):
+    """Renewing a sign-in replaces it; a new password or a disabled account ends every other sign-in."""
+
+    def setUp(self):
+        cache.clear()
+        self.office = CsmOffice.objects.create(name="DOLE Regional Office III", code="RO3", is_active=True)
+        CtmsOfficeProfile.objects.update_or_create(office=self.office, defaults={'office_type': 'REGIONAL'})
+        self.user = User.objects.create_user(username="ana", password="Old-Pass-123", is_staff=True)
+        CtmsStaffOffice.objects.create(user=self.user, office=self.office)
+        DolePersonnel.objects.create(user=self.user, employee_id="ana", first_name="Ana", last_name="Cruz",
+                                     office=self.office)
+        self.client = APIClient()
+
+    def _login(self, password="Old-Pass-123"):
+        self.client.force_authenticate(user=None)
+        res = self.client.post('/api/staff/auth/login/', {'username': 'ana', 'password': password}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        return res.data['refresh']
+
+    def _refresh(self, token):
+        self.client.force_authenticate(user=None)
+        return self.client.post('/api/staff/auth/refresh/', {'refresh': token}, format='json')
+
+    def test_renewal_replaces_the_token_with_a_short_grace(self):
+        old = self._login()
+        res = self._refresh(old)
+        self.assertEqual(res.status_code, 200)
+        new = res.data['refresh']
+        self.assertNotEqual(new, old)
+        self.assertEqual(self._refresh(new).status_code, 200)
+        # Another tab sending the replaced token moments later still renews
+        self.assertEqual(self._refresh(old).status_code, 200)
+        # ...but not once the grace period is over
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+        BlacklistedToken.objects.update(blacklisted_at=timezone.now() - timedelta(minutes=2))
+        self.assertEqual(self._refresh(old).status_code, 401)
+
+    def test_signed_out_token_gets_no_grace(self):
+        token = self._login()
+        self.client.post('/api/staff/auth/logout/', {'refresh': token}, format='json')
+        self.assertEqual(self._refresh(token).status_code, 401)
+
+    def test_password_change_ends_other_sessions_and_keeps_this_one(self):
+        other_browser = self._login()
+        this_browser = self._login()
+        self.client.force_authenticate(user=self.user)
+        res = self.client.post('/api/staff/auth/change-password/', {
+            'current_password': 'Old-Pass-123', 'new_password': 'New-Pass-456',
+            'confirm_password': 'New-Pass-456', 'refresh': this_browser,
+        }, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(self._refresh(other_browser).status_code, 401)
+        self.assertEqual(self._refresh(this_browser).status_code, 401)
+        self.assertEqual(self._refresh(res.data['refresh']).status_code, 200)  # the fresh one works
+
+    def test_admin_reset_and_deactivation_end_sessions(self):
+        admin = User.objects.create_superuser(username="root", password="Root-Pass-1")
+        token = self._login()
+        self.client.force_authenticate(user=admin)
+        res = self.client.post(f'/api/staff/users/{self.user.id}/reset-password/',
+                               {'password': 'Temp-Pass-789', 'confirm_password': 'Temp-Pass-789'}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(self._refresh(token).status_code, 401)
+
+        token = self._login(password='Temp-Pass-789')
+        self.client.force_authenticate(user=admin)
+        self.assertEqual(self.client.post(f'/api/staff/users/{self.user.id}/toggle-active/').status_code, 200)
+        self.assertEqual(self._refresh(token).status_code, 401)

@@ -415,7 +415,7 @@ export default function StaffTransactions() {
                           <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: 'var(--dole-gold-dark)', fontWeight: 700 }}>Priority</span>
                         )}
                         <div className="mono" style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{tx.transaction_no}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Code: {tx.claim_code}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Survey code: {tx.claim_code}</div>
                       </td>
                       <td data-label="Division" style={{ padding: '0.75rem 0.5rem' }}>
                         {getDivisionBadge(tx.division_name) || (

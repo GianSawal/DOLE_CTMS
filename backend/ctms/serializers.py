@@ -594,11 +594,56 @@ class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+# How long a just-replaced refresh token still renews a sign-in: another tab (or a request
+# already in flight) may send it moments after the first renewal replaced it.
+REFRESH_REUSE_GRACE = timedelta(seconds=60)
+
+
+def _renew_within_grace(raw):
+    """
+    New tokens for a refresh token that was replaced (blacklisted by rotation) within the
+    grace period, or None. Its signature and expiry are still checked, and a token revoked
+    by sign-out, a password change or a disabled account is not renewed.
+    """
+    from django.utils import timezone
+    from rest_framework_simplejwt.settings import api_settings
+    from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+    from rest_framework_simplejwt.state import token_backend
+    from .security import ended_on_purpose
+    try:
+        payload = token_backend.decode(raw, verify=True)  # signature and expiry
+    except Exception:
+        return None
+    if payload.get(api_settings.TOKEN_TYPE_CLAIM) != 'refresh':
+        return None
+    jti = payload.get(api_settings.JTI_CLAIM)
+    entry = BlacklistedToken.objects.filter(token__jti=jti).first()
+    if not entry or entry.blacklisted_at < timezone.now() - REFRESH_REUSE_GRACE or ended_on_purpose(jti):
+        return None
+    user = User.objects.filter(pk=payload.get(api_settings.USER_ID_CLAIM), is_active=True).first()
+    if not user:
+        return None
+    fresh = RefreshToken.for_user(user)
+    if payload.get('remember'):
+        remember_refresh_token(fresh, tv=payload['remember'] == 'tv')
+    return {'access': str(fresh.access_token), 'refresh': str(fresh)}
+
+
 class StaffTokenRefreshSerializer(TokenRefreshSerializer):
-    """Token refresh that keeps a "Remember me" sign-in on its longer lifetime when rotating."""
+    """
+    Token refresh that keeps a "Remember me" sign-in on its longer lifetime when rotating,
+    and lets a just-replaced token renew once more within a short grace period.
+    """
 
     def validate(self, attrs):
-        data = super().validate(attrs)
+        from rest_framework_simplejwt.exceptions import TokenError
+        try:
+            data = super().validate(attrs)
+        except TokenError:
+            renewed = _renew_within_grace(str(attrs.get('refresh') or ''))
+            if renewed:
+                return renewed
+            raise
         if 'refresh' in data:
             rotated = RefreshToken(data['refresh'])
             if rotated.get('remember'):

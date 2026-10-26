@@ -96,3 +96,30 @@ def video_upload_error(uploaded):
     if not _looks_like_video(head, ext):
         return "This file isn't a valid video. Please choose a video file such as .mp4."
     return None
+
+
+def end_all_sessions(user):
+    """
+    Signs `user` out everywhere: every refresh token issued to them stops working, so no
+    other browser can renew its sign-in (their short-lived access tokens lapse within
+    30 minutes). Used when a password is changed or reset and when an account is disabled.
+    """
+    from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+    from django.utils import timezone
+    unexpired = list(OutstandingToken.objects.filter(user=user, expires_at__gt=timezone.now()))
+    # Also the ones just replaced by a renewal, so their grace minute can't be used either
+    mark_ended_on_purpose(t.jti for t in unexpired)
+    BlacklistedToken.objects.bulk_create([BlacklistedToken(token=t) for t in unexpired], ignore_conflicts=True)
+
+
+# A refresh token replaced by a renewal may renew once more for a minute (two tabs renewing
+# together); one revoked on purpose (sign-out, new password, disabled account) never may.
+_ENDED_TTL = 5 * 60
+
+
+def mark_ended_on_purpose(jtis):
+    cache.set_many({f"ctms:session_ended:{jti}": True for jti in jtis}, _ENDED_TTL)
+
+
+def ended_on_purpose(jti):
+    return bool(cache.get(f"ctms:session_ended:{jti}"))

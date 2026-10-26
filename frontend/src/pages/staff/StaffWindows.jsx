@@ -13,6 +13,10 @@ const STATE_STYLES = {
   inactive: { label: 'Inactive', bg: '#f1f5f9', color: '#64748b', border: '#e2e8f0', accent: '#cbd5e1' },
 };
 
+function calledBeforeToday(iso) {
+  return Boolean(iso) && new Date(iso).toDateString() !== new Date().toDateString();
+}
+
 function windowState(w) {
   if (!w.is_active) return 'inactive';
   if (w.is_mine) return 'mine';
@@ -272,6 +276,12 @@ export default function StaffWindows() {
                           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '1.4rem', fontWeight: 800, color: 'var(--dole-blue)' }}>{w.current_client.queue_no}</span>
                           {w.current_client.is_priority && <span className="badge badge-priority">Priority</span>}
                           <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', width: '100%' }}>{w.current_client.service_name}</span>
+                          {/* Left open on an earlier day: still holds the window until finished */}
+                          {calledBeforeToday(w.current_client.called_at) && (
+                            <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--dole-red-dark)', width: '100%' }}>
+                              Left open since {new Date(w.current_client.called_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}. Mark it Done, Pending, or return it to the queue.
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <div style={{ fontSize: '0.95rem', color: 'var(--text-muted)' }}>Idle</div>

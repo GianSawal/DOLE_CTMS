@@ -152,14 +152,21 @@ export const staffApi = {
     method: 'POST',
   }),
 
-  changePassword: (newPassword, confirmPassword, currentPassword = '') => apiRequest('/staff/auth/change-password/', {
-    method: 'POST',
-    body: JSON.stringify({
-      new_password: newPassword,
-      confirm_password: confirmPassword,
-      current_password: currentPassword,
-    }),
-  }),
+  // Every other sign-in of the account ends; this browser gets a fresh one back
+  changePassword: async (newPassword, confirmPassword, currentPassword = '') => {
+    const res = await apiRequest('/staff/auth/change-password/', {
+      method: 'POST',
+      body: JSON.stringify({
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+        current_password: currentPassword,
+        refresh: localStorage.getItem('ctms_refresh_token'),  // keeps "Remember me"
+      }),
+    });
+    if (res?.access) localStorage.setItem('ctms_access_token', res.access);
+    if (res?.refresh) localStorage.setItem('ctms_refresh_token', res.refresh);
+    return res;
+  },
 
   // Audit Logs (Admin Only)
   getAuditLogs: (filters = {}) => {

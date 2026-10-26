@@ -11,6 +11,27 @@ function clearSession() {
   window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
 }
 
+// One renewal at a time: requests that expire together wait for the same one. Each renewal
+// replaces the refresh token (the old one stops working), so the new one must be kept.
+let renewing = null;
+
+function renewSignIn() {
+  if (!renewing) {
+    renewing = (async () => {
+      const res = await fetch(`${BASE_URL}/staff/auth/refresh/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh: localStorage.getItem('ctms_refresh_token') }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.refresh) localStorage.setItem('ctms_refresh_token', data.refresh);
+      return data.access || null;
+    })().finally(() => { renewing = null; });
+  }
+  return renewing;
+}
+
 async function toError(response) {
   const errorData = await response.json().catch(() => ({ detail: response.statusText }));
   const errorMsg = errorData.detail || (typeof errorData === 'object' ? Object.values(errorData).flat().join(', ') : 'Request failed');
@@ -56,12 +77,7 @@ export async function apiRequest(endpoint, options = {}) {
   if (response.status === 401 && localStorage.getItem('ctms_refresh_token')) {
     let newAccess = null;
     try {
-      const refreshRes = await fetch(`${BASE_URL}/staff/auth/refresh/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh: localStorage.getItem('ctms_refresh_token') }),
-      });
-      if (refreshRes.ok) newAccess = (await refreshRes.json()).access;
+      newAccess = await renewSignIn();
     } catch {
       // Network problem while renewing: keep the session, the request just fails below
       throw new Error('Connection failed. Please check the network and try again.');

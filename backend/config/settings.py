@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
@@ -150,9 +151,10 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.AllowAny',
     ),
+    # Same limits as DRF's, but a faked X-Forwarded-For can't reset them (ctms/throttling.py)
     'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle',
+        'ctms.throttling.AnonThrottle',
+        'ctms.throttling.UserThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': '600/min',
@@ -162,19 +164,37 @@ REST_FRAMEWORK = {
     },
 }
 
+# One cache for all the server's worker processes (gunicorn runs several). Sign-in lockouts,
+# check-in code limits and request throttles are counted here; with Django's default
+# per-process memory cache each worker counted on its own, so the limits were several times
+# looser than set and reset on every restart. Tests keep the in-memory cache.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    } if TESTING else {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': os.getenv('CTMS_CACHE_DIR', os.path.join(tempfile.gettempdir(), 'ctms-cache')),
+        'OPTIONS': {'MAX_ENTRIES': 20000},
+    },
+}
+
 # SimpleJWT Configuration
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': False,
+    # A renewed sign-in replaces the old one, so a copied token stops working. Two tabs
+    # renewing at the same moment get a short grace period (StaffTokenRefreshSerializer).
+    'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 # CORS Configuration
-CORS_ALLOW_ALL_ORIGINS = DEBUG or os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1', 't')
+# Only when asked for explicitly: DEBUG used to switch this on too, so a server left in debug
+# mode let any website call the API with a signed-in staff member's browser.
+CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1', 't')
 cors_env = os.getenv('CORS_ALLOWED_ORIGINS')
 if cors_env:
     CORS_ALLOWED_ORIGINS = [o.strip() for o in cors_env.split(',') if o.strip()]

@@ -393,7 +393,7 @@ export default function StaffQueue() {
                       <DivisionTag name={myCurrent.division_name} />
                     </div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                      {myCurrent.transaction_no} · Claim code {myCurrent.claim_code}
+                      {myCurrent.transaction_no} · Survey code {myCurrent.claim_code}
                     </div>
                     <ReferralNote tx={myCurrent} />
                     <LatestNote note={myCurrent.latest_note} />
