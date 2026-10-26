@@ -60,7 +60,7 @@ export default function StaffChangePassword() {
       <div style={{ marginBottom: '1.5rem' }}>
         <h1 className="page-title">Set a new password</h1>
         <p className="page-subtitle">
-          {user?.full_name || user?.username}, your account is using a temporary password. Choose your own before continuing.
+          {user?.full_name || user?.username}, choose a new password before continuing. This is asked after a temporary password, and after setting up two-factor sign-in.
         </p>
       </div>
 
@@ -68,7 +68,7 @@ export default function StaffChangePassword() {
 
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '1rem' }}>
         <div>
-          <label htmlFor="cp-current">Temporary password</label>
+          <label htmlFor="cp-current">Current password</label>
           <input id="cp-current" type="password" autoComplete="current-password" required
             value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
         </div>
@@ -86,7 +86,7 @@ export default function StaffChangePassword() {
         <ul style={{ listStyle: 'none', margin: 0, padding: '0.75rem 0.9rem', display: 'grid', gap: '0.35rem', background: 'var(--ui-subtle)', border: '1px solid var(--ui-border)', borderRadius: 'var(--ui-radius-sm)' }}>
           <Rule ok={isMinLength}>At least 6 characters</Rule>
           <Rule ok={isMatch}>Both new passwords match</Rule>
-          <Rule ok={isDifferent && Boolean(newPassword)}>Different from the temporary password</Rule>
+          <Rule ok={isDifferent && Boolean(newPassword)}>Different from your current password</Rule>
         </ul>
 
         <button type="submit" className="btn btn-primary btn-lg w-full" disabled={loading || !isValid}>

@@ -141,6 +141,12 @@ class IsSystemAdmin(permissions.BasePermission):
         return is_system_admin(request.user)
 
 
+def password_update_due(user):
+    """The account set up 2FA and must now replace its password (see CtmsTwoFactor.password_updated)."""
+    from .models import CtmsTwoFactor
+    return CtmsTwoFactor.objects.filter(user=user, confirmed_at__isnull=False, password_updated=False).exists()
+
+
 def staff_session(user):
     """Account summary returned at login and by /auth/me; one shape for both."""
     from .models import CtmsCounter
@@ -159,7 +165,8 @@ def staff_session(user):
         "full_name": personnel_display_name(user),
         "position": profile.position if profile else '',
         "is_superuser": user.is_superuser,
-        "must_change_password": bool(profile and profile.must_change_password),
+        # A temporary password, or 2FA just set up and the password not yet updated
+        "must_change_password": bool(profile and profile.must_change_password) or password_update_due(user),
         "assigned_offices": [
             {"id": o.id, "name": o.name, "code": o.code} for o in get_staff_offices(user)
         ],

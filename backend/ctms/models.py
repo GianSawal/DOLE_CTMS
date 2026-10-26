@@ -695,6 +695,8 @@ class CtmsTwoFactor(models.Model):
     confirmed_at = models.DateTimeField(null=True, blank=True)
     # The time step of the last code accepted: a code can't be used twice
     last_step = models.BigIntegerField(default=0)
+    # Setting up 2FA is followed by a new password; until then the account must change it
+    password_updated = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

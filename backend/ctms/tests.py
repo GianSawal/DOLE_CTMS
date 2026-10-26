@@ -2816,3 +2816,21 @@ class TwoFactorTestCase(CsmTablesTestCase):
         first = self.client.post('/api/staff/auth/2fa/setup/', {'challenge': self._password().data['challenge']}, format='json').data
         again = self.client.post('/api/staff/auth/2fa/setup/', {'challenge': self._password().data['challenge']}, format='json').data
         self.assertEqual(first['secret'], again['secret'])
+
+    def test_setting_up_2fa_requires_a_new_password_next(self):
+        _, data = self._set_up()
+        self.assertTrue(data['user']['must_change_password'])
+        self.client.force_authenticate(user=self.user)
+        self.assertTrue(self.client.get('/api/staff/auth/me/').data['must_change_password'])
+        res = self.client.post('/api/staff/auth/change-password/', {
+            'current_password': 'Ana-Pass-123', 'new_password': 'Ana-New-456', 'confirm_password': 'Ana-New-456',
+        }, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertFalse(self.client.get('/api/staff/auth/me/').data['must_change_password'])
+
+    def test_accounts_with_2fa_already_are_not_asked_again(self):
+        from .models import CtmsTwoFactor
+        self._set_up()
+        CtmsTwoFactor.objects.filter(user=self.user).update(password_updated=True)  # as the migration does
+        self.client.force_authenticate(user=self.user)
+        self.assertFalse(self.client.get('/api/staff/auth/me/').data['must_change_password'])

@@ -43,6 +43,7 @@ from .models import (
     CtmsNotification,
     CtmsAssignmentHistory,
     CtmsCallAnnouncement,
+    CtmsTwoFactor,
     log_audit_event,
 )
 from .serializers import (
@@ -2152,12 +2153,13 @@ class StaffChangePasswordView(APIView):
 
         # Disallow setting new password to the exact same temporary password / employee_id
         if user.check_password(new_password):
-            return Response({"detail": "New password cannot be the same as your current temporary password."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "New password cannot be the same as your current password."}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
         user.save()
 
         DolePersonnel.objects.filter(user=user).update(must_change_password=False)
+        CtmsTwoFactor.objects.filter(user=user).update(password_updated=True)
 
         # Sign out every other browser, and give this one a fresh sign-in (keeping "Remember me")
         end_all_sessions(user)
