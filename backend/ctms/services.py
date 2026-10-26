@@ -526,7 +526,8 @@ def expected_referrals(office, now=None):
     now = now or timezone.now()
     return (CtmsTransaction.objects
             .filter(referral_office=office, status=CtmsTransaction.STATUS_REFERRED,
-                    referred_to__isnull=True, closed_at__gte=now - REFERRAL_VALID_FOR)
+                    referred_to__isnull=True, referral_closed_at__isnull=True,
+                    closed_at__gte=now - REFERRAL_VALID_FOR)
             .select_related('office', 'referral_service')
             .order_by('closed_at', 'id'))
 
@@ -603,6 +604,8 @@ def receive_referral(referred_tx, actor=None):
             raise ValueError("This ticket was not referred to another office.")
         if CtmsTransaction.objects.filter(referred_from=src).exists():
             raise ValueError("This client has already joined the line.")
+        if src.referral_closed_at:
+            raise ValueError("This referral was closed by the other office. Please check in again at the office.")
         if referral_expires_at(src) < timezone.now():
             raise ValueError("This referral has expired. Please check in again at the office.")
 

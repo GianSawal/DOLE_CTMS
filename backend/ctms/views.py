@@ -850,6 +850,10 @@ class StaffTransactionActionView(APIView):
                     return Response({"detail": "Finished transactions cannot be deleted."},
                                     status=status.HTTP_409_CONFLICT)
                 prev_status = tx.get_status_display()
+                if tx.referred_from_id:
+                    # The client joined from a referral: deleting their ticket ends the referral,
+                    # instead of putting them back on the "on the way" list
+                    CtmsTransaction.objects.filter(pk=tx.referred_from_id).update(referral_closed_at=timezone.now())
                 q_no = tx.queue_no
                 t_no = tx.transaction_no
                 s_name = tx.service.name if tx.service else ''
@@ -1229,7 +1233,8 @@ class StaffReportsSummaryView(APIView):
         total_referred_out = referred_out.count()
         # Sent away, never arrived, and the referral has lapsed
         total_referred_not_arrived = referred_out.filter(
-            referred_to__isnull=True, closed_at__lt=timezone.now() - services.REFERRAL_VALID_FOR).count()
+            referred_to__isnull=True, referral_closed_at__isnull=True,
+            closed_at__lt=timezone.now() - services.REFERRAL_VALID_FOR).count()
         total_referred_in = qs.filter(referred_from__isnull=False).count()
 
         # Avg wait time: check-in to the FIRST call (started_at). called_at is moved by every

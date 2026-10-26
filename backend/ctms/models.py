@@ -474,6 +474,9 @@ class CtmsTransaction(models.Model):
     referral_service = models.ForeignKey(
         CsmService, on_delete=models.PROTECT, null=True, blank=True, related_name='+',
     )
+    # Set when the other office deleted the ticket the client joined with (e.g. a duplicate):
+    # the referral is over, so it doesn't reappear as "on the way" and can't be joined again
+    referral_closed_at = models.DateTimeField(null=True, blank=True)
     # On the ticket created at arrival: the referred ticket it continues
     referred_from = models.OneToOneField(
         'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referred_to',

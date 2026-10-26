@@ -2530,6 +2530,26 @@ class ReferralTestCase(CsmTablesTestCase):
         self.assertEqual(res.data['office_name'], "Aurora Field Office")
         self.assertEqual(res.data['claim_code'], tx.claim_code)  # printed on the new slip
 
+    def test_deleting_an_arrived_referral_does_not_bring_it_back(self):
+        tx = self._referred(client_name="Juan")
+        res = self._as(self.aura).post(f'/api/staff/referrals/{tx.id}/arrived/')
+        self.assertEqual(res.status_code, 201, res.data)
+        new_id = res.data['id']
+
+        res = self._as(self.aura).post(f'/api/staff/transactions/{new_id}/delete/')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertFalse(CtmsTransaction.objects.filter(pk=new_id).exists())
+
+        # Not back on the "on the way" list, and can't be joined again
+        queue = self._as(self.aura).get(f'/api/staff/queue/?office={self.aurora.id}').data
+        self.assertEqual(queue['expected_referrals'], [])
+        self.assertEqual(self._as(self.aura).post(f'/api/staff/referrals/{tx.id}/arrived/').status_code, 409)
+        self.assertEqual(self._arrive(tx).status_code, 409)
+        # The sending office's record stays (referred), and the client's ticket says to check in again
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, CtmsTransaction.STATUS_REFERRED)
+        self.assertTrue(self.client.get(f'/api/public/tickets/{tx.ticket_token}/').data['referred_to']['expired'])
+
 
 class ClientIdentThrottleTestCase(CsmTablesTestCase):
     """A client can't escape the check-in limit by faking X-Forwarded-For; real clients stay separate."""

@@ -303,7 +303,8 @@ def referral_status(tx):
     from .services import referral_expires_at
     arrived = CtmsTransaction.objects.select_related('office').filter(referred_from=tx).first()
     expires = referral_expires_at(tx)
-    return arrived, bool(not arrived and expires and expires < timezone.now())
+    # A referral the other office closed reads like a lapsed one: the client checks in again
+    return arrived, bool(not arrived and (tx.referral_closed_at or (expires and expires < timezone.now())))
 
 
 def referral_destination(tx):
