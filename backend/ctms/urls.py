@@ -15,6 +15,9 @@ from .views import (
     StaffTokenRefreshView,
     StaffMeView,
     StaffLogoutView,
+    StaffTwoFactorSetupView,
+    StaffTwoFactorVerifyView,
+    StaffTwoFactorView,
     StaffChangePasswordView,
     StaffQueueView,
     StaffCreateWalkinView,
@@ -71,6 +74,9 @@ urlpatterns = [
     path('staff/auth/refresh/', StaffTokenRefreshView.as_view(), name='staff-refresh'),
     path('staff/auth/me/', StaffMeView.as_view(), name='staff-me'),
     path('staff/auth/logout/', StaffLogoutView.as_view(), name='staff-logout'),
+    path('staff/auth/2fa/setup/', StaffTwoFactorSetupView.as_view(), name='staff-2fa-setup'),
+    path('staff/auth/2fa/verify/', StaffTwoFactorVerifyView.as_view(), name='staff-2fa-verify'),
+    path('staff/auth/2fa/', StaffTwoFactorView.as_view(), name='staff-2fa'),
     path('staff/auth/change-password/', StaffChangePasswordView.as_view(), name='staff-change-password'),
 
     # Staff queue operations

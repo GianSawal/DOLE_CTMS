@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   ListOrdered, UsersRound, LayoutGrid, History, QrCode,
-  UserCog, Layers, ChartColumn, ScrollText, LogOut, Menu, X, Building2, ChevronRight, ClipboardPen,
+  UserCog, Layers, ChartColumn, ScrollText, LogOut, Menu, X, Building2, ChevronRight, ClipboardPen, ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -67,7 +67,9 @@ export default function StaffLayout({ children }) {
     .filter(s => s.items.length > 0);
 
   const current = nav.flatMap(s => s.items.map(i => ({ ...i, section: s.section })))
-    .find(i => location.pathname.startsWith(i.to));
+    .find(i => location.pathname.startsWith(i.to))
+    // Opened from the sidebar footer, not the menu
+    || (location.pathname.startsWith('/staff/security') ? { label: 'Account security', section: 'Account' } : undefined);
   const office = user?.primary_office || user?.assigned_offices?.[0];
 
   const handleLogout = () => {
@@ -113,6 +115,12 @@ export default function StaffLayout({ children }) {
               <div className="app-user-meta">{roleLabel(user)}{office?.code ? ` · ${office.code}` : ''}</div>
             </div>
           </div>
+          {user?.role !== 'REGISTRAR' && (
+            <NavLink to="/staff/security" className="app-security-link"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: 'rgba(255,255,255,0.75)', textDecoration: 'none', margin: '0 0 0.5rem' }}>
+              <ShieldCheck size={14} aria-hidden="true" /> Account security
+            </NavLink>
+          )}
           <button className="app-signout" onClick={handleLogout}>
             <LogOut size={15} aria-hidden="true" />
             Sign out

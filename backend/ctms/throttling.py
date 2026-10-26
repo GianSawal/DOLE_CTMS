@@ -49,3 +49,9 @@ class CheckinThrottle(ClientIdentMixin, AnonRateThrottle):
 
 class LoginThrottle(ClientIdentMixin, AnonRateThrottle):
     scope = 'login'
+
+
+class TwoFactorThrottle(ClientIdentMixin, AnonRateThrottle):
+    """The 2FA setup and code steps: their own limit, so a first setup plus a mistyped code
+    doesn't run into the password step's. Wrong codes are also capped per account (two_factor.py)."""
+    scope = 'two_factor'

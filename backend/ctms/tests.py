@@ -42,6 +42,23 @@ from .serializers import StaffTransactionSerializer
 
 User = get_user_model()
 
+
+def finish_two_factor(client, res, **extra):
+    """Completes a staff sign-in that stopped at the 2FA step, as the authenticator app would."""
+    if res.status_code != 200 or not res.data.get('two_factor_required'):
+        return res
+    from . import totp
+    from .two_factor import read_challenge
+    challenge = res.data['challenge']
+    if res.data['setup_required']:
+        secret = client.post('/api/staff/auth/2fa/setup/', {'challenge': challenge}, format='json', **extra).data['secret']
+    else:
+        secret = read_challenge(challenge)[0].two_factor.secret
+    from .models import CtmsTwoFactor
+    CtmsTwoFactor.objects.filter(secret=secret.replace(' ', '')).update(last_step=0)  # tests sign in faster than 30 s
+    code = totp.code_at(secret.replace(' ', ''), totp.current_step())
+    return client.post('/api/staff/auth/2fa/verify/', {'challenge': challenge, 'code': code}, format='json', **extra)
+
 class CsmTablesTestCase(TestCase):
     """Creates the CSM-owned (unmanaged) tables that the test database does not migrate."""
 
@@ -198,10 +215,10 @@ class CtmsCoreTestCase(CsmTablesTestCase):
 
         # Login as new employee
         self.client.logout()
-        res_login = self.client.post("/api/staff/auth/login/", data={
+        res_login = finish_two_factor(self.client, self.client.post("/api/staff/auth/login/", data={
             "username": "EMP-9999",
             "password": "EMP-9999",
-        }, format='json', HTTP_HOST='localhost')
+        }, format='json', HTTP_HOST='localhost'), HTTP_HOST='localhost')
         self.assertEqual(res_login.status_code, status.HTTP_200_OK)
         self.assertTrue(res_login.data["user"]["must_change_password"])
 
@@ -568,7 +585,8 @@ class CtmsCoreTestCase(CsmTablesTestCase):
         User.objects.create_user(username="DOLE-ADMIN", password="S3cret!pass", is_staff=True)
 
         def login(username, password):
-            return self.client.post('/api/staff/auth/login/', {'username': username, 'password': password}, format='json')
+            return finish_two_factor(self.client, self.client.post(
+                '/api/staff/auth/login/', {'username': username, 'password': password}, format='json'))
 
         for typed in ("DOLE-ADMIN", "dole-admin", "Dole-Admin", "  dole-admin "):
             res = login(typed, "S3cret!pass")
@@ -584,7 +602,8 @@ class CtmsCoreTestCase(CsmTablesTestCase):
     def test_login_picks_the_exact_account_when_two_differ_only_by_capitals(self):
         User.objects.create_user(username="ana", password="lower-pass", is_staff=True)
         User.objects.create_user(username="ANA", password="upper-pass", is_staff=True)
-        res = self.client.post('/api/staff/auth/login/', {'username': 'ANA', 'password': 'upper-pass'}, format='json')
+        res = finish_two_factor(self.client, self.client.post(
+            '/api/staff/auth/login/', {'username': 'ANA', 'password': 'upper-pass'}, format='json'))
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data['user']['username'], "ANA")
 
@@ -1755,9 +1774,9 @@ class SecurityHardeningTestCase(CsmTablesTestCase):
         self.assertNotEqual(config.office_code, code)
 
     def test_logout_revokes_the_refresh_token(self):
-        tokens = self._login("ana", "Correct-Pass-1", "10.6.6.1").data
+        tokens = finish_two_factor(self.client, self._login("ana", "Correct-Pass-1", "10.6.6.1")).data
         self.assertEqual(self.client.post('/api/staff/auth/refresh/', {'refresh': tokens['refresh']}, format='json').status_code, 200)
-        fresh = self._login("ana", "Correct-Pass-1", "10.6.6.2").data
+        fresh = finish_two_factor(self.client, self._login("ana", "Correct-Pass-1", "10.6.6.2")).data
         self.assertEqual(self.client.post('/api/staff/auth/logout/', {'refresh': fresh['refresh']}, format='json').status_code, 205)
         self.assertEqual(self.client.post('/api/staff/auth/refresh/', {'refresh': fresh['refresh']}, format='json').status_code, 401)
         # Logging out twice, or with junk, is harmless
@@ -2118,7 +2137,8 @@ class RememberMeSignInTestCase(CsmTablesTestCase):
         CtmsStaffOffice.objects.create(user=self.user, office=self.office)
 
     def login(self, **extra):
-        res = self.client.post('/api/staff/auth/login/', {'username': 'ana', 'password': 'Ana-Pass-1', **extra}, format='json')
+        res = finish_two_factor(self.client, self.client.post(
+            '/api/staff/auth/login/', {'username': 'ana', 'password': 'Ana-Pass-1', **extra}, format='json'))
         self.assertEqual(res.status_code, 200, res.data)
         return res.data
 
@@ -2606,7 +2626,8 @@ class SessionEndingTestCase(CsmTablesTestCase):
 
     def _login(self, password="Old-Pass-123"):
         self.client.force_authenticate(user=None)
-        res = self.client.post('/api/staff/auth/login/', {'username': 'ana', 'password': password}, format='json')
+        res = finish_two_factor(self.client, self.client.post(
+            '/api/staff/auth/login/', {'username': 'ana', 'password': password}, format='json'))
         self.assertEqual(res.status_code, 200, res.data)
         return res.data['refresh']
 
@@ -2659,3 +2680,139 @@ class SessionEndingTestCase(CsmTablesTestCase):
         self.client.force_authenticate(user=admin)
         self.assertEqual(self.client.post(f'/api/staff/users/{self.user.id}/toggle-active/').status_code, 200)
         self.assertEqual(self._refresh(token).status_code, 401)
+
+
+class TwoFactorTestCase(CsmTablesTestCase):
+    """Staff sign in with password + authenticator code (Google / Microsoft Authenticator, TOTP)."""
+
+    def setUp(self):
+        cache.clear()
+        self.office = CsmOffice.objects.create(name="DOLE Regional Office III", code="RO3", is_active=True)
+        CtmsOfficeProfile.objects.update_or_create(office=self.office, defaults={'office_type': 'REGIONAL'})
+        self.user = User.objects.create_user(username="ana", password="Ana-Pass-123", is_staff=True)
+        CtmsStaffOffice.objects.create(user=self.user, office=self.office)
+        self.client = APIClient()
+
+    def _password(self, password="Ana-Pass-123"):
+        return self.client.post('/api/staff/auth/login/', {'username': 'ana', 'password': password}, format='json')
+
+    def _verify(self, challenge, code):
+        return self.client.post('/api/staff/auth/2fa/verify/', {'challenge': challenge, 'code': code}, format='json')
+
+    def _code(self, secret, offset=0):
+        from . import totp
+        return totp.code_at(secret.replace(' ', ''), totp.current_step() + offset)
+
+    def _wrong(self, secret):
+        right = {self._code(secret, d) for d in (-1, 0, 1)}
+        return next(c for c in ('000000', '111111', '222222', '333333') if c not in right)
+
+    def _set_up(self):
+        challenge = self._password().data['challenge']
+        secret = self.client.post('/api/staff/auth/2fa/setup/', {'challenge': challenge}, format='json').data['secret']
+        done = self._verify(challenge, self._code(secret))
+        self.assertEqual(done.status_code, 200, done.data)
+        return secret, done.data
+
+    def test_password_alone_gives_no_sign_in(self):
+        res = self._password()
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data['two_factor_required'])
+        self.assertTrue(res.data['setup_required'])
+        self.assertNotIn('access', res.data)
+        self.assertNotIn('refresh', res.data)
+
+    def test_first_setup_shows_a_qr_and_gives_backup_codes(self):
+        challenge = self._password().data['challenge']
+        setup = self.client.post('/api/staff/auth/2fa/setup/', {'challenge': challenge}, format='json')
+        self.assertEqual(setup.status_code, 200)
+        self.assertTrue(setup.data['qr_image'].startswith('data:image/png;base64,'))
+        self.assertIn('otpauth://totp/DOLE%20CTMS%3Aana?secret=', setup.data['otpauth_uri'])
+
+        self.assertEqual(self._verify(challenge, self._wrong(setup.data['secret'])).status_code, 400)
+        done = self._verify(challenge, self._code(setup.data['secret']))
+        self.assertEqual(done.status_code, 200, done.data)
+        self.assertIn('access', done.data)
+        self.assertEqual(len(done.data['backup_codes']), 10)
+        self.assertTrue(CtmsAuditLog.objects.filter(action='TWO_FACTOR_ENABLED').exists())
+
+    def test_later_sign_ins_need_the_code_and_setup_cannot_be_redone(self):
+        secret, _ = self._set_up()
+        res = self._password()
+        self.assertFalse(res.data['setup_required'])
+        # A password alone can't register another phone
+        self.assertEqual(self.client.post('/api/staff/auth/2fa/setup/', {'challenge': res.data['challenge']},
+                                          format='json').status_code, 409)
+        # The code just used can't be used again; the next one works
+        self.assertEqual(self._verify(res.data['challenge'], self._code(secret)).status_code, 400)
+        self.assertEqual(self._verify(res.data['challenge'], self._code(secret, +1)).status_code, 200)
+
+    def test_backup_code_works_once(self):
+        _, data = self._set_up()
+        backup = data['backup_codes'][0]
+        res = self._verify(self._password().data['challenge'], backup.lower())
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['backup_codes_left'], 9)
+        cache.clear()  # stay under the sign-in rate limit
+        self.assertEqual(self._verify(self._password().data['challenge'], backup).status_code, 400)
+
+    def test_wrong_codes_lock_even_with_the_right_password(self):
+        secret, _ = self._set_up()
+        from . import two_factor
+        challenge = self._password().data['challenge']
+        for _ in range(two_factor.CODE_FAIL_LIMIT):
+            self._verify(challenge, self._wrong(secret))
+        # Signing in again with the right password doesn't reset the code limit
+        res = self._verify(self._password().data['challenge'], self._code(secret, +1))
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('Too many wrong codes', res.data['detail'])
+
+    def test_challenge_cannot_be_forged_or_used_after_expiry(self):
+        self.assertEqual(self._verify('not-a-challenge', '123456').status_code, 401)
+        from . import two_factor
+        challenge = self._password().data['challenge']
+        with mock.patch.object(two_factor, 'CHALLENGE_MAX_AGE', -1):
+            self.assertEqual(self._verify(challenge, '123456').status_code, 401)
+
+    def test_admin_reset_makes_the_account_set_up_again_and_signs_it_out(self):
+        _, data = self._set_up()
+        admin = User.objects.create_superuser(username="root", password="Root-Pass-1")
+        self.client.force_authenticate(user=admin)
+        listed = next(u for u in self.client.get('/api/staff/users/').data if u['id'] == self.user.id)
+        self.assertEqual(listed['two_factor'], 'on')
+        self.assertEqual(self.client.post(f'/api/staff/users/{self.user.id}/reset-2fa/').status_code, 200)
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.post('/api/staff/auth/refresh/', {'refresh': data['refresh']}, format='json').status_code, 401)
+        self.assertTrue(self._password().data['setup_required'])
+
+    def test_new_backup_codes_need_a_current_code(self):
+        secret, _ = self._set_up()
+        self.client.force_authenticate(user=self.user)
+        self.assertEqual(self.client.get('/api/staff/auth/2fa/').data, {'enabled': True, 'backup_codes_left': 10})
+        self.assertEqual(self.client.post('/api/staff/auth/2fa/', {'code': self._code(secret)}, format='json').status_code, 400)  # used
+        res = self.client.post('/api/staff/auth/2fa/', {'code': self._code(secret, +1)}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data['backup_codes']), 10)
+
+    def test_tv_and_desk_accounts_sign_in_without_2fa(self):
+        for role, name in ((DolePersonnel.ROLE_DISPLAY, 'tv_ro3'), (DolePersonnel.ROLE_REGISTRAR, 'desk_ro3')):
+            user = User.objects.create_user(username=name, password="Shared-Pass-1")
+            DolePersonnel.objects.create(user=user, employee_id=name, first_name="X", last_name="Y",
+                                         office=self.office, role=role)
+            cache.clear()
+            res = self.client.post('/api/staff/auth/login/', {'username': name, 'password': 'Shared-Pass-1'}, format='json')
+            self.assertEqual(res.status_code, 200, res.data)
+            self.assertIn('access', res.data)
+
+    def test_server_command_resets_2fa(self):
+        import io
+        from django.core.management import call_command
+        self._set_up()
+        call_command('reset_2fa', 'ANA', stdout=io.StringIO())
+        self.assertTrue(self._password().data['setup_required'])
+
+    def test_unfinished_setup_keeps_its_secret(self):
+        # Started again (e.g. the 10 minutes ran out while installing the app): the QR already scanned still works
+        first = self.client.post('/api/staff/auth/2fa/setup/', {'challenge': self._password().data['challenge']}, format='json').data
+        again = self.client.post('/api/staff/auth/2fa/setup/', {'challenge': self._password().data['challenge']}, format='json').data
+        self.assertEqual(first['secret'], again['secret'])

@@ -218,6 +218,22 @@ export default function StaffUsers() {
     });
   };
 
+  const resetTwoFactor = (account) => setConfirmModal({
+    title: `Reset two-factor sign-in for ${account.username}?`,
+    message: 'For a lost or replaced phone. They are signed out everywhere and set up their authenticator app again at their next sign-in. Only do this after confirming it is really them asking.',
+    confirmLabel: 'Reset 2FA',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const res = await staffApi.resetEmployeeTwoFactor(account.id);
+        flash('success', res.message || `Two-factor sign-in reset for ${account.username}.`);
+        fetchAccounts();
+      } catch (err) {
+        flash('error', err.message);
+      }
+    },
+  });
+
   const deleteAccount = (account) => setConfirmModal({
     title: `Delete ${account.username}?`,
     message: 'Only accounts that never handled a transaction can be deleted. Otherwise, deactivate the account to keep its history.',
@@ -312,12 +328,20 @@ export default function StaffUsers() {
                     {a.must_change_password && a.is_active && (
                       <div style={{ fontSize: '0.72rem', color: '#b45309', marginTop: '0.2rem' }}>Must change password</div>
                     )}
+                    {a.two_factor !== 'n/a' && (
+                      <div style={{ fontSize: '0.72rem', marginTop: '0.2rem', color: a.two_factor === 'on' ? '#047857' : 'var(--text-muted)' }}>
+                        {a.two_factor === 'on' ? '2FA on' : '2FA: sets up at next sign-in'}
+                      </div>
+                    )}
                   </td>
                   <td data-label="Last login" style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatDate(a.last_login)}</td>
                   <td data-label="Actions" style={{ padding: '0.75rem 1rem' }}>
                     <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                       <button className="btn btn-outline btn-sm" onClick={() => openEdit(a)}>Edit</button>
                       <button className="btn btn-outline btn-sm" onClick={() => { setResetTarget(a); setResetPassword(''); setResetConfirm(''); setResetError(''); }}>Reset Password</button>
+                      {a.two_factor === 'on' && (
+                        <button className="btn btn-outline btn-sm" onClick={() => resetTwoFactor(a)}>Reset 2FA</button>
+                      )}
                       {a.id !== me?.id && (
                         <>
                           <button className="btn btn-outline btn-sm" onClick={() => toggleActive(a)}>{a.is_active ? 'Deactivate' : 'Activate'}</button>

@@ -684,6 +684,41 @@ class CtmsAuditLog(models.Model):
         return f"[{self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}] {self.actor_username} - {self.action} ({self.target_repr})"
 
 
+class CtmsTwoFactor(models.Model):
+    """
+    A staff account's authenticator app (Google / Microsoft Authenticator, TOTP). Until
+    `confirmed_at` is set the secret is only a pending setup: sign-in asks to scan it again.
+    """
+    id = models.BigAutoField(primary_key=True)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='two_factor')
+    secret = models.CharField(max_length=64)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    # The time step of the last code accepted: a code can't be used twice
+    last_step = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ctms_two_factor'
+        verbose_name = 'CTMS Two-Factor Device'
+        verbose_name_plural = 'CTMS Two-Factor Devices'
+
+    def __str__(self):
+        return f"{self.user.username} ({'active' if self.confirmed_at else 'setup pending'})"
+
+
+class CtmsBackupCode(models.Model):
+    """One-time codes for signing in without the phone. Only a hash is kept."""
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='backup_codes')
+    code_hash = models.CharField(max_length=64, db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'ctms_backup_code'
+        verbose_name = 'CTMS Backup Code'
+        verbose_name_plural = 'CTMS Backup Codes'
+
+
 class CtmsNotification(models.Model):
     """
     Real-time notification model for staff user accounts.

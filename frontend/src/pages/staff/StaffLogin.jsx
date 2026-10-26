@@ -4,9 +4,10 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useAuth, LOGOUT_REASON_KEY } from '../../context/AuthContext';
 import AuthLayout from '../../components/AuthLayout';
 import { Notice } from '../../components/ui';
+import TwoFactorStep from '../../components/TwoFactorStep';
 
 export default function StaffLogin() {
-  const { login } = useAuth();
+  const { login, finishSignIn } = useAuth();
   const navigate = useNavigate();
 
   const [username, setUsername] = useState('');
@@ -16,6 +17,8 @@ export default function StaffLogin() {
   const [error, setError] = useState('');
   const [capsLock, setCapsLock] = useState(false);
   const [remember, setRemember] = useState(false);
+  // After a correct password: { challenge, setupRequired } for the authenticator code step
+  const [twoFactor, setTwoFactor] = useState(null);
   // Shown once after being signed out for inactivity
   const [signedOutNotice] = useState(() => {
     try {
@@ -29,6 +32,11 @@ export default function StaffLogin() {
     }
   });
 
+  // A TV Display account opens its office's TV board instead of the staff pages;
+  // a Registration Desk account opens its Registration page
+  const goHome = (signedIn) => navigate(signedIn?.role === 'DISPLAY' && signedIn.display ? signedIn.display.url
+    : signedIn?.role === 'REGISTRAR' ? '/staff/registration' : '/staff/queue');
+
   const checkCapsLock = (e) => {
     if (typeof e.getModifierState === 'function') setCapsLock(e.getModifierState('CapsLock'));
   };
@@ -39,10 +47,12 @@ export default function StaffLogin() {
       setLoading(true);
       setError('');
       const signedIn = await login(username.trim(), password, remember);
-      // A TV Display account opens its office's TV board instead of the staff pages
-      // A Registration Desk account opens its Registration page
-      navigate(signedIn?.role === 'DISPLAY' && signedIn.display ? signedIn.display.url
-        : signedIn?.role === 'REGISTRAR' ? '/staff/registration' : '/staff/queue');
+      if (signedIn?.twoFactor) {
+        setTwoFactor(signedIn.twoFactor);
+        setPassword('');
+        return;
+      }
+      goHome(signedIn);
     } catch (err) {
       if (err.status === 429 && err.data?.code === 'ACCOUNT_LOCKED') {
         setError(err.message);
@@ -57,6 +67,19 @@ export default function StaffLogin() {
       setLoading(false);
     }
   };
+
+  if (twoFactor) {
+    return (
+      <AuthLayout>
+        <TwoFactorStep
+          challenge={twoFactor.challenge}
+          setupRequired={twoFactor.setupRequired}
+          onSignedIn={(data) => goHome(finishSignIn(data, twoFactor.remember))}
+          onCancel={() => { setTwoFactor(null); setError(''); }}
+        />
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout>

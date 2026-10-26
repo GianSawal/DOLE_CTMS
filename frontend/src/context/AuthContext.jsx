@@ -130,8 +130,18 @@ export function AuthProvider({ children }) {
     };
   }, [idleWatch, logout]);
 
+  // Password step. A staff account returns { twoFactor: { challenge, setupRequired } } to finish
+  // with finishSignIn; TV and desk accounts are signed in straight away (returns the user).
   const login = async (username, password, remember = false) => {
     const data = await staffApi.login(username, password, remember);
+    if (data.two_factor_required) {
+      return { twoFactor: { challenge: data.challenge, setupRequired: data.setup_required, remember } };
+    }
+    return finishSignIn(data, remember);
+  };
+
+  // Keeps the sign-in the server issued (after the password, or after the 2FA code)
+  const finishSignIn = (data, remember = false) => {
     localStorage.removeItem('ctms_staff_counter');
     localStorage.removeItem('ctms_staff_office');
     localStorage.removeItem('ctms_tv_division_filter');
@@ -156,7 +166,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updateUser, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, loading, login, finishSignIn, logout, updateUser, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );

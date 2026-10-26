@@ -161,6 +161,7 @@ REST_FRAMEWORK = {
         'user': '1200/min',
         'checkin': CHECKIN_THROTTLE_RATE,
         'login': LOGIN_THROTTLE_RATE,
+        'two_factor': os.getenv('TWO_FACTOR_THROTTLE_RATE', '10/min'),
     },
 }
 

@@ -159,6 +159,7 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
     is_regional_admin = serializers.SerializerMethodField()
     must_change_password = serializers.SerializerMethodField()
     window_name = serializers.SerializerMethodField()
+    two_factor = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -167,7 +168,7 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
             'first_name', 'middle_name', 'last_name', 'full_name',
             'employee_id', 'position', 'office', 'office_name', 'office_code', 'office_type',
             'role', 'is_regional_admin', 'is_superuser', 'is_active', 'must_change_password',
-            'window_name', 'date_joined', 'last_login',
+            'window_name', 'date_joined', 'last_login', 'two_factor',
         ]
 
     @staticmethod
@@ -180,6 +181,13 @@ class CtmsUserAccountSerializer(serializers.ModelSerializer):
     def _office(self, obj):
         from .permissions import primary_office
         return primary_office(obj)
+
+    def get_two_factor(self, obj):
+        """'on', 'off' (sets it up at next sign-in), or 'n/a' for TV and desk accounts."""
+        from .two_factor import is_enabled, requires_two_factor
+        if not requires_two_factor(obj):
+            return 'n/a'
+        return 'on' if is_enabled(obj) else 'off'
 
     def get_full_name(self, obj):
         return personnel_display_name(obj)
@@ -565,23 +573,19 @@ def remember_refresh_token(refresh, tv=False):
 
 class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
-    Staff login (is_staff, same requirement as the CSM) returning the session summary.
-    TV Display accounts may also sign in; they are sent straight to their office's TV.
+    Staff login (is_staff, same requirement as the CSM). A staff account gets a 2FA
+    challenge, completed at /staff/auth/2fa/verify/; TV Display and Registration Desk
+    accounts get their sign-in (and session summary) straight away.
     """
     remember = serializers.BooleanField(required=False, default=False)
 
-    def get_token(self, user):
-        token = super().get_token(user)
-        if getattr(self, '_remember', False):
-            from .permissions import is_display_account
-            remember_refresh_token(token, tv=is_display_account(user))
-        return token
-
     def validate(self, attrs):
         self._remember = bool(attrs.get('remember'))
-        data = super().validate(attrs)
+        # Checks the password only; the sign-in is issued below, or after the 2FA code
+        from rest_framework_simplejwt.serializers import TokenObtainSerializer
+        TokenObtainSerializer.validate(self, attrs)
         from .permissions import (display_session, is_display_account, is_registration_account,
-                                  registration_office, staff_session)
+                                  registration_office)
         if is_display_account(self.user):
             if not display_session(self.user):
                 raise serializers.ValidationError("This TV account's office is not active. Ask the system administrator.")
@@ -590,9 +594,34 @@ class StaffTokenObtainPairSerializer(TokenObtainPairSerializer):
                 raise serializers.ValidationError("This registration account's office is not active. Ask the system administrator.")
         elif not self.user.is_staff:
             raise serializers.ValidationError("Access denied. Only DOLE staff members may log in.")
-        data['user'] = staff_session(self.user)
-        data['remember'] = self._remember
-        return data
+
+        from . import two_factor
+        if two_factor.requires_two_factor(self.user):
+            # Password correct: now the authenticator code (or its first-time setup)
+            return {
+                'two_factor_required': True,
+                'setup_required': not two_factor.is_enabled(self.user),
+                'challenge': two_factor.make_challenge(self.user, self._remember),
+            }
+        return issue_sign_in(self.user, self._remember)
+
+
+def issue_sign_in(user, remember):
+    """The sign-in the browser keeps: tokens plus the session summary (as the login returns)."""
+    from django.contrib.auth.models import update_last_login
+    from rest_framework_simplejwt.settings import api_settings
+    from .permissions import is_display_account, staff_session
+    refresh = RefreshToken.for_user(user)
+    if remember:
+        remember_refresh_token(refresh, tv=is_display_account(user))
+    if api_settings.UPDATE_LAST_LOGIN:
+        update_last_login(None, user)
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+        'user': staff_session(user),
+        'remember': bool(remember),
+    }
 
 
 # How long a just-replaced refresh token still renews a sign-in: another tab (or a request

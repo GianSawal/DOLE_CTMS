@@ -64,7 +64,7 @@ from .serializers import (
     CtmsAuditLogSerializer,
     remember_refresh_token,
 )
-from .throttling import CheckinThrottle, LoginThrottle
+from .throttling import CheckinThrottle, LoginThrottle, TwoFactorThrottle
 from .permissions import (
     IsRegionalAdmin,
     IsSystemAdmin,
@@ -131,22 +131,121 @@ class StaffLoginView(TokenObtainPairView):
             msg = "Too many failed sign-ins for this account. Try again in 15 minutes, or ask your office administrator to reset your password."
             return Response({"detail": msg, "code": "ACCOUNT_LOCKED"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         response = super().post(request, *args, **kwargs)
-        if response.status_code == 200:
+        # Logged once actually signed in: here, or after the 2FA code (StaffTwoFactorVerifyView)
+        if response.status_code == 200 and 'access' in response.data:
             typed = str(request.data.get('username') or '').strip()
             user_obj = (User.objects.filter(username=typed).first()
                         or User.objects.filter(username__iexact=typed).first())
-            username = user_obj.username if user_obj else typed
-            log_audit_event(
-                action='LOGIN',
-                category=CtmsAuditLog.CATEGORY_AUTH,
-                actor=user_obj,
-                request=request,
-                target_type='User',
-                target_id=user_obj.id if user_obj else '',
-                target_repr=f"User '{username}'",
-                description=f"User '{username}' successfully logged in."
-            )
+            _log_sign_in(request, user_obj, typed)
         return response
+
+
+def _log_sign_in(request, user_obj, typed='', how=''):
+    username = user_obj.username if user_obj else typed
+    log_audit_event(
+        action='LOGIN',
+        category=CtmsAuditLog.CATEGORY_AUTH,
+        actor=user_obj,
+        request=request,
+        target_type='User',
+        target_id=user_obj.id if user_obj else '',
+        target_repr=f"User '{username}'",
+        description=f"User '{username}' successfully logged in{how}."
+    )
+
+
+class StaffTwoFactorSetupView(APIView):
+    """
+    First sign-in with 2FA: after the password, a new authenticator secret to scan. Refused
+    once the account has a confirmed app, so a password alone can't register another phone.
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [TwoFactorThrottle]
+
+    def post(self, request):
+        from . import two_factor
+        try:
+            user, _ = two_factor.read_challenge(request.data.get('challenge'))
+        except ValueError as e:
+            return Response({"detail": str(e), "code": "CHALLENGE_EXPIRED"}, status=status.HTTP_401_UNAUTHORIZED)
+        if two_factor.is_enabled(user):
+            return Response({"detail": "Two-factor sign-in is already set up for this account."},
+                            status=status.HTTP_409_CONFLICT)
+        return Response(two_factor.start_setup(user))
+
+
+class StaffTwoFactorVerifyView(APIView):
+    """The authenticator (or backup) code after the password: completes the sign-in."""
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [TwoFactorThrottle]
+
+    def post(self, request):
+        from . import two_factor
+        from .serializers import issue_sign_in
+        try:
+            user, remember = two_factor.read_challenge(request.data.get('challenge'))
+        except ValueError as e:
+            return Response({"detail": str(e), "code": "CHALLENGE_EXPIRED"}, status=status.HTTP_401_UNAUTHORIZED)
+        was_enabled = two_factor.is_enabled(user)
+        try:
+            result = two_factor.verify(user, request.data.get('code'))
+        except ValueError as e:
+            log_audit_event(
+                action='LOGIN_2FA_FAILED', category=CtmsAuditLog.CATEGORY_AUTH, actor=user, request=request,
+                target_type='User', target_id=user.id, target_repr=f"User '{user.username}'",
+                description=f"Wrong two-factor code for '{user.username}'.",
+            )
+            return Response({"detail": str(e), "code": "CODE_INVALID"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not was_enabled:
+            log_audit_event(
+                action='TWO_FACTOR_ENABLED', category=CtmsAuditLog.CATEGORY_AUTH, actor=user, request=request,
+                target_type='User', target_id=user.id, target_repr=f"User '{user.username}'",
+                description=f"'{user.username}' set up two-factor sign-in.",
+            )
+        data = issue_sign_in(user, remember)
+        _log_sign_in(request, user, how=' with a backup code' if result['method'] == 'backup' else ' with 2FA')
+        if result['backup_codes']:
+            data['backup_codes'] = result['backup_codes']  # shown once, right after setup
+        if result['method'] == 'backup':
+            data['backup_codes_left'] = two_factor.backup_codes_left(user)
+        return Response(data)
+
+
+class StaffTwoFactorView(APIView):
+    """The signed-in staff member's own 2FA: status, and new backup codes (needs a current code)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from . import two_factor
+        return Response({
+            "enabled": two_factor.is_enabled(request.user),
+            "backup_codes_left": two_factor.backup_codes_left(request.user),
+        })
+
+    def post(self, request):
+        from . import two_factor
+        from .models import CtmsTwoFactor
+        from . import totp
+        device = CtmsTwoFactor.objects.filter(user=request.user, confirmed_at__isnull=False).first()
+        if not device:
+            return Response({"detail": "Two-factor sign-in is not set up."}, status=status.HTTP_409_CONFLICT)
+        if two_factor.code_locked(request.user):
+            return Response({"detail": "Too many wrong codes. Wait 15 minutes."}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        step = totp.matching_step(device.secret, request.data.get('code'), after_step=device.last_step)
+        if step is None:
+            two_factor._record_failure(request.user)
+            return Response({"detail": "That code is not correct. Enter the code shown in your authenticator app now."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        device.last_step = step
+        device.save(update_fields=['last_step'])
+        codes = two_factor.new_backup_codes(request.user)
+        log_audit_event(
+            action='TWO_FACTOR_BACKUP_CODES', category=CtmsAuditLog.CATEGORY_AUTH, actor=request.user, request=request,
+            target_type='User', target_id=request.user.id, target_repr=f"User '{request.user.username}'",
+            description=f"'{request.user.username}' made new two-factor backup codes.",
+        )
+        return Response({"backup_codes": codes})
 
 
 class StaffTokenRefreshView(TokenRefreshView):
@@ -2005,6 +2104,17 @@ class StaffUserAccountViewSet(viewsets.ViewSet):
         DolePersonnel.objects.filter(user=user).update(must_change_password=True)
         self._audit('USER_PASSWORD_RESET', user, f"Reset password for '{user.username}'")
         return Response({"status": "success", "message": f"Temporary password set for {user.username}. They must change it at next login."})
+
+    @action(detail=True, methods=['post'], url_path='reset-2fa')
+    def reset_two_factor(self, request, pk=None):
+        """Lost or replaced phone: the account sets up its authenticator again at its next sign-in."""
+        from . import two_factor
+        user = self._get(pk)
+        two_factor.reset(user)
+        end_all_sessions(user)
+        self._audit('USER_2FA_RESET', user, f"Reset two-factor sign-in for '{user.username}'")
+        return Response({"status": "success",
+                         "message": f"Two-factor sign-in reset for {user.username}. They set it up again at their next sign-in."})
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):

@@ -7,6 +7,22 @@ export const staffApi = {
   }),
   getMe: () => apiRequest('/staff/auth/me/'),
 
+  // Two-factor sign-in (Google / Microsoft Authenticator). `challenge` comes from login.
+  twoFactorSetup: (challenge) => apiRequest('/staff/auth/2fa/setup/', {
+    method: 'POST',
+    body: JSON.stringify({ challenge }),
+  }),
+  twoFactorVerify: (challenge, code) => apiRequest('/staff/auth/2fa/verify/', {
+    method: 'POST',
+    body: JSON.stringify({ challenge, code }),
+  }),
+  getTwoFactor: () => apiRequest('/staff/auth/2fa/'),
+  newBackupCodes: (code) => apiRequest('/staff/auth/2fa/', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  }),
+  resetEmployeeTwoFactor: (id) => apiRequest(`/staff/users/${id}/reset-2fa/`, { method: 'POST' }),
+
   getQueue: (officeId) => {
     const params = new URLSearchParams();
     if (officeId) params.append('office', officeId);

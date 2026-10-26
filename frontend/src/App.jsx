@@ -21,6 +21,7 @@ import StaffUsers from './pages/staff/StaffUsers';
 import StaffAuditLogs from './pages/staff/StaffAuditLogs';
 import StaffChangePassword from './pages/staff/StaffChangePassword';
 import StaffRegistration from './pages/staff/StaffRegistration';
+import StaffSecurity from './pages/staff/StaffSecurity';
 
 // Where a signed-in TV Display account belongs: its office's TV board (never the staff pages)
 function tvDisplayRedirect(user) {
@@ -170,6 +171,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <StaffQueue />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/staff/security"
+            element={
+              <ProtectedRoute>
+                <StaffSecurity />
               </ProtectedRoute>
             }
           />
