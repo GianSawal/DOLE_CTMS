@@ -7,8 +7,9 @@ import PrintSlip from '../../components/PrintSlip';
 import WalkinModal from '../../components/WalkinModal';
 import ReassignModal from '../../components/ReassignModal';
 import DoneModal from '../../components/DoneModal';
+import ReferModal from '../../components/ReferModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
-import { PageHeader, Notice, NoteField, LatestNote, ConcernNote } from '../../components/ui';
+import { PageHeader, Notice, NoteField, LatestNote, ConcernNote, ReferralNote } from '../../components/ui';
 
 const POLL_MS = 3000;
 
@@ -89,6 +90,7 @@ export default function StaffQueue() {
   const [doneTx, setDoneTx] = useState(null);
   const [pendingReason, setPendingReason] = useState('');
   const [reassignTx, setReassignTx] = useState(null);
+  const [referTx, setReferTx] = useState(null);
   // View-only filter for the waiting list; remembered on this computer
   const [waitingFilter, setWaitingFilter] = useState(loadWaitingFilter);
   const [divisions, setDivisions] = useState([]);
@@ -326,6 +328,7 @@ export default function StaffQueue() {
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
                       {myCurrent.transaction_no} · Claim code {myCurrent.claim_code}
                     </div>
+                    <ReferralNote tx={myCurrent} />
                     <LatestNote note={myCurrent.latest_note} />
                     <ConcernNote text={myCurrent.concern_note} />
 
@@ -339,6 +342,7 @@ export default function StaffQueue() {
                       )}
                       <button className="btn btn-outline" disabled={busy} onClick={() => { setPendingReason(''); setPendingTx(myCurrent); }}>Pending</button>
                       <button className="btn btn-outline" disabled={busy} onClick={() => setReassignTx(myCurrent)}>Reassign</button>
+                      <button className="btn btn-outline" disabled={busy} onClick={() => setReferTx(myCurrent)}>Refer to Office</button>
                       <button className="btn btn-outline" disabled={busy}
                         onClick={() => confirmThen(`Return Queue ${myCurrent.queue_no} to the queue?`,
                           'The client goes back to the shared waiting line, unassigned, so any window can call them.',
@@ -377,6 +381,7 @@ export default function StaffQueue() {
                           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{tx.transaction_no}</span>
                         </div>
                         <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}><ClientName tx={tx} /> · {tx.service_name}</div>
+                        <ReferralNote tx={tx} />
                         <LatestNote note={tx.latest_note} />
                         <ConcernNote text={tx.concern_note} />
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
@@ -397,6 +402,7 @@ export default function StaffQueue() {
                             <button className="btn btn-success btn-sm" disabled={busy} onClick={() => setDoneTx(tx)}>Done</button>
                           )}
                           <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => setReassignTx(tx)}>Reassign</button>
+                          <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => setReferTx(tx)}>Refer to Office</button>
                           <button className="btn btn-outline btn-sm" disabled={busy}
                             onClick={() => confirmThen(`Return Queue ${tx.queue_no} to the queue?`,
                               'The client goes back to the shared waiting line, unassigned.',
@@ -505,12 +511,14 @@ export default function StaffQueue() {
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>#{position}</span>
                           <strong style={{ fontFamily: 'var(--font-mono)', fontSize: '1.2rem', color: 'var(--text-primary)' }}>{tx.queue_no}</strong>
                           {tx.is_priority && <span className="badge badge-priority">Priority</span>}
+                          {tx.referred_from && <span className="badge badge-referred">Referral</span>}
                           <DivisionTag name={tx.division_name} />
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>waiting {formatMinutes(minutesSince(tx.checked_in_at))}</span>
                         </div>
                         <div style={{ fontSize: '0.85rem', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           <ClientName tx={tx} /> · <span style={{ color: 'var(--text-secondary)' }}>{tx.service_name}</span>
                         </div>
+                        <ReferralNote tx={tx} />
                         <ConcernNote text={tx.concern_note} />
                       </div>
                       <div className="queue-waiting-actions" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -550,6 +558,17 @@ export default function StaffQueue() {
         onTransferred={(updated, person) => {
           setReassignTx(null);
           flash('success', `Queue ${updated.queue_no} transferred to ${person.name}.`);
+          fetchQueue();
+        }}
+      />
+
+      <ReferModal
+        tx={referTx}
+        onClose={() => setReferTx(null)}
+        onReferred={(updated) => {
+          setReferTx(null);
+          flash('success', `Queue ${updated.queue_no} referred to ${updated.referred_to?.office_name || 'the other office'}`
+            + (updated.referred_to ? ` as Queue ${updated.referred_to.queue_no}.` : '.'));
           fetchQueue();
         }}
       />

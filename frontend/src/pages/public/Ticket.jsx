@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { publicApi } from '../../api/public';
 import Header from '../../components/Header';
 import { translations } from '../../locales/translations';
@@ -90,6 +90,8 @@ export default function Ticket() {
         return <span className="badge badge-no_show">{t.status_no_show}</span>;
       case 'cancelled':
         return <span className="badge badge-cancelled">{t.status_cancelled}</span>;
+      case 'referred':
+        return <span className="badge badge-referred">{t.status_referred}</span>;
       default:
         return <span className="badge badge-waiting">{ticket.status}</span>;
     }
@@ -199,6 +201,29 @@ export default function Ticket() {
             </div>
           )}
 
+          {/* Referred: send the client to their new ticket at the other office */}
+          {ticket.status === 'referred' && ticket.referred_to && (
+            <div style={{
+              backgroundColor: '#f5f3ff',
+              border: '2px solid #ddd6fe',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.25rem',
+              margin: '1.25rem 0',
+            }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#6d28d9' }}>{t.referred_to_label}</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.25rem' }}>
+                {ticket.referred_to.office_name}
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>{t.referred_new_number}</div>
+              <div className="mono" style={{ fontSize: '2.25rem', fontWeight: 900, color: '#6d28d9', lineHeight: 1.1 }}>
+                {ticket.referred_to.queue_no}
+              </div>
+              <Link to={`/t/${ticket.referred_to.ticket_token}`} className="btn btn-primary w-full" style={{ marginTop: '1rem' }}>
+                {t.open_new_ticket}
+              </Link>
+            </div>
+          )}
+
           {/* DONE and already surveyed: thank the client */}
           {ticket.status === 'done' && ticket.surveyed && (
             <div style={{ margin: '1.75rem 0' }}>
@@ -232,6 +257,12 @@ export default function Ticket() {
               <span style={{ color: 'var(--text-muted)' }}>{t.service_label}:</span>
               <strong>{ticket.service_name}</strong>
             </div>
+            {ticket.referred_from_office && (
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-muted)' }}>{t.referred_from_label}:</span>
+                <strong>{ticket.referred_from_office}</strong>
+              </div>
+            )}
             <div className="flex justify-between">
               <span style={{ color: 'var(--text-muted)' }}>{t.transaction_no}:</span>
               <span className="mono" style={{ fontWeight: 700 }}>{ticket.transaction_no}</span>
@@ -244,18 +275,21 @@ export default function Ticket() {
             </div>
           </div>
 
-          <p style={{
-            fontSize: '0.75rem',
-            color: 'var(--text-muted)',
-            marginTop: '1.5rem',
-            lineHeight: 1.4,
-          }}>
-            ℹ️ {t.keep_ticket_note}
-          </p>
+          {ticket.status !== 'referred' && (
+            <p style={{
+              fontSize: '0.75rem',
+              color: 'var(--text-muted)',
+              marginTop: '1.5rem',
+              lineHeight: 1.4,
+            }}>
+              ℹ️ {t.keep_ticket_note}
+            </p>
+          )}
 
           {/* Survey: always the office's CSM survey page (the CSM rejects per-ticket links).
-              Same tab on purpose: QR scanners' built-in browsers often ignore new-tab links. */}
-          {!ticket.surveyed && ticket.office_survey_url && (
+              Same tab on purpose: QR scanners' built-in browsers often ignore new-tab links.
+              A referred ticket has none: the client rates the office that finishes the transaction. */}
+          {!ticket.surveyed && ticket.office_survey_url && ticket.status !== 'referred' && (
             <div style={{
               marginTop: '1.25rem',
               paddingTop: '1.25rem',

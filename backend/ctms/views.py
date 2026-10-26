@@ -8,6 +8,7 @@ import qrcode
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models, transaction
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -815,6 +816,38 @@ class StaffTransactionActionView(APIView):
             elif action == 'requeue':
                 tx = services.requeue_transaction(tx, actor=request.user)
 
+            elif action == 'refer':
+                to_office = CsmOffice.objects.filter(pk=request.data.get('to_office') or None).first()
+                service = None
+                if request.data.get('service'):
+                    service = CsmService.objects.filter(pk=request.data.get('service'), is_active=True).first()
+                    if not service:
+                        raise ValueError("Choose an active service.")
+                note = str(request.data.get('note', ''))
+                tx, new_tx = services.refer_transaction(tx, request.user, to_office, note, service=service)
+                details = {
+                    'from_office': tx.office.name, 'from_transaction_no': tx.transaction_no,
+                    'to_office': new_tx.office.name, 'to_transaction_no': new_tx.transaction_no,
+                    'to_queue_no': new_tx.queue_no, 'service': new_tx.service.name, 'note': new_tx.referral_note,
+                }
+                for t, act_code, desc in (
+                    (tx, 'REFER_CLIENT', f"Referred Queue #{tx.queue_no} to {new_tx.office.name} (new Queue #{new_tx.queue_no})"),
+                    (new_tx, 'RECEIVE_REFERRAL', f"Received referral from {tx.office.name}: Queue #{new_tx.queue_no}"),
+                ):
+                    log_audit_event(
+                        action=act_code,
+                        category=CtmsAuditLog.CATEGORY_QUEUE,
+                        actor=request.user,
+                        request=request,
+                        target_type='Transaction',
+                        target_id=t.id,
+                        target_repr=f"Queue #{t.queue_no} ({t.transaction_no})",
+                        office=t.office,
+                        division_name=t.service.division.name if t.service and t.service.division else '',
+                        description=desc,
+                        details=details,
+                    )
+
             elif action == 'transfer':
                 to_user = User.objects.filter(pk=request.data.get('to_user')).first()
                 previous = services.personnel_display_name(tx.assigned_to) if tx.assigned_to_id else ''
@@ -884,7 +917,7 @@ class StaffTransactionActionView(APIView):
 MY_CLIENT_TABS = {
     'ongoing': [CtmsTransaction.STATUS_SERVING, CtmsTransaction.STATUS_TRANSFERRED],
     'pending': [CtmsTransaction.STATUS_PENDING],
-    'done': [CtmsTransaction.STATUS_DONE],
+    'done': [CtmsTransaction.STATUS_DONE, CtmsTransaction.STATUS_REFERRED],
 }
 MY_CLIENTS_DONE_LIMIT = 200
 
@@ -917,7 +950,8 @@ class StaffMyClientsView(APIView):
             )
 
         if tab == 'done':
-            qs = qs.order_by('-done_at')[:MY_CLIENTS_DONE_LIMIT]
+            # Referred tickets have no done_at; they finished when they were closed
+            qs = qs.order_by(Coalesce('done_at', 'closed_at').desc())[:MY_CLIENTS_DONE_LIMIT]
         elif tab == 'pending':
             qs = qs.order_by('-is_priority', 'checked_in_at')
         else:
@@ -1086,6 +1120,8 @@ class StaffReportsSummaryView(APIView):
         total_serving = qs.filter(status=CtmsTransaction.STATUS_SERVING).count()
         total_no_show = qs.filter(status=CtmsTransaction.STATUS_NO_SHOW).count()
         total_cancelled = qs.filter(status=CtmsTransaction.STATUS_CANCELLED).count()
+        total_referred_out = qs.filter(status=CtmsTransaction.STATUS_REFERRED).count()
+        total_referred_in = qs.filter(referred_from__isnull=False).count()
 
         # Avg wait time: check-in to the FIRST call (started_at). called_at is moved by every
         # recall, resume and reassignment, so using it counted hours of service as "waiting".
@@ -1125,6 +1161,8 @@ class StaffReportsSummaryView(APIView):
             "total_serving": total_serving,
             "total_no_show": total_no_show,
             "total_cancelled": total_cancelled,
+            "total_referred_out": total_referred_out,
+            "total_referred_in": total_referred_in,
             "avg_wait_min": avg_wait_min,
             "avg_service_min": avg_service_min,
             "surveyed_count": surveyed_count,

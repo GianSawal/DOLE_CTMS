@@ -294,6 +294,13 @@ class CheckinRequestSerializer(serializers.Serializer):
         return attrs
 
 
+def referral_of(tx):
+    """The ticket created when `tx` was referred to another office, or None."""
+    if tx.status != CtmsTransaction.STATUS_REFERRED:
+        return None
+    return CtmsTransaction.objects.select_related('office').filter(referred_from=tx).first()
+
+
 class TicketPublicSerializer(serializers.ModelSerializer):
     office_name = serializers.ReadOnlyField(source='office.name')
     service_name = serializers.ReadOnlyField(source='service.name')
@@ -303,10 +310,14 @@ class TicketPublicSerializer(serializers.ModelSerializer):
     surveyed = serializers.ReadOnlyField(source='is_surveyed')
     started_at = serializers.SerializerMethodField()
     office_survey_url = serializers.SerializerMethodField()
+    referred_to = serializers.SerializerMethodField()
+    referred_from_office = serializers.SerializerMethodField()
 
     class Meta:
         model = CtmsTransaction
         fields = [
+            'referred_to',
+            'referred_from_office',
             'office_survey_url',
             'queue_no',
             'transaction_no',
@@ -329,6 +340,19 @@ class TicketPublicSerializer(serializers.ModelSerializer):
 
     def get_counter(self, obj):
         return obj.counter.name if obj.counter else None
+
+    def get_referred_to(self, obj):
+        # The client's new ticket at the office they were referred to
+        new_tx = referral_of(obj)
+        if not new_tx:
+            return None
+        return {'office_name': new_tx.office.name, 'queue_no': new_tx.queue_no, 'ticket_token': new_tx.ticket_token}
+
+    def get_referred_from_office(self, obj):
+        if not obj.referred_from_id:
+            return None
+        source = CtmsTransaction.objects.select_related('office').filter(pk=obj.referred_from_id).first()
+        return source.office.name if source else None
 
     def get_office_survey_url(self, obj):
         # The CSM's general survey page for this office, e.g. http://csm.dolero3.lan/survey/office/7
@@ -372,6 +396,8 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
     started_at = serializers.SerializerMethodField()
     service_duration_seconds = serializers.ReadOnlyField()
     service_duration_display = serializers.SerializerMethodField()
+    referred_from = serializers.SerializerMethodField()
+    referred_to = serializers.SerializerMethodField()
 
     class Meta:
         model = CtmsTransaction
@@ -412,11 +438,35 @@ class StaffTransactionSerializer(serializers.ModelSerializer):
             'is_surveyed',
             'ticket_token',
             'survey_token',
+            'referral_note',
+            'referred_from',
+            'referred_to',
         ]
 
     def get_started_at(self, obj):
         val = obj.effective_started_at
         return val.isoformat() if val else None
+
+    def get_referred_from(self, obj):
+        """The other office's ticket this one continues, and who referred the client."""
+        if not obj.referred_from_id:
+            return None
+        from .models import CtmsAssignmentHistory as H
+        source = CtmsTransaction.objects.select_related('office').filter(pk=obj.referred_from_id).first()
+        received = obj.assignment_history.filter(event=H.EVENT_REFERRAL_RECEIVED).first()
+        return {
+            'office_name': source.office.name if source else '',
+            'queue_no': source.queue_no if source else '',
+            'transaction_no': source.transaction_no if source else '',
+            'by': received.actor_name if received else '',
+        }
+
+    def get_referred_to(self, obj):
+        """Where a referred ticket's client was sent."""
+        new_tx = referral_of(obj)
+        if not new_tx:
+            return None
+        return {'office_name': new_tx.office.name, 'queue_no': new_tx.queue_no, 'transaction_no': new_tx.transaction_no}
 
     def get_service_duration_display(self, obj):
         secs = obj.service_duration_seconds

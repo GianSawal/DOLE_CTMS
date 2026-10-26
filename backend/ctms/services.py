@@ -167,14 +167,15 @@ _S = CtmsTransaction
 ALLOWED_TRANSITIONS = {
     _S.STATUS_WAITING: {_S.STATUS_SERVING, _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
     _S.STATUS_SERVING: {_S.STATUS_DONE, _S.STATUS_PENDING, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
-                        _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
+                        _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED, _S.STATUS_REFERRED},
     _S.STATUS_TRANSFERRED: {_S.STATUS_SERVING, _S.STATUS_PENDING, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
-                            _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
+                            _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED, _S.STATUS_REFERRED},
     _S.STATUS_PENDING: {_S.STATUS_SERVING, _S.STATUS_DONE, _S.STATUS_WAITING, _S.STATUS_TRANSFERRED,
-                        _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED},
+                        _S.STATUS_NO_SHOW, _S.STATUS_CANCELLED, _S.STATUS_REFERRED},
     _S.STATUS_DONE: {_S.STATUS_SERVING},
     _S.STATUS_NO_SHOW: set(),
     _S.STATUS_CANCELLED: set(),
+    _S.STATUS_REFERRED: set(),
 }
 _STATUS_LABELS = dict(CtmsTransaction.STATUS_CHOICES)
 
@@ -510,6 +511,70 @@ def transfer_transaction(tx, actor, to_user, reason=''):
             assigned_at=timezone.now(),
         )
         return tx
+
+
+def refer_transaction(tx, actor, to_office, note, service=None):
+    """
+    Sends a client to another office. This ticket closes as Referred (no CSM survey: the
+    client rates the office that finishes the transaction), and a new linked ticket joins
+    `to_office`'s waiting line at once, with that office's next queue number. `note` is the
+    client's concern, required so the receiving office need not ask again.
+    Returns (referred_tx, new_tx).
+    """
+    from .models import CtmsAssignmentHistory, CtmsNotification
+
+    note = (note or '').strip()
+    if not note:
+        raise ValueError("Write the client's concern so the other office knows what they need.")
+    note = note[:255]
+
+    with transaction.atomic():
+        tx = (CtmsTransaction.objects.select_for_update()
+              .select_related('office', 'service', 'assigned_to', 'counter').get(pk=tx.pk))
+        ensure_handler(tx, actor)
+        if not to_office or not to_office.is_active:
+            raise ValueError("Choose an active office to refer the client to.")
+        if to_office.pk == tx.office_id:
+            raise ValueError("The client is already in this office. Choose another office.")
+        ensure_transition(tx, CtmsTransaction.STATUS_REFERRED)
+        service = service or tx.service
+
+        snap = _snapshot(tx)
+        tx.status = CtmsTransaction.STATUS_REFERRED
+        tx.closed_at = timezone.now()
+        tx.counter = None  # frees the window
+        tx.save(update_fields=['status', 'closed_at', 'counter'])
+        record_event(tx, CtmsAssignmentHistory.EVENT_REFERRED, actor=actor, reason=note, **snap)
+
+        new_tx = create_transaction(
+            to_office, service,
+            client_name=tx.client_name,
+            is_priority=tx.is_priority,
+            source=tx.source,
+            group_member_names=tx.group_member_names,
+            concern_note=tx.concern_note,
+        )
+        new_tx.referred_from = tx
+        new_tx.referral_note = note
+        new_tx.save(update_fields=['referred_from', 'referral_note'])
+        record_event(new_tx, CtmsAssignmentHistory.EVENT_REFERRAL_RECEIVED, actor=actor, reason=note)
+
+        sender = personnel_display_name(actor) or 'A colleague'
+        CtmsNotification.objects.bulk_create([
+            CtmsNotification(
+                recipient=user,
+                transaction=new_tx,
+                notification_type='REFERRAL',
+                title=f"Client Referred to Your Office: Queue #{new_tx.queue_no}",
+                message=(f"{sender} of {tx.office.name} referred a client ({service.name}). "
+                         f"Queue #{new_tx.queue_no} is now in your waiting line. Concern: {note}"),
+                queue_no=new_tx.queue_no,
+                service_name=service.name,
+                assigned_at=timezone.now(),
+            )
+            for user in transfer_recipients(to_office)
+        ])
+        return tx, new_tx
 
 
 # =====================================================================

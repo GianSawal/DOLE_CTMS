@@ -253,6 +253,12 @@ label {
   color: var(--dole-red);
 }
 
+.badge-referred {
+  background-color: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
 /* Layout Utilities */
 .text-center { text-align: center; }
 .text-right { text-align: right; }

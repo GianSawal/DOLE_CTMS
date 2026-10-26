@@ -7,8 +7,10 @@ function formatDateTime(iso) {
   return new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function describe(e) {
+function describe(e, tx) {
   switch (e.event) {
+    case 'REFERRED': return `${e.actor_name} referred the client to ${tx.referred_to?.office_name || 'another office'}`;
+    case 'REFERRAL_IN': return `${e.actor_name} referred the client here from ${tx.referred_from?.office_name || 'another office'}`;
     case 'CALLED': return `${e.to_user_name} called the client${e.to_counter_name ? ` to ${e.to_counter_name}` : ''}`;
     case 'TRANSFERRED': return `${e.from_user_name || e.actor_name} transferred the client to ${e.to_user_name}`;
     case 'PENDING': return `${e.actor_name} moved the client to Pending`;
@@ -49,6 +51,18 @@ export default function TransactionHistoryModal({ txId, onClose }) {
             <dt style={{ color: 'var(--text-muted)' }}>Service</dt><dd style={{ margin: 0 }}>{tx.service_name}{tx.division_name ? ` (${tx.division_name})` : ''}</dd>
             <dt style={{ color: 'var(--text-muted)' }}>Checked in</dt><dd style={{ margin: 0 }}>{formatDateTime(tx.checked_in_at)}</dd>
             <dt style={{ color: 'var(--text-muted)' }}>Handled by</dt><dd style={{ margin: 0 }}>{tx.assigned_to_name || tx.assigned_personnel || '—'}</dd>
+            {tx.referred_from && (
+              <>
+                <dt style={{ color: 'var(--text-muted)' }}>Referred from</dt>
+                <dd style={{ margin: 0 }}>{tx.referred_from.office_name} · Queue {tx.referred_from.queue_no} ({tx.referred_from.transaction_no})</dd>
+              </>
+            )}
+            {tx.referred_to && (
+              <>
+                <dt style={{ color: 'var(--text-muted)' }}>Referred to</dt>
+                <dd style={{ margin: 0 }}>{tx.referred_to.office_name} · Queue {tx.referred_to.queue_no} ({tx.referred_to.transaction_no})</dd>
+              </>
+            )}
             {tx.status === 'done' && (
               <>
                 <dt style={{ color: 'var(--text-muted)' }}>Completed</dt><dd style={{ margin: 0 }}>{formatDateTime(tx.done_at)} · {tx.served_by_name}</dd>
@@ -67,7 +81,7 @@ export default function TransactionHistoryModal({ txId, onClose }) {
               {data.events.map(e => (
                 <li key={e.id} style={{ position: 'relative', padding: '0 0 0.9rem 1rem' }}>
                   <span style={{ position: 'absolute', left: '-6px', top: '4px', width: '10px', height: '10px', borderRadius: '50%', background: e.event === 'TRANSFERRED' ? 'var(--dole-gold)' : 'var(--dole-blue)' }} />
-                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{describe(e)}</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{describe(e, tx)}</div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatDateTime(e.created_at)}</div>
                   {e.reason && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>Note: {e.reason}</div>}
                 </li>

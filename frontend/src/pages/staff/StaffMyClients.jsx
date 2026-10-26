@@ -4,15 +4,16 @@ import { staffApi } from '../../api/staff';
 import Modal from '../../components/Modal';
 import DoneModal from '../../components/DoneModal';
 import TransactionHistoryModal from '../../components/TransactionHistoryModal';
+import ReferModal from '../../components/ReferModal';
 import { broadcastQueueCall } from '../../utils/airportChime';
-import { PageHeader, Notice, NoteField, LatestNote, ConcernNote } from '../../components/ui';
+import { PageHeader, Notice, NoteField, LatestNote, ConcernNote, ReferralNote } from '../../components/ui';
 
 const POLL_MS = 5000;
 
 const TABS = [
   { key: 'ongoing', label: 'Ongoing', hint: 'Clients you are serving, or that were transferred to you and are waiting for you to start.' },
   { key: 'pending', label: 'Pending', hint: 'Clients you paused, e.g. waiting for requirements. They stay with you until you resume or complete them.' },
-  { key: 'done', label: 'Done', hint: 'Transactions you completed (latest 200).' },
+  { key: 'done', label: 'Done', hint: 'Transactions you completed or referred to another office (latest 200).' },
 ];
 
 const STATUS_BADGE = {
@@ -20,7 +21,10 @@ const STATUS_BADGE = {
   transferred: { cls: 'badge badge-priority', label: 'Transferred – not started' },
   pending: { cls: 'badge badge-pending', label: 'Pending' },
   done: { cls: 'badge badge-done', label: 'Done' },
+  referred: { cls: 'badge badge-referred', label: 'Referred' },
 };
+
+const FINISHED = ['done', 'referred'];
 
 function formatDateTime(iso) {
   if (!iso) return '—';
@@ -36,6 +40,7 @@ export default function StaffMyClients() {
   const [notice, setNotice] = useState(null);
 
   const [historyTxId, setHistoryTxId] = useState(null);
+  const [referTx, setReferTx] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
   const [pendingTx, setPendingTx] = useState(null);
   const [doneTx, setDoneTx] = useState(null);
@@ -142,8 +147,11 @@ export default function StaffMyClients() {
         {tx.status === 'pending' && (
           <button className="btn btn-success btn-sm" disabled={busy} onClick={() => setDoneTx(tx)}>Done</button>
         )}
-        {tx.status !== 'done' && (
-          <button className="btn btn-outline btn-sm" style={{ color: 'var(--dole-red-dark)' }} disabled={busy} onClick={() => confirmDelete(tx)}>Delete</button>
+        {!FINISHED.includes(tx.status) && (
+          <>
+            <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => setReferTx(tx)}>Refer</button>
+            <button className="btn btn-outline btn-sm" style={{ color: 'var(--dole-red-dark)' }} disabled={busy} onClick={() => confirmDelete(tx)}>Delete</button>
+          </>
         )}
         <button className="btn btn-outline btn-sm" onClick={() => setHistoryTxId(tx.id)}>View</button>
       </div>
@@ -253,8 +261,11 @@ export default function StaffMyClients() {
                       {' · '}
                       {tx.status === 'done'
                         ? `Completed ${formatDateTime(tx.done_at)}${tx.is_surveyed ? ' · CSM answered' : ''}`
-                        : `Checked in ${formatDateTime(tx.checked_in_at)}`}
+                        : tx.status === 'referred'
+                          ? `Referred ${formatDateTime(tx.closed_at)}${tx.referred_to ? ` to ${tx.referred_to.office_name} (Queue ${tx.referred_to.queue_no})` : ''}`
+                          : `Checked in ${formatDateTime(tx.checked_in_at)}`}
                     </div>
+                    <ReferralNote tx={tx} />
                     <LatestNote note={tx.latest_note} />
                     <ConcernNote text={tx.concern_note} />
                   </div>
@@ -267,6 +278,17 @@ export default function StaffMyClients() {
       </main>
 
       <TransactionHistoryModal txId={historyTxId} onClose={() => setHistoryTxId(null)} />
+
+      <ReferModal
+        tx={referTx}
+        onClose={() => setReferTx(null)}
+        onReferred={(updated) => {
+          setReferTx(null);
+          flash('success', `Queue ${updated.queue_no} referred to ${updated.referred_to?.office_name || 'the other office'}`
+            + (updated.referred_to ? ` as Queue ${updated.referred_to.queue_no}.` : '.'));
+          fetchData();
+        }}
+      />
 
       <DoneModal
         tx={doneTx}

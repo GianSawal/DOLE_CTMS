@@ -200,6 +200,11 @@ export const staffApi = {
     method: 'POST',
     body: JSON.stringify({ to_user: toUser, reason }),
   }),
+  // Sends the client to another office's waiting line; `note` (the client's concern) is required
+  referTransaction: (id, toOffice, note, service = null) => apiRequest(`/staff/transactions/${id}/refer/`, {
+    method: 'POST',
+    body: JSON.stringify({ to_office: toOffice, note, service }),
+  }),
   getTransactionHistory: (id) => apiRequest(`/staff/transactions/${id}/history/`),
 
   // Windows (office-scoped service windows)

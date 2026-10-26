@@ -243,6 +243,22 @@ export default function StaffReports() {
               {summary?.total_no_show || 0} no-shows · {summary?.total_cancelled || 0} cancelled
             </div>
           </div>
+
+          <div className="card">
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+              Referrals
+            </div>
+            <div className="mono" style={{ fontSize: '2.25rem', fontWeight: 800, color: '#6d28d9', marginTop: '0.25rem' }}>
+              {summary ? summary.total_referred_out : '--'}
+              <span style={{ fontSize: '1rem', fontWeight: 600 }}> out</span>
+              {' · '}
+              {summary ? summary.total_referred_in : '--'}
+              <span style={{ fontSize: '1rem', fontWeight: 600 }}> in</span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+              Sent to / received from other offices
+            </div>
+          </div>
         </div>
       </main>
     </div>

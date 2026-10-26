@@ -2324,3 +2324,115 @@ class ServerVoiceTestCase(CsmTablesTestCase):
             res = self.client.get(f'/api/public/display/{self.office.id}/voice-check/', {'text': 'anything else'})
             self.assertEqual(res.status_code, 200)
             synth.assert_called_once_with(tts.SOUND_CHECK_TEXT)
+
+
+class ReferralTestCase(CsmTablesTestCase):
+    """Referring a client to another office: the ticket closes as Referred and a linked one joins that office's line."""
+
+    def setUp(self):
+        self.bataan = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        self.aurora = CsmOffice.objects.create(name="Aurora Field Office", code="AUR", is_active=True)
+        self.service = CsmService.objects.create(name="SEnA Assistance", is_active=True, sort_order=1)
+        self.ana = self._staff("ana", self.bataan, "Window 1")
+        self.ben = self._staff("ben", self.bataan, "Window 2")
+        self.aura = self._staff("aura", self.aurora, "Window 1")
+        self.client = APIClient()
+
+    def _staff(self, username, office, window):
+        user = User.objects.create_user(username=username, password="pw", is_staff=True, first_name=username.title())
+        CtmsStaffOffice.objects.create(user=user, office=office)
+        CtmsCounter.objects.create(office=office, name=window, assigned_user=user)
+        return user
+
+    def _as(self, user):
+        self.client.force_authenticate(user=user)
+        return self.client
+
+    def _refer(self, tx, by, office, note="Establishment is in Baler", **extra):
+        return self._as(by).post(f'/api/staff/transactions/{tx.id}/refer/',
+                                 {'to_office': office.id, 'note': note, **extra}, format='json')
+
+    def test_referral_closes_ticket_and_queues_a_linked_one(self):
+        # The receiving office already has one client today, so the referral gets its next number
+        create_transaction(self.aurora, self.service)
+        tx = create_transaction(self.bataan, self.service, client_name="Juan", is_priority=True)
+        tx = call_transaction(tx, self.ana)
+
+        res = self._refer(tx, self.ana, self.aurora)
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['status'], CtmsTransaction.STATUS_REFERRED)
+        self.assertEqual(res.data['referred_to']['office_name'], "Aurora Field Office")
+
+        tx.refresh_from_db()
+        self.assertIsNone(tx.counter)
+        self.assertIsNotNone(tx.closed_at)
+        self.assertIsNone(tx.survey_url)
+
+        new_tx = CtmsTransaction.objects.get(referred_from=tx)
+        self.assertEqual(new_tx.office, self.aurora)
+        self.assertEqual(new_tx.status, CtmsTransaction.STATUS_WAITING)
+        self.assertEqual(new_tx.queue_no, "P-002")
+        self.assertTrue(new_tx.transaction_no.startswith("AUR-"))
+        self.assertEqual(new_tx.client_name, "Juan")
+        self.assertEqual(new_tx.referral_note, "Establishment is in Baler")
+
+        # It is in the receiving office's waiting line, and its staff are told
+        queue = self._as(self.aura).get(f'/api/staff/queue/?office={self.aurora.id}').data
+        referred = next(r for r in queue['waiting'] if r['id'] == new_tx.id)
+        self.assertEqual(referred['referred_from']['office_name'], "Bataan Field Office")
+        self.assertEqual(referred['referral_note'], "Establishment is in Baler")
+        self.assertTrue(CtmsNotification.objects.filter(recipient=self.aura, transaction=new_tx,
+                                                        notification_type='REFERRAL').exists())
+        self.assertFalse(CtmsNotification.objects.filter(recipient=self.ben, notification_type='REFERRAL').exists())
+
+        # Both offices' audit logs record it
+        self.assertTrue(CtmsAuditLog.objects.filter(action='REFER_CLIENT', office=self.bataan).exists())
+        self.assertTrue(CtmsAuditLog.objects.filter(action='RECEIVE_REFERRAL', office=self.aurora).exists())
+
+        # The client's old ticket points to the new one
+        ticket = self.client.get(f'/api/public/tickets/{tx.ticket_token}/').data
+        self.assertEqual(ticket['referred_to']['ticket_token'], new_tx.ticket_token)
+        self.assertEqual(ticket['referred_to']['queue_no'], "P-002")
+
+    def test_referral_requires_a_note_and_another_office(self):
+        tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
+        self.assertEqual(self._refer(tx, self.ana, self.aurora, note="  ").status_code, 409)
+        self.assertEqual(self._refer(tx, self.ana, self.bataan).status_code, 409)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, CtmsTransaction.STATUS_SERVING)
+        self.assertFalse(CtmsTransaction.objects.filter(office=self.aurora).exists())
+
+    def test_only_the_handler_can_refer_and_only_unfinished_clients(self):
+        tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
+        self.assertEqual(self._refer(tx, self.ben, self.aurora).status_code, 403)
+
+        waiting = create_transaction(self.bataan, self.service)
+        self.assertEqual(self._refer(waiting, self.ana, self.aurora).status_code, 409)
+
+        mark_done(tx, self.ana)
+        self.assertEqual(self._refer(tx, self.ana, self.aurora).status_code, 409)
+        self.assertFalse(CtmsTransaction.objects.filter(office=self.aurora).exists())
+
+    def test_referral_can_change_the_service(self):
+        other = CsmService.objects.create(name="Labor Inspection", is_active=True, sort_order=2)
+        tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
+        res = self._refer(tx, self.ana, self.aurora, service=other.id)
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(CtmsTransaction.objects.get(referred_from=tx).service, other)
+
+    def test_referred_ticket_is_final_and_counted_in_reports(self):
+        admin = User.objects.create_superuser(username="root", password="pw")
+        tx = call_transaction(create_transaction(self.bataan, self.service), self.ana)
+        self._refer(tx, self.ana, self.aurora)
+        tx.refresh_from_db()
+
+        # Finished for the sending office: cannot be deleted, shows in the handler's Done tab
+        self.assertEqual(self._as(self.ana).post(f'/api/staff/transactions/{tx.id}/delete/').status_code, 409)
+        done_tab = self._as(self.ana).get('/api/staff/my-clients/?tab=done').data
+        self.assertEqual([r['id'] for r in done_tab['results']], [tx.id])
+
+        bataan = self._as(admin).get(f'/api/staff/reports/summary/?office={self.bataan.id}').data
+        self.assertEqual((bataan['total_referred_out'], bataan['total_referred_in']), (1, 0))
+        self.assertEqual(bataan['survey_rate_percent'], 0)  # not a Done ticket, so not in the survey rate
+        aurora = self._as(admin).get(f'/api/staff/reports/summary/?office={self.aurora.id}').data
+        self.assertEqual((aurora['total_referred_out'], aurora['total_referred_in']), (0, 1))

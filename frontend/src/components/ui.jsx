@@ -36,18 +36,19 @@ export function Notice({ notice, onDismiss }) {
 
 const NOTE_MAX = 255;
 
-/** Multi-line "Remarks" box used when reassigning, moving to pending, or completing a client. */
-export function NoteField({ id, value, onChange, placeholder, label = 'Remarks' }) {
+/** Multi-line "Remarks" box used when reassigning, moving to pending, completing, or referring a client. */
+export function NoteField({ id, value, onChange, placeholder, label = 'Remarks', required = false }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <label htmlFor={id}>{label} <span style={{ fontWeight: 400, color: 'var(--ui-muted)' }}>(optional)</span></label>
+        <label htmlFor={id}>{label} {!required && <span style={{ fontWeight: 400, color: 'var(--ui-muted)' }}>(optional)</span>}</label>
         <span style={{ fontSize: '0.75rem', color: 'var(--ui-muted)' }}>{value.length}/{NOTE_MAX}</span>
       </div>
       <textarea
         id={id}
         rows={3}
         maxLength={NOTE_MAX}
+        required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -72,6 +73,26 @@ export function ConcernNote({ text }) {
       lineHeight: 1.4,
     }}>
       <strong style={{ fontWeight: 600 }}>Concern:</strong> {text}
+    </div>
+  );
+}
+
+/** On a ticket another office referred here: where the client came from and their concern. */
+export function ReferralNote({ tx }) {
+  if (!tx?.referred_from) return null;
+  const { office_name: office, by } = tx.referred_from;
+  return (
+    <div style={{
+      marginTop: '0.45rem',
+      padding: '0.45rem 0.65rem',
+      borderRadius: '8px',
+      background: '#f5f3ff',
+      border: '1px solid #ddd6fe',
+      fontSize: '0.82rem',
+      color: 'var(--ui-text-2)',
+      lineHeight: 1.4,
+    }}>
+      <strong style={{ fontWeight: 600 }}>Referred from {office}{by ? ` by ${by}` : ''}:</strong> {tx.referral_note}
     </div>
   );
 }

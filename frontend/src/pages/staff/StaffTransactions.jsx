@@ -161,6 +161,8 @@ export default function StaffTransactions() {
         return <span className="badge badge-no_show">No-show</span>;
       case 'cancelled':
         return <span className="badge badge-cancelled">Cancelled</span>;
+      case 'referred':
+        return <span className="badge badge-referred">Referred</span>;
       default:
         return <span className="badge badge-waiting">{status}</span>;
     }
@@ -273,6 +275,7 @@ export default function StaffTransactions() {
                 <option value="done">Done</option>
                 <option value="no_show">No-show</option>
                 <option value="cancelled">Cancelled</option>
+                <option value="referred">Referred</option>
               </select>
             </div>
 

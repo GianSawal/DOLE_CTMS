@@ -400,6 +400,8 @@ class CtmsTransaction(models.Model):
     STATUS_DONE = 'done'
     STATUS_NO_SHOW = 'no_show'
     STATUS_CANCELLED = 'cancelled'
+    # Sent to another office: this ticket closes and a linked one joins that office's queue
+    STATUS_REFERRED = 'referred'
 
     STATUS_CHOICES = (
         (STATUS_WAITING, 'Waiting'),
@@ -409,6 +411,7 @@ class CtmsTransaction(models.Model):
         (STATUS_DONE, 'Done'),
         (STATUS_NO_SHOW, 'No-show'),
         (STATUS_CANCELLED, 'Cancelled'),
+        (STATUS_REFERRED, 'Referred'),
     )
 
     SOURCE_QR = 'qr'
@@ -461,6 +464,13 @@ class CtmsTransaction(models.Model):
     ticket_token = models.CharField(max_length=32, unique=True, db_index=True)
     survey_token = models.CharField(max_length=32, unique=True, db_index=True)
     claim_code = models.CharField(max_length=4)
+
+    # Set on a ticket created by a referral: the other office's ticket it continues
+    referred_from = models.OneToOneField(
+        'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referred_to',
+    )
+    referral_note = models.CharField(max_length=255, blank=True, default='',
+                                     help_text="The client's concern, written by the referring personnel")
 
     class Meta:
         db_table = 'ctms_transaction'
@@ -522,6 +532,8 @@ class CtmsAssignmentHistory(models.Model):
     EVENT_REQUEUED = 'REQUEUED'
     EVENT_NO_SHOW = 'NO_SHOW'
     EVENT_CANCELLED = 'CANCELLED'
+    EVENT_REFERRED = 'REFERRED'              # this office sent the client to another office
+    EVENT_REFERRAL_RECEIVED = 'REFERRAL_IN'  # this ticket was created by another office's referral
 
     EVENT_CHOICES = (
         (EVENT_CALLED, 'Called'),
@@ -533,6 +545,8 @@ class CtmsAssignmentHistory(models.Model):
         (EVENT_REQUEUED, 'Returned to Queue'),
         (EVENT_NO_SHOW, 'No-show'),
         (EVENT_CANCELLED, 'Cancelled'),
+        (EVENT_REFERRED, 'Referred to another office'),
+        (EVENT_REFERRAL_RECEIVED, 'Referral received'),
     )
 
     id = models.BigAutoField(primary_key=True)
