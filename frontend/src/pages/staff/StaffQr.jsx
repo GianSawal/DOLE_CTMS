@@ -3,8 +3,21 @@ import { staffApi } from '../../api/staff';
 import { useAuth } from '../../context/AuthContext';
 import { Lock, Printer, KeyRound, RefreshCw, Copy, Tv } from 'lucide-react';
 import { PageHeader } from '../../components/ui';
+import posterPrintCss from './StaffQr.css?inline';
+
+// The poster's print rules (only the poster prints, on A4) apply only while this page is open
+function usePosterPrintStyles() {
+  useEffect(() => {
+    if (typeof CSSStyleSheet === 'undefined' || !('adoptedStyleSheets' in document)) return undefined;
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(posterPrintCss);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    return () => { document.adoptedStyleSheets = document.adoptedStyleSheets.filter(s => s !== sheet); };
+  }, []);
+}
 
 export default function StaffQr() {
+  usePosterPrintStyles();
   const { user } = useAuth();
   const [selectedOfficeId, setSelectedOfficeId] = useState('');
   const [qrConfig, setQrConfig] = useState(null);
@@ -148,54 +161,6 @@ export default function StaffQr() {
     <div style={{ display: 'flex', flexDirection: 'column' }}>
 
       {/* Scoped Print Styles for A4 Poster */}
-      <style>{`
-        @media print {
-          @page {
-            size: A4 portrait;
-            margin: 8mm 12mm;
-          }
-          html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #ffffff !important;
-            width: 100% !important;
-            height: 100% !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          body * {
-            visibility: hidden !important;
-          }
-          .print-poster-card,
-          .print-poster-card * {
-            visibility: visible !important;
-          }
-          .print-poster-card {
-            position: absolute !important;
-            left: 0 !important;
-            right: 0 !important;
-            top: 0 !important;
-            margin: 0 auto !important;
-            width: 100% !important;
-            max-width: 186mm !important;
-            box-sizing: border-box !important;
-            padding: 8mm 10mm !important;
-            border: 3px double #0305ba !important;
-            border-radius: 16px !important;
-            box-shadow: none !important;
-            page-break-inside: avoid !important;
-            page-break-after: avoid !important;
-            page-break-before: avoid !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-          }
-          .no-print {
-            display: none !important;
-          }
-        }
-      `}</style>
 
       <main style={{ flex: 1, padding: '1.5rem', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
         <div className="no-print">

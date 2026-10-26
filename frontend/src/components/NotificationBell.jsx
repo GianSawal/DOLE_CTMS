@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { staffApi } from '../api/staff';
 import { useAuth } from '../context/AuthContext';
+import './NotificationBell.css';
 
 // Shared AudioContext instance unlocked by user interaction
 let sharedAudioCtx = null;
@@ -237,63 +238,6 @@ export default function NotificationBell() {
   return (
     <div style={{ position: 'relative' }} ref={dropdownRef}>
       {/* Component Styles for Animations */}
-      <style>{`
-        @keyframes slideInBounceAlert {
-          0% {
-            transform: translateY(-40px) scale(0.92);
-            opacity: 0;
-          }
-          65% {
-            transform: translateY(6px) scale(1.02);
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(0) scale(1);
-            opacity: 1;
-          }
-        }
-
-        @keyframes alertGlowPulse {
-          0%, 100% {
-            box-shadow: 0 16px 40px rgba(3, 5, 186, 0.30), 0 0 0 0 rgba(3, 5, 186, 0.45);
-          }
-          50% {
-            box-shadow: 0 20px 50px rgba(3, 5, 186, 0.45), 0 0 0 10px rgba(3, 5, 186, 0.15);
-          }
-        }
-
-        @keyframes liveBadgeDot {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.3); opacity: 0.6; }
-        }
-
-        @keyframes bellRingKeyframe {
-          0% { transform: rotate(0); }
-          15% { transform: rotate(18deg); }
-          30% { transform: rotate(-18deg); }
-          45% { transform: rotate(14deg); }
-          60% { transform: rotate(-14deg); }
-          75% { transform: rotate(8deg); }
-          100% { transform: rotate(0); }
-        }
-
-        @keyframes badgeRadarPing {
-          0%, 100% {
-            transform: scale(1);
-            box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
-          }
-          50% {
-            transform: scale(1.12);
-            box-shadow: 0 0 0 7px rgba(220, 38, 38, 0);
-          }
-        }
-
-        @keyframes toastShimmerBar {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-      `}</style>
 
       {/* Floating High-Noticeability Toast Alert Banner */}
       {latestToast && (

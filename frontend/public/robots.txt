@@ -1,0 +1,4 @@
+# Internal DOLE system: nothing here is meant for search engines.
+# (Not a security control: access is protected by sign-in, not by this file.)
+User-agent: *
+Disallow: /
