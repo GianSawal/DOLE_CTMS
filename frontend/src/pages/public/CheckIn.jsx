@@ -1,16 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { publicApi } from '../../api/public';
 import Header from '../../components/Header';
 import SearchableServiceSelect from '../../components/SearchableServiceSelect';
 import { translations } from '../../locales/translations';
 import { referralsTo, forgetReferral } from '../../utils/pendingReferrals';
+import { useClientLang, lastTicket, forgetTicket } from '../../utils/clientMemory';
+
+const ACTIVE_STATUSES = ['waiting', 'serving', 'pending', 'transferred'];
 
 export default function CheckIn() {
   const { officeId } = useParams();
   const navigate = useNavigate();
 
-  const [lang, setLang] = useState('en');
+  const [lang, setLang] = useClientLang();
   const t = translations[lang];
 
   const [officeData, setOfficeData] = useState(null);
@@ -37,6 +40,36 @@ export default function CheckIn() {
   const [referral, setReferral] = useState(null);
   const [skipReferral, setSkipReferral] = useState(false);
   const [joining, setJoining] = useState(false);
+  // A ticket this phone already got here today, offered back so the client does not take a second one
+  const [existingTicket, setExistingTicket] = useState(null);
+  const invalidShown = useRef(false);
+
+  useEffect(() => {
+    const saved = lastTicket();
+    if (!saved || saved.officeId !== String(officeId)) return;
+    let cancelled = false;
+    publicApi.getTicket(saved.token).then(ticket => {
+      const today = new Date().toDateString();
+      if (ACTIVE_STATUSES.includes(ticket.status) && new Date(ticket.checked_in_at).toDateString() === today) {
+        if (!cancelled) setExistingTicket({ token: saved.token, ticket });
+      } else {
+        forgetTicket(saved.token);
+      }
+    }).catch(err => { if (err.status === 404) forgetTicket(saved.token); });
+    return () => { cancelled = true; };
+  }, [officeId]);
+
+  // Our own message for a missing required field, in the chosen language (the browser's is English only)
+  const handleInvalid = (e) => {
+    e.preventDefault();
+    if (invalidShown.current) return;  // one message for the first missing field
+    invalidShown.current = true;
+    setTimeout(() => { invalidShown.current = false; }, 0);
+    setError(t.fill_required);
+    const field = e.target.offsetParent ? e.target : e.target.parentElement;
+    field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (e.target.offsetParent) e.target.focus({ preventScroll: true });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -192,7 +225,7 @@ export default function CheckIn() {
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Loading DOLE office information...</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>{t.loading_office}</p>
       </div>
     );
   }
@@ -202,10 +235,10 @@ export default function CheckIn() {
       <div style={{ minHeight: '100vh', padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         <div className="card" style={{ maxWidth: '480px', textAlign: 'center', padding: '2rem' }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
-          <h2 style={{ color: 'var(--dole-red)', marginBottom: '0.5rem' }}>Office Unavailable</h2>
+          <h2 style={{ color: 'var(--dole-red)', marginBottom: '0.5rem' }}>{t.office_unavailable}</h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>{error}</p>
           <button onClick={() => window.location.reload()} className="btn btn-outline">
-            Try Again
+            {t.try_again}
           </button>
         </div>
       </div>
@@ -415,10 +448,24 @@ export default function CheckIn() {
       <main style={{
         flex: 1,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '1.5rem 1rem',
       }}>
+        {existingTicket && (
+          <div role="status" style={{
+            width: '100%', maxWidth: '560px', marginBottom: '1rem', padding: '0.85rem 1rem',
+            backgroundColor: 'var(--dole-blue-light)', border: '1px solid #c7d2fe', borderRadius: 'var(--radius-md)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+              {t.existing_ticket} <strong className="mono" style={{ fontSize: '1.1rem' }}>{existingTicket.ticket.queue_no}</strong>
+              {' '}· {existingTicket.ticket.service_name}
+            </span>
+            <Link to={`/t/${existingTicket.token}`} className="btn btn-primary btn-sm">{t.open_my_ticket}</Link>
+          </div>
+        )}
         {!termsAccepted ? (
           <div className="card" style={{ width: '100%', maxWidth: '560px', padding: '2rem' }}>
             <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
@@ -554,7 +601,7 @@ export default function CheckIn() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} onInvalidCapture={handleInvalid}>
               <div style={{ marginBottom: '1.25rem' }}>
                 <label>{t.office_label}</label>
                 <input
@@ -673,6 +720,7 @@ export default function CheckIn() {
                     <input
                       id="client-name"
                       type="text"
+                      required
                       value={clientName}
                       onChange={(e) => {
                         setClientName(e.target.value);
@@ -971,6 +1019,7 @@ export default function CheckIn() {
                   placeholder={t.select_service}
                   searchPlaceholder={t.search_services}
                   noResultsText={t.no_services_found}
+                  variant="client"
                 />
               </div>
 

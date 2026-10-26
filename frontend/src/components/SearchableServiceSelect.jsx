@@ -21,7 +21,10 @@ export default function SearchableServiceSelect({
   disabled = false,
   dropDirection = 'auto',
   maxListHeight = '240px',
+  // 'client': plain-language descriptions instead of internal division codes (public check-in)
+  variant = 'staff',
 }) {
+  const isClient = variant === 'client';
   const [isOpen, setIsOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,10 +46,11 @@ export default function SearchableServiceSelect({
     if (!q) return services;
     return services.filter(svc => {
       const nameMatch = svc.name && svc.name.toLowerCase().includes(q);
-      const divMatch = svc.division_name && svc.division_name.toLowerCase().includes(q);
-      return nameMatch || divMatch;
+      const divMatch = !isClient && svc.division_name && svc.division_name.toLowerCase().includes(q);
+      const descMatch = isClient && svc.description && svc.description.toLowerCase().includes(q);
+      return nameMatch || divMatch || descMatch;
     });
-  }, [services, searchQuery]);
+  }, [services, searchQuery, isClient]);
 
   // Calculate optimal drop direction (up vs down)
   const calculateDirection = useCallback(() => {
@@ -178,7 +182,7 @@ export default function SearchableServiceSelect({
   };
 
   const getDivisionBadge = (divisionName) => {
-    if (!divisionName) return null;
+    if (!divisionName || isClient) return null;
     const style = DIVISION_BADGES[divisionName.trim()] || {
       color: '#475569',
       bg: '#f1f5f9',
@@ -424,6 +428,11 @@ export default function SearchableServiceSelect({
                         lineHeight: 1.35,
                       }}>
                         {svc.name}
+                        {isClient && svc.description && (
+                          <span style={{ display: 'block', fontSize: '0.76rem', fontWeight: 400, color: '#64748b', marginTop: '0.15rem' }}>
+                            {svc.description}
+                          </span>
+                        )}
                       </span>
                     </div>
 
@@ -455,9 +464,11 @@ export default function SearchableServiceSelect({
             <span>
               {filteredServices.length} {filteredServices.length === 1 ? 'service' : 'services'} available
             </span>
-            <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
-              Press ↑↓ to navigate, Enter to select
-            </span>
+            {!isClient && (
+              <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                Press ↑↓ to navigate, Enter to select
+              </span>
+            )}
           </div>
         </div>
       )}

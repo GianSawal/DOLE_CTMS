@@ -222,9 +222,14 @@ class PublicOfficeDetailView(APIView):
             else "Online registration is currently closed beyond office hours. Please visit us during regular office hours (Monday to Friday, 8:00 AM - 5:00 PM)."
         )
 
+        services_data = CsmServiceSerializer(services_qs, many=True).data
+        for row in services_data:
+            # A plain-language line under each service, so clients can tell them apart
+            row['description'] = get_service_description(row['name'])
+
         return Response({
             "office": CsmOfficeSerializer(office).data,
-            "services": CsmServiceSerializer(services_qs, many=True).data,
+            "services": services_data,
             "is_qr_enabled": is_qr_enabled,
             "disabled_message": disabled_message,
             # Only whether a code is needed; the code itself is never sent here.
@@ -523,8 +528,11 @@ class PublicDisplayBoardView(APIView):
         # personnel off the board, so they never appear on the TV.
         reassigned = CtmsAssignmentHistory.objects.filter(
             transaction=models.OuterRef('pk'), event=CtmsAssignmentHistory.EVENT_TRANSFERRED)
+        # Only today's calls, like the staff Queue page: a client left "serving" on an earlier
+        # day must not show as "Now Serving" to today's clients.
         for tx in (CtmsTransaction.objects
                    .filter(counter__in=windows, status=CtmsTransaction.STATUS_SERVING)
+                   .filter(models.Q(queue_date=today) | models.Q(called_at__date=today))
                    .exclude(models.Exists(reassigned))
                    .select_related(*related)):
             by_window.setdefault(tx.counter_id, []).append(tx)

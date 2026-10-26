@@ -341,6 +341,7 @@ class TicketPublicSerializer(serializers.ModelSerializer):
         fields = [
             'referred_to',
             'referred_from_office',
+            'office',
             'office_survey_url',
             'queue_no',
             'transaction_no',
@@ -394,9 +395,11 @@ class TicketPublicSerializer(serializers.ModelSerializer):
         # Priority clients get served before regular.
         # If obj is priority: only priority checked in before obj are ahead.
         # If obj is regular: all priority waiting + regular checked in before obj are ahead.
+        # Today's line only: Call Next never calls a ticket left waiting on an earlier day.
         qs = CtmsTransaction.objects.filter(
             office=obj.office,
-            status=CtmsTransaction.STATUS_WAITING
+            status=CtmsTransaction.STATUS_WAITING,
+            queue_date=obj.queue_date,
         )
         if obj.is_priority:
             return qs.filter(is_priority=True, checked_in_at__lt=obj.checked_in_at).count()

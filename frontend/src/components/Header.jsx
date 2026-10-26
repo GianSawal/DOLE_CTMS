@@ -40,8 +40,10 @@ export default function Header({ lang, setLang, title, subtitle }) {
               <span className="lang-text-mobile">{lang === 'en' ? 'FIL' : 'ENG'}</span>
             </button>
           )}
-          <Link to="/staff/login" className="btn btn-outline btn-sm" title="Go to Staff Portal">
-            <span className="staff-text-desktop">Staff Portal</span>
+          {/* A quiet text link: clients shouldn't mistake it for a step in their check-in */}
+          <Link to="/staff/login" title="Go to Staff Portal"
+            style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textDecoration: 'none', padding: '0.25rem 0.35rem' }}>
+            <span className="staff-text-desktop">Staff</span>
             <span className="staff-text-mobile">Staff</span>
           </Link>
         </div>

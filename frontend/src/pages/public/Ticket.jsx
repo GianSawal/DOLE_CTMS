@@ -1,9 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { publicApi } from '../../api/public';
 import Header from '../../components/Header';
 import { translations } from '../../locales/translations';
 import { rememberReferral, forgetReferral } from '../../utils/pendingReferrals';
+import { useClientLang, rememberTicket, forgetTicket } from '../../utils/clientMemory';
+
+// A ticket still in progress, worth offering back if the client scans the QR again
+const ACTIVE_STATUSES = ['waiting', 'serving', 'pending', 'transferred'];
+const PAGE_TITLE = document.title;
+
+// Gets the attention of a client whose phone is in their pocket or showing another app.
+// Each part may be refused by the browser (no vibration on iPhone, sound needs an earlier tap).
+function alertCalled() {
+  try { navigator.vibrate?.([400, 200, 400, 200, 400]); } catch { /* not supported */ }
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.35].forEach((at, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = i ? 660 : 880;
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + at);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + at + 0.3);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + at);
+      osc.stop(ctx.currentTime + at + 0.3);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch { /* no audio */ }
+}
 
 // The office's CSM survey page, carrying the client's SURVEY CODE (?code=T2TW) so the
 // CSM can pre-fill it instead of making the client type it.
@@ -19,16 +44,20 @@ function surveyLink(ticket) {
 
 export default function Ticket() {
   const { ticketToken } = useParams();
-  const [lang, setLang] = useState('en');
+  const [lang, setLang] = useClientLang();
   const t = translations[lang];
 
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [notFound, setNotFound] = useState(false);
+  // A failed update (weak signal): keep showing the last ticket instead of replacing it
+  const [offline, setOffline] = useState(false);
+  const lastStatus = useRef(null);
 
   // Polling every 5 seconds (mandated by §1 hard requirements)
   useEffect(() => {
     let isMounted = true;
+    lastStatus.current = null;
 
     async function fetchTicket() {
       try {
@@ -37,13 +66,23 @@ export default function Ticket() {
         const ref = data.status === 'referred' ? data.referred_to : null;
         if (ref && !ref.arrived && !ref.expired) rememberReferral(ticketToken, ref.office_id);
         else forgetReferral(ticketToken);
+        if (ACTIVE_STATUSES.includes(data.status)) rememberTicket(ticketToken, data.office);
+        else forgetTicket(ticketToken);
         if (isMounted) {
+          if (data.status === 'serving' && lastStatus.current && lastStatus.current !== 'serving') alertCalled();
+          lastStatus.current = data.status;
           setTicket(data);
-          setError('');
+          setNotFound(false);
+          setOffline(false);
         }
       } catch (err) {
         if (isMounted) {
-          setError(err.message || 'Ticket not found.');
+          if (err.status === 404) {
+            setNotFound(true);
+            forgetTicket(ticketToken);
+          } else {
+            setOffline(true);
+          }
         }
       } finally {
         if (isMounted) {
@@ -61,25 +100,44 @@ export default function Ticket() {
     };
   }, [ticketToken]);
 
+  // The browser tab shows the call too, so a client in another app or tab notices it
+  useEffect(() => {
+    if (ticket?.status === 'serving') {
+      document.title = `🔔 ${t.your_turn}: ${ticket.queue_no} → ${ticket.counter || t.designated_counter}`;
+    } else {
+      document.title = PAGE_TITLE;
+    }
+    return () => { document.title = PAGE_TITLE; };
+  }, [ticket?.status, ticket?.queue_no, ticket?.counter, t]);
+
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Loading your ticket...</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>{t.loading_ticket}</p>
       </div>
     );
   }
 
-  if (error || !ticket) {
+  if (notFound || !ticket) {
     return (
       <div style={{ minHeight: '100vh', padding: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="card" style={{ maxWidth: '440px', textAlign: 'center', padding: '2rem' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>❌</div>
-          <h2 style={{ color: 'var(--dole-red)', marginBottom: '0.5rem' }}>Ticket Not Found</h2>
-          <p style={{ color: 'var(--text-secondary)' }}>{error || 'Invalid or expired ticket link.'}</p>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>{notFound ? '❌' : '📶'}</div>
+          <h2 style={{ color: 'var(--dole-red)', marginBottom: '0.5rem' }}>{notFound ? t.ticket_not_found : t.loading_ticket}</h2>
+          <p style={{ color: 'var(--text-secondary)' }}>{notFound ? t.ticket_not_found_desc : t.reconnecting}</p>
         </div>
       </div>
     );
   }
+
+  // What the client should know or do now, for statuses that need explaining
+  const statusNote = {
+    pending: t.pending_note,
+    transferred: t.transferred_note,
+    cancelled: t.cancelled_note,
+    no_show: t.no_show_note,
+    done: ticket.surveyed ? null : t.done_note,
+  }[ticket.status];
 
   const getStatusBadge = () => {
     switch (ticket.status) {
@@ -88,7 +146,9 @@ export default function Ticket() {
       case 'serving':
         return <span className="badge badge-serving" style={{ fontSize: '0.9rem', padding: '0.4rem 0.85rem' }}>🔔 {t.status_serving}</span>;
       case 'pending':
-        return <span className="badge badge-pending" style={{ fontSize: '0.9rem', padding: '0.4rem 0.85rem' }}>⏳ Pending / Processing</span>;
+        return <span className="badge badge-pending" style={{ fontSize: '0.9rem', padding: '0.4rem 0.85rem' }}>⏳ {t.status_pending}</span>;
+      case 'transferred':
+        return <span className="badge badge-serving">{t.status_transferred}</span>;
       case 'done':
         return <span className="badge badge-done">{t.status_done}</span>;
       case 'no_show':
@@ -133,6 +193,15 @@ export default function Ticket() {
               style={{ width: '56px', height: '56px', objectFit: 'contain' }}
             />
           </div>
+          {offline && (
+            <div role="status" style={{
+              backgroundColor: '#fffbeb', border: '1px solid #fde68a', color: '#92400e',
+              borderRadius: 'var(--radius-md)', padding: '0.55rem 0.75rem', marginBottom: '1rem',
+              fontSize: '0.8rem', lineHeight: 1.4,
+            }}>
+              📶 {t.reconnecting}
+            </div>
+          )}
           <div style={{ marginBottom: '1rem' }}>
             {getStatusBadge()}
           </div>
@@ -165,7 +234,7 @@ export default function Ticket() {
               fontWeight: 700,
               marginBottom: '1rem',
             }}>
-              ★ Priority Client (RA 9994 / RA 7277)
+              {t.priority_client}
             </div>
           )}
 
@@ -183,7 +252,7 @@ export default function Ticket() {
                 {t.now_serving_at}
               </div>
               <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--dole-blue)', marginTop: '0.25rem' }}>
-                {ticket.counter || 'Designated Counter'}
+                {ticket.counter || t.designated_counter}
               </div>
             </div>
           )}
@@ -203,6 +272,23 @@ export default function Ticket() {
               <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                 {t.ahead_label}
               </div>
+            </div>
+          )}
+
+          {/* What this status means for the client and what to do next */}
+          {statusNote && (
+            <div style={{
+              backgroundColor: ticket.status === 'done' ? 'var(--dole-green-light)' : '#f8fafc',
+              border: `1px solid ${ticket.status === 'done' ? '#a7f3d0' : 'var(--border-color)'}`,
+              color: ticket.status === 'done' ? '#065f46' : 'var(--text-primary)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1rem',
+              margin: '1.25rem 0',
+              fontSize: '0.92rem',
+              lineHeight: 1.5,
+              fontWeight: ticket.status === 'done' ? 700 : 400,
+            }}>
+              {statusNote}
             </div>
           )}
 
@@ -304,7 +390,8 @@ export default function Ticket() {
             )}
           </div>
 
-          {ticket.status !== 'referred' && (
+          {/* Only while the client may still be called */}
+          {ACTIVE_STATUSES.includes(ticket.status) && (
             <p style={{
               fontSize: '0.75rem',
               color: 'var(--text-muted)',
@@ -317,8 +404,9 @@ export default function Ticket() {
 
           {/* Survey: always the office's CSM survey page (the CSM rejects per-ticket links).
               Same tab on purpose: QR scanners' built-in browsers often ignore new-tab links.
-              A referred ticket has none: the client rates the office that finishes the transaction. */}
-          {!ticket.surveyed && ticket.office_survey_url && ticket.status !== 'referred' && (
+              Only once Done: the CSM refuses any other ticket, so earlier it is a dead end
+              (a referred ticket never becomes Done; the client rates the office that finishes). */}
+          {!ticket.surveyed && ticket.office_survey_url && ticket.status === 'done' && (
             <div style={{
               marginTop: '1.25rem',
               paddingTop: '1.25rem',
