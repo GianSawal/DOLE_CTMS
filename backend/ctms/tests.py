@@ -2929,3 +2929,72 @@ class BackupTestCase(CsmTablesTestCase):
         self.assertEqual(self._backup().status_code, 403)
         self.client.force_authenticate(user=None)
         self.assertEqual(self._backup().status_code, 401)
+
+    # ---- Nightly backups (server passphrase from .env, kept in BACKUP_DIR) -------------------
+
+    def _scheduled(self, folder, **extra):
+        values = dict(BACKUP_DIR=folder, BACKUP_PASSPHRASE=self.PASSPHRASE, BACKUP_TIME='23:00', BACKUP_KEEP=2,
+                      BACKUP_SCHEDULE_ENABLED=True, BACKUP_SCHEDULE_CONTENTS='database')
+        return override_settings(**{**values, **extra})
+
+    @staticmethod
+    def _at(day, hour, minute=0):
+        import datetime
+        from zoneinfo import ZoneInfo
+        return datetime.datetime(2026, 10, day, hour, minute, tzinfo=ZoneInfo('Asia/Manila'))
+
+    def test_nightly_backup_runs_once_at_11pm_and_keeps_the_newest(self):
+        import os, tempfile
+        from . import backups
+
+        def run_at(stamp):  # the clock as of `stamp`, also for the backup's file name
+            with mock.patch('ctms.backups.timezone.localtime', side_effect=lambda value=None: value or stamp):
+                return backups.run_if_due(stamp)
+
+        with tempfile.TemporaryDirectory() as folder, self._scheduled(folder):
+            self.assertIsNone(run_at(self._at(20, 22, 59)))  # not yet
+            name = run_at(self._at(20, 23, 0))
+            self.assertEqual(name, 'ctms-backup-20261020-2300-database-scheduled.ctmsbak')
+            self.assertIsNone(run_at(self._at(20, 23, 1)))  # once per day
+            with open(os.path.join(folder, name), 'rb') as f:
+                self.assertIn('manifest.json', self._open(f.read()).namelist())  # the .env passphrase opens it
+            self.assertTrue(CtmsAuditLog.objects.filter(action='BACKUP_CREATED', actor_username='System').exists())
+
+            # Later days: only the newest BACKUP_KEEP (2) nightly backups are kept
+            for day in (21, 22):
+                self.assertIsNotNone(run_at(self._at(day, 23, 30)))
+            names = [b['name'] for b in backups.stored_backups() if b['scheduled']]
+            self.assertEqual(names, ['ctms-backup-20261022-2330-database-scheduled.ctmsbak',
+                                     'ctms-backup-20261021-2330-database-scheduled.ctmsbak'])
+
+    def test_nightly_backup_needs_the_env_passphrase(self):
+        import tempfile
+        from . import backups
+        with tempfile.TemporaryDirectory() as folder, self._scheduled(folder, BACKUP_PASSPHRASE=''):
+            status = backups.schedule_status()
+            self.assertFalse(status['enabled'])
+            self.assertIn('BACKUP_PASSPHRASE', status['problem'])
+            self.assertIsNone(backups.run_if_due(self._at(20, 23, 5)))
+
+    def test_page_uses_the_env_passphrase_and_serves_only_stored_backups(self):
+        import tempfile
+        from . import backups
+        with tempfile.TemporaryDirectory() as folder, self._scheduled(folder):
+            info = self.client.get('/api/staff/backups/').data
+            self.assertTrue(info['server_passphrase'])
+            self.assertNotIn(self.PASSPHRASE, str(info))  # never sent to the browser
+            self.assertTrue(info['schedule']['enabled'])
+
+            # Back up now without typing a passphrase: the .env one is used
+            res = self.client.post('/api/staff/backups/', {'contents': 'database'}, format='json')
+            self.assertEqual(res.status_code, 200)
+            self.assertIn('manifest.json', self._open(self._bytes(res)).namelist())
+
+            name = backups.run_if_due(self._at(20, 23, 0))
+            listed = [b['name'] for b in self.client.get('/api/staff/backups/').data['stored']]
+            self.assertEqual(listed, [name])
+            res = self.client.get(f'/api/staff/backups/{name}/')
+            self.assertEqual(res.status_code, 200)
+            self.assertTrue(self._bytes(res).startswith(b'CTMSBAK1'))
+            for bad in ('..%2F.env', '.scheduled-20261020', 'manage.py'):
+                self.assertEqual(self.client.get(f'/api/staff/backups/{bad}/').status_code, 404)

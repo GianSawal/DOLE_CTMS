@@ -2205,6 +2205,10 @@ class StaffBackupView(APIView):
             "media_bytes": media_bytes,
             "min_passphrase": backups_min_passphrase(),
             "last_backup": last,
+            # Whether the .env passphrase is set (never the passphrase itself)
+            "server_passphrase": bool(backups.server_passphrase()),
+            "schedule": backups.schedule_status(),
+            "stored": backups.stored_backups(),
         })
 
     def post(self, request):
@@ -2213,6 +2217,9 @@ class StaffBackupView(APIView):
         contents = str(request.data.get('contents') or '')
         passphrase = str(request.data.get('passphrase') or '')
         confirm = str(request.data.get('confirm_passphrase') or '')
+        if not passphrase and backups.server_passphrase():
+            # The .env passphrase (BACKUP_PASSPHRASE): nobody has to type it
+            passphrase = confirm = backups.server_passphrase()
         if len(passphrase) < backups_min_passphrase():
             return Response({"detail": f"Use a passphrase of at least {backups_min_passphrase()} characters."},
                             status=status.HTTP_400_BAD_REQUEST)
@@ -2233,6 +2240,25 @@ class StaffBackupView(APIView):
             details={k: v for k, v in summary.items() if k != 'created_by'},  # never the passphrase
         )
         response = FileResponse(encrypted, as_attachment=True, filename=name, content_type='application/octet-stream')
+        response['Cache-Control'] = 'no-store'
+        return response
+
+
+class StaffStoredBackupView(APIView):
+    """Download one of the nightly backups kept on the server (still encrypted)."""
+    permission_classes = [IsSystemAdmin]
+
+    def get(self, request, name):
+        from django.http import FileResponse
+        from . import backups
+        path = backups.stored_backup_path(name)
+        if not path:
+            raise Http404
+        log_audit_event(
+            action='BACKUP_DOWNLOADED', category=CtmsAuditLog.CATEGORY_CONFIG, actor=request.user, request=request,
+            target_type='Backup', target_repr=name, description=f"Downloaded the stored backup {name}.",
+        )
+        response = FileResponse(open(path, 'rb'), as_attachment=True, filename=name, content_type='application/octet-stream')
         response['Cache-Control'] = 'no-store'
         return response
 

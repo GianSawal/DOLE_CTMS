@@ -179,6 +179,18 @@ CACHES = {
     },
 }
 
+# Backups (Backups page; ctms/backups.py). The passphrase encrypts every backup and is never
+# sent to a browser: keep a copy of it apart from the server, since without it no backup can
+# be opened. With it set, a backup is made every day at BACKUP_TIME (TIME_ZONE: Asia/Manila,
+# GMT+8) into BACKUP_DIR, keeping the newest BACKUP_KEEP. BACKUP_DIR must not be in MEDIA_ROOT
+# (served to the public).
+BACKUP_PASSPHRASE = os.getenv('BACKUP_PASSPHRASE', '')
+BACKUP_DIR = os.getenv('BACKUP_DIR', str(BASE_DIR / 'backups'))
+BACKUP_TIME = os.getenv('BACKUP_TIME', '23:00')
+BACKUP_KEEP = int(os.getenv('BACKUP_KEEP', '14'))
+BACKUP_SCHEDULE_CONTENTS = os.getenv('BACKUP_SCHEDULE_CONTENTS', 'database')  # or 'everything'
+BACKUP_SCHEDULE_ENABLED = os.getenv('BACKUP_SCHEDULE_ENABLED', 'True').lower() in ('true', '1', 't')
+
 # SimpleJWT Configuration
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),

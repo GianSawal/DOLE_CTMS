@@ -1,5 +1,28 @@
 import { apiRequest } from './client';
 
+// Fetches a backup file and hands it to the browser as a download
+async function saveBackupFile(url, options) {
+  await apiRequest('/staff/backups/');  // renews the sign-in first if it has expired
+  const res = await fetch(url, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('ctms_access_token')}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || 'The backup could not be downloaded.');
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1] || 'ctms-backup.ctmsbak';
+  const href = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 10000);
+  return name;
+}
+
 export const staffApi = {
   login: (username, password, remember = false) => apiRequest('/staff/auth/login/', {
     method: 'POST',
@@ -186,32 +209,14 @@ export const staffApi = {
 
   // Backups (system administrator only)
   getBackupInfo: () => apiRequest('/staff/backups/'),
-  // Makes an encrypted backup and saves it as a file in the browser's downloads
-  downloadBackup: async (contents, passphrase, confirmPassphrase) => {
-    await apiRequest('/staff/backups/');  // renews the sign-in first if it has expired
-    const res = await fetch('/api/staff/backups/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('ctms_access_token')}`,
-      },
-      body: JSON.stringify({ contents, passphrase, confirm_passphrase: confirmPassphrase }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || 'The backup could not be made.');
-    }
-    const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1] || 'ctms-backup.ctmsbak';
-    const url = URL.createObjectURL(await res.blob());
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    return name;
-  },
+  // Makes an encrypted backup and saves it as a file in the browser's downloads. With the
+  // server's .env passphrase set, passphrase can be left empty.
+  downloadBackup: (contents, passphrase = '', confirmPassphrase = '') => saveBackupFile('/api/staff/backups/', {
+    method: 'POST',
+    body: JSON.stringify({ contents, passphrase, confirm_passphrase: confirmPassphrase }),
+  }),
+  // Downloads one of the nightly backups kept on the server
+  downloadStoredBackup: (name) => saveBackupFile(`/api/staff/backups/${encodeURIComponent(name)}/`, { method: 'GET' }),
 
   // Audit Logs (Admin Only)
   getAuditLogs: (filters = {}) => {

@@ -50,12 +50,21 @@ services:
       # Throttling limits
       - CHECKIN_THROTTLE_RATE=${CHECKIN_THROTTLE_RATE:-10/min}
       - LOGIN_THROTTLE_RATE=${LOGIN_THROTTLE_RATE:-5/min}
+      # Encrypted backups: nightly at BACKUP_TIME (Philippine time) into the ctms_backups volume.
+      # Set BACKUP_PASSPHRASE (min. 12 characters) and keep a copy of it off the server.
+      - BACKUP_PASSPHRASE=${BACKUP_PASSPHRASE:-}
+      - BACKUP_SCHEDULE_ENABLED=${BACKUP_SCHEDULE_ENABLED:-True}
+      - BACKUP_TIME=${BACKUP_TIME:-23:00}
+      - BACKUP_KEEP=${BACKUP_KEEP:-14}
+      - BACKUP_SCHEDULE_CONTENTS=${BACKUP_SCHEDULE_CONTENTS:-database}
+      - BACKUP_DIR=/app/backups
     depends_on:
       db:
         condition: service_healthy
         required: false
     volumes:
       - ctms_media_data:/app/media
+      - ctms_backups:/app/backups
     networks:
       - ctms-network
 
@@ -91,6 +100,7 @@ services:
 volumes:
   ctms_mysql_data:
   ctms_media_data:
+  ctms_backups:
 
 networks:
   ctms-network:

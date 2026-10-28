@@ -19,6 +19,7 @@ from .views import (
     StaffTwoFactorVerifyView,
     StaffTwoFactorView,
     StaffBackupView,
+    StaffStoredBackupView,
     StaffChangePasswordView,
     StaffQueueView,
     StaffCreateWalkinView,
@@ -103,6 +104,7 @@ urlpatterns = [
     path('staff/offices/', CsmOfficeListView.as_view(), name='staff-offices-list'),
     path('staff/audit-logs/', StaffAuditLogListView.as_view(), name='staff-audit-logs'),
     path('staff/backups/', StaffBackupView.as_view(), name='staff-backups'),
+    path('staff/backups/<str:name>/', StaffStoredBackupView.as_view(), name='staff-stored-backup'),
     path('staff/notifications/', StaffNotificationListView.as_view(), name='staff-notifications'),
 
     # Routers (Counters & Staff-Offices)

@@ -34,3 +34,7 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Encrypted backups made by the system (backend/backups/, BACKUP_DIR)
+backups/
+*.ctmsbak

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DatabaseBackup, Eye, EyeOff, LockKeyhole } from 'lucide-react';
+import { DatabaseBackup, Eye, EyeOff, LockKeyhole, CalendarClock, Download } from 'lucide-react';
 import { staffApi } from '../../api/staff';
 import { PageHeader, Notice } from '../../components/ui';
 
@@ -28,15 +28,28 @@ export default function StaffBackups() {
   useEffect(() => { load(); }, []);
 
   const min = info?.min_passphrase || 12;
-  const ready = passphrase.length >= min && passphrase === confirm && !busy;
+  // The server's .env passphrase (BACKUP_PASSPHRASE): nothing to type
+  const serverKey = Boolean(info?.server_passphrase);
+  const ready = (serverKey || (passphrase.length >= min && passphrase === confirm)) && !busy;
+
+  const downloadStored = async (name) => {
+    try {
+      setNotice(null);
+      await staffApi.downloadStoredBackup(name);
+    } catch (err) {
+      setNotice({ type: 'error', text: err.message });
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     try {
       setBusy(true);
       setNotice(null);
-      const name = await staffApi.downloadBackup(contents, passphrase, confirm);
-      setNotice({ type: 'success', text: `Backup saved to your downloads as ${name}. Keep the passphrase somewhere safe: without it the backup can't be opened.` });
+      const name = serverKey ? await staffApi.downloadBackup(contents) : await staffApi.downloadBackup(contents, passphrase, confirm);
+      setNotice({ type: 'success', text: serverKey
+        ? `Backup saved to your downloads as ${name}. It opens with the backup passphrase in the server's .env.`
+        : `Backup saved to your downloads as ${name}. Keep the passphrase somewhere safe: without it the backup can't be opened.` });
       setPassphrase('');
       setConfirm('');
       load();
@@ -65,7 +78,7 @@ export default function StaffBackups() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-ground)' }}>
       <main style={{ flex: 1, padding: '1.5rem', maxWidth: '760px', margin: '0 auto', width: '100%' }}>
-        <PageHeader title="Backups" subtitle="Make an encrypted copy of the system's data and download it. Nothing is kept on the server." />
+        <PageHeader title="Backups" subtitle="Encrypted copies of the system's data: one made every night, and one any time you need it." />
         <Notice notice={notice} onDismiss={() => setNotice(null)} />
 
         {info?.last_backup && (
@@ -92,32 +105,42 @@ export default function StaffBackups() {
             <h2 style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', margin: '0 0 0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               <LockKeyhole size={14} aria-hidden="true" /> Encryption passphrase
             </h2>
-            <p style={{ margin: '0 0 0.75rem', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              The backup is encrypted with AES-256 using this passphrase. It is not saved anywhere: write it down and keep it
-              apart from the backup file. <strong>Without it, the backup can never be opened.</strong>
-            </p>
-            <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))' }}>
-              <div>
-                <label htmlFor="backup-passphrase">Passphrase</label>
-                <div style={{ position: 'relative' }}>
-                  <input id="backup-passphrase" type={show ? 'text' : 'password'} autoComplete="new-password" required
-                    value={passphrase} onChange={(e) => setPassphrase(e.target.value)} style={{ paddingRight: '2.75rem' }} />
-                  <button type="button" onClick={() => setShow(v => !v)} aria-label={show ? 'Hide passphrase' : 'Show passphrase'}
-                    style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', minHeight: '32px', width: '32px', padding: 0, background: 'transparent', color: 'var(--ui-muted)' }}>
-                    {show ? <EyeOff size={17} /> : <Eye size={17} />}
-                  </button>
+            {serverKey ? (
+              <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Encrypted with AES-256 using the server's backup passphrase (<code>BACKUP_PASSPHRASE</code> in the
+                server's .env), so there is nothing to type. Keep a copy of that passphrase somewhere safe, apart from the
+                server: <strong>without it, no backup can be opened.</strong>
+              </p>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 0.75rem', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  The backup is encrypted with AES-256 using this passphrase. It is not saved anywhere: write it down and keep it
+                  apart from the backup file. <strong>Without it, the backup can never be opened.</strong>
+                </p>
+                <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))' }}>
+                  <div>
+                    <label htmlFor="backup-passphrase">Passphrase</label>
+                    <div style={{ position: 'relative' }}>
+                      <input id="backup-passphrase" type={show ? 'text' : 'password'} autoComplete="new-password" required
+                        value={passphrase} onChange={(e) => setPassphrase(e.target.value)} style={{ paddingRight: '2.75rem' }} />
+                      <button type="button" onClick={() => setShow(v => !v)} aria-label={show ? 'Hide passphrase' : 'Show passphrase'}
+                        style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', minHeight: '32px', width: '32px', padding: 0, background: 'transparent', color: 'var(--ui-muted)' }}>
+                        {show ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="backup-confirm">Type it again</label>
+                    <input id="backup-confirm" type={show ? 'text' : 'password'} autoComplete="new-password" required
+                      value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label htmlFor="backup-confirm">Type it again</label>
-                <input id="backup-confirm" type={show ? 'text' : 'password'} autoComplete="new-password" required
-                  value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-              </div>
-            </div>
-            <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: passphrase && passphrase.length < min ? 'var(--dole-red-dark)' : 'var(--ui-muted)' }}>
-              At least {min} characters. A few unrelated words make a strong, memorable passphrase.
-              {confirm && passphrase !== confirm ? ' The two entries don\'t match yet.' : ''}
-            </p>
+                <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: passphrase && passphrase.length < min ? 'var(--dole-red-dark)' : 'var(--ui-muted)' }}>
+                  At least {min} characters. A few unrelated words make a strong, memorable passphrase.
+                  {confirm && passphrase !== confirm ? ' The two entries don\'t match yet.' : ''}
+                </p>
+              </>
+            )}
           </div>
 
           <button type="submit" className="btn btn-primary btn-lg" disabled={!ready} style={{ justifySelf: 'start', gap: '0.5rem' }}>
@@ -127,6 +150,40 @@ export default function StaffBackups() {
             <p style={{ margin: '-0.75rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Backups with videos can take a minute or more.</p>
           )}
         </form>
+
+        <section className="card" style={{ padding: '1.1rem 1.5rem', marginTop: '1rem' }}>
+          <h2 style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', margin: '0 0 0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <CalendarClock size={14} aria-hidden="true" /> Nightly backup
+          </h2>
+          {info?.schedule && (info.schedule.enabled ? (
+            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+              Every day at <strong>{info.schedule.time}</strong> (Philippine time), {info.schedule.contents === 'everything' ? 'everything' : 'database only'},
+              saved on the server. The newest {info.schedule.keep} are kept.
+              <span style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Next: {formatDateTime(info.schedule.next_run)}</span>
+            </p>
+          ) : (
+            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--dole-red-dark)' }}>Not running: {info.schedule.problem}</p>
+          ))}
+
+          <h3 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '1.1rem 0 0.5rem' }}>Backups kept on the server</h3>
+          {!info?.stored?.length ? (
+            <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-muted)' }}>None yet.</p>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.4rem' }}>
+              {info.stored.map(b => (
+                <li key={b.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', padding: '0.55rem 0.75rem', border: 'var(--border-hairline)', borderRadius: 'var(--radius-md)' }}>
+                  <span style={{ minWidth: 0 }}>
+                    <span className="mono" style={{ display: 'block', fontSize: '0.82rem', wordBreak: 'break-all' }}>{b.name}</span>
+                    <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{formatDateTime(b.created_at)} · {formatBytes(b.bytes)}{b.scheduled ? ' · nightly' : ''}</span>
+                  </span>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => downloadStored(b.name)} style={{ gap: '0.35rem' }}>
+                    <Download size={14} aria-hidden="true" /> Download
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         <section className="card" style={{ padding: '1.1rem 1.5rem', marginTop: '1rem', fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
           <strong style={{ color: 'var(--text-primary)' }}>Opening a backup</strong>
