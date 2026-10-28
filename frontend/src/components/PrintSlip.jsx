@@ -1,6 +1,18 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+
+// While a slip is open, printed pages have no margins: a receipt printer's paper is the
+// slip itself (80 mm roll, 72 mm printable). Removed again when the slip closes.
+const SLIP_PAGE_CSS = '@page { margin: 0; }';
 
 export default function PrintSlip({ transaction, onClose }) {
+  useEffect(() => {
+    if (!transaction || typeof CSSStyleSheet === 'undefined' || !('adoptedStyleSheets' in document)) return undefined;
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(SLIP_PAGE_CSS);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    return () => { document.adoptedStyleSheets = document.adoptedStyleSheets.filter(x => x !== sheet); };
+  }, [transaction]);
+
   if (!transaction) return null;
 
   const handlePrint = () => {
@@ -40,7 +52,7 @@ export default function PrintSlip({ transaction, onClose }) {
           <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>
             Queue Number
           </div>
-          <div className="mono" style={{ fontSize: '2.75rem', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+          <div className="mono slip-queue-no" style={{ fontSize: '2.75rem', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
             {transaction.queue_no}
           </div>
           {transaction.is_priority && (
@@ -50,7 +62,7 @@ export default function PrintSlip({ transaction, onClose }) {
           )}
         </div>
 
-        <div style={{ textAlign: 'left', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '1rem' }}>
+        <div className="slip-details" style={{ textAlign: 'left', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '1rem' }}>
           {transaction.division_name && (
             <div>
               <strong>Division:</strong> {transaction.division_name}
@@ -119,7 +131,7 @@ export default function PrintSlip({ transaction, onClose }) {
           )}
         </div>
 
-        <div style={{
+        <div className="slip-note" style={{
           backgroundColor: 'var(--dole-blue-light)',
           border: '1px solid #c7d2fe',
           borderRadius: '6px',
