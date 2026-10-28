@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   ListOrdered, UsersRound, LayoutGrid, History, QrCode,
-  UserCog, Layers, ChartColumn, ScrollText, LogOut, Menu, X, Building2, ChevronRight, ClipboardPen, ShieldCheck,
+  UserCog, Layers, ChartColumn, ScrollText, LogOut, Menu, X, Building2, ChevronRight, ClipboardPen, ShieldCheck, DatabaseBackup,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -26,6 +26,7 @@ const NAV = [
       { to: '/staff/services', label: 'Services', icon: Layers, permission: 'manage_services' },
       { to: '/staff/reports', label: 'Reports', icon: ChartColumn, permission: 'view_reports' },
       { to: '/staff/audit-logs', label: 'Audit Log', icon: ScrollText, permission: 'view_audit_logs' },
+      { to: '/staff/backups', label: 'Backups', icon: DatabaseBackup, permission: 'manage_backups' },
     ],
   },
 ];

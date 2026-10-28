@@ -1,6 +1,7 @@
 import io
 import logging
 import math
+import os
 import secrets
 from datetime import timedelta
 
@@ -2177,6 +2178,68 @@ class StaffChangePasswordView(APIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
         })
+
+
+class StaffBackupView(APIView):
+    """
+    Backups page (system administrator only): what a backup would contain, the last one made,
+    and POST to make an encrypted backup and download it at once (nothing is kept on the server).
+    """
+    permission_classes = [IsSystemAdmin]
+
+    def get(self, request):
+        from . import backups
+        from django.db import connection
+        last = (CtmsAuditLog.objects.filter(action='BACKUP_CREATED').order_by('-id')
+                .values('timestamp', 'actor_username', 'details').first())
+        media_root = str(settings.MEDIA_ROOT)
+        media_files = media_bytes = 0
+        for folder, _, names in os.walk(media_root) if os.path.isdir(media_root) else ():
+            for name in names:
+                media_files += 1
+                media_bytes += os.path.getsize(os.path.join(folder, name))
+        return Response({
+            "contents": [{"value": k, "label": v} for k, v in backups.CONTENTS.items()],
+            "tables": len(connection.introspection.table_names()),
+            "media_files": media_files,
+            "media_bytes": media_bytes,
+            "min_passphrase": backups_min_passphrase(),
+            "last_backup": last,
+        })
+
+    def post(self, request):
+        from django.http import FileResponse
+        from . import backups
+        contents = str(request.data.get('contents') or '')
+        passphrase = str(request.data.get('passphrase') or '')
+        confirm = str(request.data.get('confirm_passphrase') or '')
+        if len(passphrase) < backups_min_passphrase():
+            return Response({"detail": f"Use a passphrase of at least {backups_min_passphrase()} characters."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if passphrase != confirm:
+            return Response({"detail": "The passphrases don't match."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            encrypted, name, summary = backups.create_backup(contents, passphrase, request.user.username)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("Backup failed")
+            return Response({"detail": "The backup could not be made. See the server log."},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        log_audit_event(
+            action='BACKUP_CREATED', category=CtmsAuditLog.CATEGORY_CONFIG, actor=request.user, request=request,
+            target_type='Backup', target_repr=name,
+            description=f"Made an encrypted backup ({backups.CONTENTS[contents]}) and downloaded it.",
+            details={k: v for k, v in summary.items() if k != 'created_by'},  # never the passphrase
+        )
+        response = FileResponse(encrypted, as_attachment=True, filename=name, content_type='application/octet-stream')
+        response['Cache-Control'] = 'no-store'
+        return response
+
+
+def backups_min_passphrase():
+    from .backup_crypto import MIN_PASSPHRASE
+    return MIN_PASSPHRASE
 
 
 class CsmOfficeListView(APIView):

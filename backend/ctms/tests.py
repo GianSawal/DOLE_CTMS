@@ -2834,3 +2834,98 @@ class TwoFactorTestCase(CsmTablesTestCase):
         CtmsTwoFactor.objects.filter(user=self.user).update(password_updated=True)  # as the migration does
         self.client.force_authenticate(user=self.user)
         self.assertFalse(self.client.get('/api/staff/auth/me/').data['must_change_password'])
+
+
+class BackupTestCase(CsmTablesTestCase):
+    """System-admin backups: encrypted with a passphrase, downloaded at once, complete."""
+
+    PASSPHRASE = "correct horse battery staple"
+
+    def setUp(self):
+        cache.clear()
+        self.office = CsmOffice.objects.create(name="DOLE Regional Office III", code="RO3", is_active=True)
+        CtmsOfficeProfile.objects.update_or_create(office=self.office, defaults={'office_type': 'REGIONAL'})
+        self.service = CsmService.objects.create(name="SEnA", is_active=True, sort_order=1)
+        create_transaction(self.office, self.service, client_name="Juan Dela Cruz")
+        self.root = User.objects.create_superuser(username="root", password="Root-Pass-1")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.root)
+
+    def _backup(self, contents='database', passphrase=None, confirm=None):
+        passphrase = passphrase or self.PASSPHRASE
+        return self.client.post('/api/staff/backups/', {
+            'contents': contents, 'passphrase': passphrase, 'confirm_passphrase': confirm or passphrase,
+        }, format='json')
+
+    @staticmethod
+    def _bytes(res):
+        return b''.join(res.streaming_content)
+
+    def _open(self, data, passphrase=None):
+        import io, zipfile
+        from .backup_crypto import decrypt_stream
+        out = io.BytesIO()
+        decrypt_stream(io.BytesIO(data), out, passphrase or self.PASSPHRASE)
+        return zipfile.ZipFile(out)
+
+    def test_backup_decrypts_to_a_complete_database_dump(self):
+        import json
+        res = self._backup()
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('attachment; filename="ctms-backup-', res['Content-Disposition'])
+        data = self._bytes(res)
+        self.assertTrue(data.startswith(b'CTMSBAK1'))
+        self.assertNotIn(b'Juan Dela Cruz', data)  # encrypted, not readable
+
+        archive = self._open(data)
+        manifest = json.loads(archive.read('manifest.json'))
+        self.assertEqual(manifest['contents'], 'database')
+        lines = archive.read('database/ctms_transaction.jsonl').decode().splitlines()
+        columns = json.loads(lines[0])
+        self.assertIn('client_name', columns)
+        self.assertEqual(json.loads(lines[1])[columns.index('client_name')], "Juan Dela Cruz")
+        self.assertEqual(manifest['row_counts']['ctms_transaction'], 1)
+        self.assertIn('database/auth_user.jsonl', archive.namelist())
+
+    def test_wrong_passphrase_changed_or_cut_short_backups_are_refused(self):
+        from .backup_crypto import BackupDecryptError
+        data = self._bytes(self._backup())
+        with self.assertRaises(BackupDecryptError):
+            self._open(data, "not the right passphrase")
+        changed = bytearray(data)
+        changed[-5] ^= 0x01
+        with self.assertRaises(BackupDecryptError):
+            self._open(bytes(changed))
+        with self.assertRaises(BackupDecryptError):
+            self._open(data[:-20])
+
+    def test_everything_includes_uploaded_files(self):
+        import os, tempfile
+        with tempfile.TemporaryDirectory() as media:
+            os.makedirs(os.path.join(media, 'display_videos'))
+            with open(os.path.join(media, 'display_videos', 'arta.mp4'), 'wb') as f:
+                f.write(b'\x00\x00\x00\x18ftypmp42video')
+            with override_settings(MEDIA_ROOT=media):
+                archive = self._open(self._bytes(self._backup('everything')))
+        self.assertEqual(archive.read('media/display_videos/arta.mp4'), b'\x00\x00\x00\x18ftypmp42video')
+        self.assertNotIn('media/display_videos/arta.mp4', self._open(self._bytes(self._backup('database'))).namelist())
+
+    def test_passphrase_rules_and_audit_never_records_it(self):
+        self.assertEqual(self._backup(passphrase='short').status_code, 400)
+        self.assertEqual(self._backup(confirm='a different passphrase!').status_code, 400)
+        self.assertEqual(self._backup(contents='something').status_code, 400)
+        self._bytes(self._backup())
+        log = CtmsAuditLog.objects.get(action='BACKUP_CREATED')
+        self.assertNotIn(self.PASSPHRASE, str(log.details) + log.description)
+        self.assertEqual(self.client.get('/api/staff/backups/').data['last_backup']['actor_username'], 'root')
+
+    def test_only_the_system_admin(self):
+        admin = User.objects.create_user(username="radmin", password="Admin-Pass-1", is_staff=True)
+        CtmsStaffOffice.objects.create(user=admin, office=self.office)
+        DolePersonnel.objects.create(user=admin, employee_id="radmin", first_name="R", last_name="A",
+                                     office=self.office, role=DolePersonnel.ROLE_ADMIN)
+        self.client.force_authenticate(user=admin)
+        self.assertEqual(self.client.get('/api/staff/backups/').status_code, 403)
+        self.assertEqual(self._backup().status_code, 403)
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self._backup().status_code, 401)

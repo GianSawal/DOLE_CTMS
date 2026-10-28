@@ -122,6 +122,7 @@ def user_access(user):
             "manage_services": regional_admin,
             "view_reports": regional_admin,
             "view_audit_logs": regional_admin,
+            "manage_backups": is_system_admin(user),
         },
     }
 

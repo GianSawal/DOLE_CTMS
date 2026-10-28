@@ -184,6 +184,35 @@ export const staffApi = {
     return res;
   },
 
+  // Backups (system administrator only)
+  getBackupInfo: () => apiRequest('/staff/backups/'),
+  // Makes an encrypted backup and saves it as a file in the browser's downloads
+  downloadBackup: async (contents, passphrase, confirmPassphrase) => {
+    await apiRequest('/staff/backups/');  // renews the sign-in first if it has expired
+    const res = await fetch('/api/staff/backups/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('ctms_access_token')}`,
+      },
+      body: JSON.stringify({ contents, passphrase, confirm_passphrase: confirmPassphrase }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'The backup could not be made.');
+    }
+    const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1] || 'ctms-backup.ctmsbak';
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return name;
+  },
+
   // Audit Logs (Admin Only)
   getAuditLogs: (filters = {}) => {
     const params = new URLSearchParams();
