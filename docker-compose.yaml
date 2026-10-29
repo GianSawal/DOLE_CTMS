@@ -13,15 +13,17 @@ services:
     expose:
       - 80
     depends_on:
-      - backend
+      - ctms-backend
     networks:
       - ctms-network
 
   # -------------------------------------------------------------
   # Backend: Django 5.2 REST API + Gunicorn + WhiteNoise
   # Internal only: Proxied via Frontend Nginx on port 8000
+  # Named ctms-backend, not backend: on Coolify's shared network the CSM's own "backend"
+  # answers to that name too, and nginx would send every other request to the CSM.
   # -------------------------------------------------------------
-  backend:
+  ctms-backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
