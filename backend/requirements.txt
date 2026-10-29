@@ -1,12 +1,12 @@
-Django==5.2.17
-djangorestframework==3.18.1
+Django==5.2.18
+djangorestframework==3.18.3
 djangorestframework-simplejwt==5.5.1
 PyJWT>=2.15.1  # GHSA-42vr-xj54-vc7v, GHSA-x33g-cr3x-6449
 django-cors-headers==4.9.0
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 mysqlclient==2.3.0
 pymysql==1.2.3
-cryptography==50.0.1
+cryptography==50.0.2
 qrcode==8.2
 Pillow==13.0.0
 gunicorn==23.0.0

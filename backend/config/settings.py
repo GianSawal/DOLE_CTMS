@@ -135,7 +135,9 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 # Media files (e.g. uploaded ARTA video files)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('DATA_UPLOAD_MAX_MEMORY_SIZE', 314572800))  # 300MB
+# Largest request body other than uploaded files (videos are files and don't count). Was 300 MB:
+# one anonymous 40 MB request held ~200 MB of memory, so a few could take the server down.
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('DATA_UPLOAD_MAX_MEMORY_SIZE', 2621440))  # 2.5 MB, Django's default
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('FILE_UPLOAD_MAX_MEMORY_SIZE', 20971520))   # 20MB in memory
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -178,6 +180,12 @@ CACHES = {
         'OPTIONS': {'MAX_ENTRIES': 20000},
     },
 }
+
+# Off unless turned on (tests keep them on). Django's admin signs in with a password only,
+# which would skip the staff two-factor sign-in; the legacy `queueing` pages are unused (the
+# web app replaced them) and only widen what can be attacked.
+ENABLE_DJANGO_ADMIN = os.getenv('ENABLE_DJANGO_ADMIN', 'False').lower() in ('true', '1', 't') or TESTING
+ENABLE_LEGACY_QUEUEING = os.getenv('ENABLE_LEGACY_QUEUEING', 'False').lower() in ('true', '1', 't') or TESTING
 
 # Backups (Backups page; ctms/backups.py). The passphrase encrypts every backup and is never
 # sent to a browser: keep a copy of it apart from the server, since without it no backup can

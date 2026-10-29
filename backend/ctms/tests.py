@@ -2998,3 +2998,42 @@ class BackupTestCase(CsmTablesTestCase):
             self.assertTrue(self._bytes(res).startswith(b'CTMSBAK1'))
             for bad in ('..%2F.env', '.scheduled-20261020', 'manage.py'):
                 self.assertEqual(self.client.get(f'/api/staff/backups/{bad}/').status_code, 404)
+
+
+class ExposureDefaultsTestCase(CsmTablesTestCase):
+    """VAPT fixes: what is reachable by default, and how big a request may be."""
+
+    def test_django_admin_and_legacy_pages_are_off_by_default(self):
+        import importlib
+        from django.urls import Resolver404, clear_url_caches, resolve
+        import config.urls
+        try:
+            with override_settings(ENABLE_DJANGO_ADMIN=False, ENABLE_LEGACY_QUEUEING=False):
+                importlib.reload(config.urls)
+                clear_url_caches()
+                for path in ('/django-admin/', '/django-admin/login/', '/front-desk/queue/', '/reports/pct/'):
+                    with self.assertRaises(Resolver404, msg=path):
+                        resolve(path, urlconf=config.urls)
+                resolve('/api/health/', urlconf=config.urls)  # the API stays
+        finally:
+            importlib.reload(config.urls)
+            clear_url_caches()
+
+    def test_large_anonymous_body_is_refused_but_video_files_still_upload(self):
+        import json
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        office = CsmOffice.objects.create(name="Bataan Field Office", code="BAT", is_active=True)
+        body = json.dumps({'office': office.id, 'service': 1, 'client_name': 'x' * (3 * 1024 * 1024)})
+        self.assertEqual(self.client.post('/api/public/checkin/', body, content_type='application/json').status_code, 400)
+
+        staff = User.objects.create_user(username="ana", password="pw", is_staff=True)
+        CtmsStaffOffice.objects.create(user=staff, office=office)
+        api = APIClient()
+        api.force_authenticate(user=staff)
+        video = SimpleUploadedFile("arta.mp4", b'\x00\x00\x00\x18ftypmp42' + b'\x00' * (4 * 1024 * 1024),
+                                   content_type="video/mp4")  # bigger than the 2.5 MB body limit
+        import tempfile
+        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            res = api.post('/api/staff/display-video/', {'office': office.id, 'video_file': video, 'is_active': 'true'},
+                           format='multipart')
+        self.assertIn(res.status_code, (200, 201), res.data)
