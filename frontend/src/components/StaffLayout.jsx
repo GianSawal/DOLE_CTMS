@@ -12,7 +12,7 @@ const NAV = [
   {
     section: 'Operations',
     items: [
-      { to: '/staff/queue', label: 'Queue', icon: ListOrdered },
+      { to: '/staff/queue', label: 'Queue Sample', icon: ListOrdered },
       { to: '/staff/my-clients', label: 'My Clients', icon: UsersRound },
       { to: '/staff/windows', label: 'Windows', icon: LayoutGrid },
       { to: '/staff/transactions', label: 'Transactions', icon: History },
